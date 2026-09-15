@@ -36,7 +36,8 @@ yarn-error.log
 /coverage
 /libpeerconnection.log
 testem.log
-/typings
+test-results/
+playwright-report/
 __screenshots__/
 
 # System files
