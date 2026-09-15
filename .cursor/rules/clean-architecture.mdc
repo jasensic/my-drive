@@ -1,0 +1,21 @@
+---
+description: Clean Architecture — interfaces between layers
+alwaysApply: true
+---
+
+# Clean Architecture
+
+Every app in this repo (Rust API, Angular portal, Android) uses the same layers:
+
+- domain: entities + ports (interfaces). No frameworks, HTTP, SQL, or UI.
+- application: use cases that depend only on domain ports.
+- infrastructure / data: implementations of those ports.
+- presentation: HTTP handlers, Angular/PrimeNG components, Compose. Call use-case interfaces only.
+
+Rules:
+
+- Communicate across layers **only through interfaces** (Rust traits, TypeScript `interface` + `InjectionToken`, Kotlin `interface`).
+- Inner layers must not import outer layers.
+- Wire concrete types only in composition roots: `apps/api/crates/presentation/src/main.rs`, `apps/web/src/app/app.config.ts`, Android Hilt modules.
+- Presentation must not inject `HttpClient`, sqlx, MinIO, Retrofit, or Room.
+- PrimeNG stays in Angular presentation. Domain/application must not import `primeng/*`.
