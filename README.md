@@ -19,6 +19,8 @@ No incluye (aún): iOS, Fastlane / tiendas, gRPC ni transcodificación de vídeo
 
 ## Puesta en marcha (servidor local)
 
+Instrucciones detalladas (setup, prueba manual, E2E y despliegue on-premise): **[docs/DESPLIEGUE_Y_PRUEBA.md](docs/DESPLIEGUE_Y_PRUEBA.md)**.
+
 ```bash
 cp .env.example .env
 docker compose -f deploy/docker-compose.yml up --build
