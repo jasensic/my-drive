@@ -1,0 +1,12 @@
+---
+description: On-prem deploy conventions
+globs: deploy/**/*
+---
+
+# Deploy
+
+- `docker-compose.yml` is local development (bridge network, published ports).
+- `docker-compose.prod.yml` is on-prem: Watchtower, named volumes, API `network_mode: host` for mDNS.
+- Never put secrets in compose files; use `.env`.
+- Nginx serves the Angular SPA and reverse-proxies `/v1` and `/api-docs` to the API.
+- Persist Postgres and MinIO volumes; Watchtower may recreate `api` and `web` only.

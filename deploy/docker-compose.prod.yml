@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: ../.env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      retries: 10
+
+  minio:
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file: ../.env
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  api:
+    image: ghcr.io/jasensic/my-drive-api:latest
+    restart: unless-stopped
+    network_mode: host
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mydrive}:${POSTGRES_PASSWORD:-mydrive}@127.0.0.1:5432/${POSTGRES_DB:-mydrive}
+      MINIO_ENDPOINT: http://127.0.0.1:9000
+      API_HOST: 0.0.0.0
+      API_PORT: "8080"
+      MDNS_ENABLE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
+  web:
+    image: ghcr.io/jasensic/my-drive-web:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      # nginx in the image proxies /v1 to 127.0.0.1:8080 when using host network
+      API_UPSTREAM: http://127.0.0.1:8080
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval ${WATCHTOWER_POLL_INTERVAL:-300} --cleanup
+    environment:
+      WATCHTOWER_INCLUDE_STOPPED: "false"
+
+volumes:
+  pgdata:
+  miniodata:

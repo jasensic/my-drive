@@ -1,0 +1,11 @@
+---
+description: Android app conventions
+globs: apps/android/**/*
+---
+
+# Android (`apps/android`)
+
+- `:domain` is pure JVM Kotlin (no Android SDK). Put entities, ports, and sync helpers there so `./gradlew :domain:test` runs in CI.
+- `:app` has `data` (Retrofit, Room, NSD, MediaStore, WorkManager) and `presentation` (Compose + ViewModels).
+- ViewModels depend on use-case interfaces. Hilt binds implementations.
+- mDNS service type: `_mydrive._tcp`.

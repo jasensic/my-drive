@@ -1,0 +1,13 @@
+---
+description: Angular portal conventions
+globs: apps/web/**/*
+---
+
+# Web (`apps/web`)
+
+Clean Architecture folders under `src/app/{domain,application,data,presentation}`.
+
+- UI uses **PrimeNG** (current major) and Aura theme. Import PrimeNG only from `presentation`.
+- Provide repository implementations in `app.config.ts` via `InjectionToken`s defined in domain.
+- Components inject use cases, never `HttpClient` or classes from `data/`.
+- Keep TypeScript strict. Prefer standalone components and signals.

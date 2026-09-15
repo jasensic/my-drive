@@ -1,0 +1,15 @@
+---
+description: Rust API conventions
+globs: apps/api/**/*
+---
+
+# API (`apps/api`)
+
+Cargo workspace with crates `domain`, `application`, `infrastructure`, `mydrive-api` (presentation + binary).
+
+- Add persistence or MinIO code only in `infrastructure`.
+- Add HTTP/DTO/OpenAPI only in `presentation`.
+- Sync matching logic lives in `domain::sync` and must stay I/O-free.
+- Routes are versioned under `/v1`. mDNS type is `_mydrive._tcp`.
+- Run `cargo test` from `apps/api` before finishing API work.
+- Use `sqlx::query` / `query_as` (not macros that need a live DB at compile time) so CI can compile without Postgres.

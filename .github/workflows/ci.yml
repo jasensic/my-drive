@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/api
+      - name: Test API
+        working-directory: apps/api
+        run: cargo test --workspace
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Test and build portal
+        working-directory: apps/web
+        run: |
+          npm ci
+          npm test -- --watch=false
+          npm run build
+
+  android-domain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Domain unit tests
+        working-directory: apps/android
+        run: ./gradlew :domain:test --no-daemon
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/api
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.22.3"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Build API
+        working-directory: apps/api
+        run: cargo build -p mydrive-api
+      - name: Install portal
+        working-directory: apps/web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run API and portal
+        run: |
+          MEMORY_BACKEND=true MDNS_ENABLE=false JWT_SECRET=ci-secret API_PORT=8080 API_PUBLIC_URL=http://localhost:8080 \
+            ./apps/api/target/debug/mydrive-api &
+          echo $! > /tmp/api.pid
+          cd apps/web && npx ng serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json &
+          echo $! > /tmp/web.pid
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8080/health && curl -sf http://127.0.0.1:4200 >/dev/null && break
+            sleep 2
+          done
+      - name: Playwright
+        working-directory: apps/web
+        env:
+          E2E_BASE_URL: http://127.0.0.1:4200
+        run: npx playwright test
