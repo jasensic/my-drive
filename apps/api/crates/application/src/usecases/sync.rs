@@ -47,7 +47,8 @@ impl BuildSyncManifest for BuildSyncManifestService {
         if let Some(since) = query.last_sync_at {
             files.retain(|f| f.uploaded_at > since || f.created_at > since);
         }
-        let manifest = evaluate_manifest(&files, &profile.rules, &query.have_file_ids, now);
+        let mut manifest = evaluate_manifest(&files, &profile.rules, &query.have_file_ids, now);
+        manifest.albums = self.deps.albums.list_by_owner(query.user_id).await?;
         self.deps.devices.touch_sync(device.id, now).await?;
         Ok(manifest)
     }
@@ -116,6 +117,9 @@ mod tests {
             _e: Option<u64>,
         ) -> Result<(Bytes, u64), DomainError> {
             Ok((Bytes::new(), 0))
+        }
+        async fn delete(&self, _k: &str) -> Result<(), DomainError> {
+            Ok(())
         }
     }
 
@@ -240,6 +244,44 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl AppReleaseRepository for Mem {
+        async fn insert(&self, _release: &domain::model::AppRelease) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn latest(&self) -> Result<Option<domain::model::AppRelease>, DomainError> {
+            Ok(None)
+        }
+        async fn list(&self) -> Result<Vec<domain::model::AppRelease>, DomainError> {
+            Ok(vec![])
+        }
+        async fn find_by_id(
+            &self,
+            _id: domain::AppReleaseId,
+        ) -> Result<Option<domain::model::AppRelease>, DomainError> {
+            Ok(None)
+        }
+        async fn find_by_version_code(
+            &self,
+            _version_code: i32,
+        ) -> Result<Option<domain::model::AppRelease>, DomainError> {
+            Ok(None)
+        }
+        async fn update(&self, _release: &domain::model::AppRelease) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete(&self, _id: domain::AppReleaseId) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopApk;
+    impl domain::ports::ApkInspector for NoopApk {
+        fn inspect(&self, _apk: &[u8]) -> Result<domain::apk::ApkIdentity, DomainError> {
+            Err(DomainError::validation("no apk"))
+        }
+    }
+
     #[tokio::test]
     async fn manifest_applies_default_household_rules() {
         let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
@@ -294,11 +336,13 @@ mod tests {
             files: mem.clone(),
             devices: mem.clone(),
             profiles: mem.clone(),
+            app_releases: mem.clone(),
             objects: Arc::new(NoopObjects),
             hasher: Arc::new(NoopHasher),
             tokens: Arc::new(NoopTokens),
             clock: Arc::new(FakeClock(now)),
             thumbnailer: Arc::new(NoopThumbs),
+            apk_inspector: Arc::new(NoopApk),
         });
         let svc = BuildSyncManifestService::new(deps);
         let manifest = svc

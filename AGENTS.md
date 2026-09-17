@@ -8,7 +8,7 @@ Monorepo de **my-drive**: almacenamiento y sync multimedia en LAN.
 | --- | --- | --- |
 | `apps/api` | API Rust (workspace Cargo) | `cd apps/api && cargo test && cargo run -p mydrive-api` |
 | `apps/web` | Portal Angular + PrimeNG | `cd apps/web && npm test -- --watch=false` / `npm start` |
-| `apps/android` | App Kotlin + módulo `:domain` JVM | `./gradlew :domain:test` |
+| `apps/android` | App Kotlin + módulo `:domain` JVM | `./gradlew :domain:test :app:assembleRelease` |
 | `deploy` | Compose, Nginx, Watchtower | `docker compose -f deploy/docker-compose.yml up --build` |
 
 Contrato **entre procesos**: OpenAPI en `GET /api-docs/openapi.json`.
@@ -37,6 +37,14 @@ Reglas:
 3. Persistencia en infrastructure (migración sqlx).
 4. DTO OpenAPI en presentation.
 5. Replica el contrato en `apps/web/src/app/domain` y `apps/android/domain`.
+
+## Actualizaciones de la app Android
+
+1. Entidad `AppRelease` y puerto `AppReleaseRepository` en domain.
+2. Casos de uso `PublishAppRelease` / `GetLatestAppRelease` en application.
+3. Objeto en MinIO (`app-releases/{id}.apk`) + tabla `app_releases`.
+4. HTTP `/v1/app/releases` (OpenAPI). El portal publica desde `/app-updates`.
+5. Android: `CheckAppUpdateUseCase` + `InstallAppUpdateUseCase` tras el sync LAN.
 
 ## Convenciones
 

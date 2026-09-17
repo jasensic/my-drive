@@ -17,7 +17,8 @@ class SyncWorker @AssistedInject constructor(
     override suspend fun doWork(): Result = runCatching {
         val user = inputData.getString("username")
         val pass = inputData.getString("password")
-        syncFiles.execute(user, pass)
+        val host = inputData.getString("host")
+        syncFiles.execute(user, pass, host)
         Result.success()
     }.getOrElse { Result.retry() }
 }

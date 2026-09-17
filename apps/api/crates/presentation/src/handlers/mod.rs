@@ -1,4 +1,5 @@
 pub mod albums;
+pub mod app;
 pub mod auth;
 pub mod devices;
 pub mod files;

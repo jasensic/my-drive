@@ -1,5 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import { Album, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from './models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from './models';
 
 export interface TokenStore {
   get(): string | null;
@@ -25,6 +25,7 @@ export interface FileRepository {
   upload(file: File, albumId?: string): Promise<MediaFile>;
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile>;
   contentUrl(id: string): string;
+  blob(id: string, thumbnail: boolean): Promise<Blob>;
 }
 
 export interface DeviceRepository {
@@ -34,8 +35,18 @@ export interface DeviceRepository {
   saveProfile(deviceId: string, name: string, rules: SyncRule[]): Promise<SyncProfile>;
 }
 
+export interface AppReleaseRepository {
+  list(): Promise<AppRelease[]>;
+  latest(): Promise<AppRelease | null>;
+  inspect(apk: File): Promise<ApkIdentity>;
+  publish(input: { changelog: string; apk: File }): Promise<AppRelease>;
+  update(id: string, input: { changelog?: string; apk?: File }): Promise<AppRelease>;
+  remove(id: string): Promise<void>;
+}
+
 export const TOKEN_STORE = new InjectionToken<TokenStore>('TOKEN_STORE');
 export const AUTH_REPOSITORY = new InjectionToken<AuthRepository>('AUTH_REPOSITORY');
 export const ALBUM_REPOSITORY = new InjectionToken<AlbumRepository>('ALBUM_REPOSITORY');
 export const FILE_REPOSITORY = new InjectionToken<FileRepository>('FILE_REPOSITORY');
 export const DEVICE_REPOSITORY = new InjectionToken<DeviceRepository>('DEVICE_REPOSITORY');
+export const APP_RELEASE_REPOSITORY = new InjectionToken<AppReleaseRepository>('APP_RELEASE_REPOSITORY');

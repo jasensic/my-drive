@@ -18,33 +18,48 @@ import {
   SaveSyncProfileService,
 } from './application/devices.use-cases';
 import {
+  DeleteAppReleaseService,
+  InspectApkService,
+  ListAppReleasesService,
+  PublishAppReleaseService,
+  UpdateAppReleaseService,
+} from './application/app-releases.use-cases';
+import {
   AssignFileAlbumService,
   CreateAlbumService,
   ListLibraryService,
+  LoadMediaBlobService,
   UploadMediaService,
 } from './application/library.use-cases';
 import {
   ASSIGN_FILE_ALBUM,
   CHECK_SETUP,
   CREATE_ALBUM,
+  LIST_APP_RELEASES,
   LIST_DEVICES,
   LIST_LIBRARY,
+  LOAD_MEDIA_BLOB,
   LOAD_SYNC_PROFILE,
   LOGIN,
+  INSPECT_APK,
+  PUBLISH_APP_RELEASE,
   REGISTER_DEVICE,
   SAVE_SYNC_PROFILE,
   SESSION_QUERY,
   SETUP_ADMIN,
+  UPDATE_APP_RELEASE,
+  DELETE_APP_RELEASE,
   UPLOAD_MEDIA,
 } from './application/use-cases.tokens';
 import { DATA_PROVIDERS, authInterceptor } from './data/http.adapters';
+import { PRIMENG_LICENSE } from '../primeng-license';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    providePrimeNG({ theme: { preset: Aura } }),
+    providePrimeNG({ theme: { preset: Aura }, license: PRIMENG_LICENSE }),
     MessageService,
     ...DATA_PROVIDERS,
     { provide: CHECK_SETUP, useClass: CheckSetupService },
@@ -55,9 +70,15 @@ export const appConfig: ApplicationConfig = {
     { provide: UPLOAD_MEDIA, useClass: UploadMediaService },
     { provide: CREATE_ALBUM, useClass: CreateAlbumService },
     { provide: ASSIGN_FILE_ALBUM, useClass: AssignFileAlbumService },
+    { provide: LOAD_MEDIA_BLOB, useClass: LoadMediaBlobService },
     { provide: LIST_DEVICES, useClass: ListDevicesService },
     { provide: REGISTER_DEVICE, useClass: RegisterDeviceService },
     { provide: LOAD_SYNC_PROFILE, useClass: LoadSyncProfileService },
     { provide: SAVE_SYNC_PROFILE, useClass: SaveSyncProfileService },
+    { provide: LIST_APP_RELEASES, useClass: ListAppReleasesService },
+    { provide: INSPECT_APK, useClass: InspectApkService },
+    { provide: PUBLISH_APP_RELEASE, useClass: PublishAppReleaseService },
+    { provide: UPDATE_APP_RELEASE, useClass: UpdateAppReleaseService },
+    { provide: DELETE_APP_RELEASE, useClass: DeleteAppReleaseService },
   ],
 };

@@ -1,11 +1,13 @@
 import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Album, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
+  APP_RELEASE_REPOSITORY,
   AUTH_REPOSITORY,
   AlbumRepository,
+  AppReleaseRepository,
   AuthRepository,
   DEVICE_REPOSITORY,
   DeviceRepository,
@@ -100,6 +102,10 @@ export class HttpFileRepository implements FileRepository {
   contentUrl(id: string): string {
     return `/v1/files/${id}/content`;
   }
+  blob(id: string, thumbnail: boolean): Promise<Blob> {
+    const path = thumbnail ? `/v1/files/${id}/thumbnail` : `/v1/files/${id}/content`;
+    return firstValueFrom(this.http.get(path, { responseType: 'blob' }));
+  }
 }
 
 @Injectable()
@@ -121,10 +127,56 @@ export class HttpDeviceRepository implements DeviceRepository {
   }
 }
 
+@Injectable()
+export class HttpAppReleaseRepository implements AppReleaseRepository {
+  constructor(private readonly http: HttpClient) {}
+
+  list(): Promise<AppRelease[]> {
+    return firstValueFrom(this.http.get<AppRelease[]>('/v1/app/releases'));
+  }
+
+  async latest(): Promise<AppRelease | null> {
+    try {
+      return await firstValueFrom(this.http.get<AppRelease>('/v1/app/releases/latest'));
+    } catch {
+      return null;
+    }
+  }
+
+  inspect(apk: File): Promise<ApkIdentity> {
+    const body = new FormData();
+    body.append('apk', apk, apk.name);
+    return firstValueFrom(this.http.post<ApkIdentity>('/v1/app/releases/inspect', body));
+  }
+
+  publish(input: { changelog: string; apk: File }): Promise<AppRelease> {
+    const body = new FormData();
+    body.append('changelog', input.changelog);
+    body.append('apk', input.apk, input.apk.name);
+    return firstValueFrom(this.http.post<AppRelease>('/v1/app/releases', body));
+  }
+
+  update(id: string, input: { changelog?: string; apk?: File }): Promise<AppRelease> {
+    const body = new FormData();
+    if (input.changelog !== undefined) {
+      body.append('changelog', input.changelog);
+    }
+    if (input.apk) {
+      body.append('apk', input.apk, input.apk.name);
+    }
+    return firstValueFrom(this.http.patch<AppRelease>(`/v1/app/releases/${id}`, body));
+  }
+
+  async remove(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/app/releases/${id}`));
+  }
+}
+
 export const DATA_PROVIDERS = [
   { provide: TOKEN_STORE, useClass: LocalTokenStore },
   { provide: AUTH_REPOSITORY, useClass: HttpAuthRepository },
   { provide: ALBUM_REPOSITORY, useClass: HttpAlbumRepository },
   { provide: FILE_REPOSITORY, useClass: HttpFileRepository },
   { provide: DEVICE_REPOSITORY, useClass: HttpDeviceRepository },
+  { provide: APP_RELEASE_REPOSITORY, useClass: HttpAppReleaseRepository },
 ];

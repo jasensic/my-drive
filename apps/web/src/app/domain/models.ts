@@ -23,6 +23,8 @@ export interface MediaFile {
   uploaded_at: string;
   content_url: string;
   thumbnail_url: string | null;
+  preview_url?: string;
+  media_url?: string;
 }
 
 export interface Device {
@@ -43,4 +45,20 @@ export interface SyncProfile {
   device_id: string;
   name: string;
   rules: SyncRule[];
+}
+
+export interface ApkIdentity {
+  version_code: number;
+  version_name: string;
+}
+
+export interface AppRelease {
+  id: string;
+  version_code: number;
+  version_name: string;
+  changelog: string;
+  checksum: string;
+  size: number;
+  published_at: string;
+  download_url: string;
 }

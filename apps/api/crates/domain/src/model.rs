@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AlbumId, DeviceId, FileId, SyncProfileId, UserId};
+use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, SyncProfileId, UserId};
 use crate::media::MediaKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,10 +74,25 @@ pub struct ManifestEntry {
     pub size: u64,
     pub mime: String,
     pub checksum: String,
+    pub media_kind: MediaKind,
+    pub album_id: Option<AlbumId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncManifest {
     pub generated_at: DateTime<Utc>,
     pub files: Vec<ManifestEntry>,
+    pub albums: Vec<Album>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppRelease {
+    pub id: AppReleaseId,
+    pub version_code: i32,
+    pub version_name: String,
+    pub changelog: String,
+    pub object_key: String,
+    pub checksum: String,
+    pub size: u64,
+    pub published_at: DateTime<Utc>,
 }

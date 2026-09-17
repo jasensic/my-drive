@@ -15,8 +15,8 @@ cd apps/web && npm install && npm start
 cd apps/web && npm test -- --watch=false
 cd apps/web && npm run test:e2e
 
-# Android (lógica de dominio, sin emulador)
-cd apps/android && ./gradlew :domain:test
+# Android (lógica de dominio, sin emulador; APK de release)
+cd apps/android && ./gradlew :domain:test :app:assembleRelease
 
 # Stack
 docker compose -f deploy/docker-compose.yml up --build
@@ -35,4 +35,4 @@ No saltes un puerto para “ir más rápido”. Si el caso de uso necesita I/O, 
 
 ## Contrato HTTP
 
-REST `/v1`, JWT tras `POST /v1/setup` o `POST /v1/login`. El manifiesto de sync es `POST /v1/sync/manifest`. OpenAPI en `/api-docs`.
+REST `/v1`, JWT tras `POST /v1/setup` o `POST /v1/login`. El manifiesto de sync es `POST /v1/sync/manifest`. Catálogo de APKs en `/v1/app/releases`. OpenAPI en `/api-docs`.

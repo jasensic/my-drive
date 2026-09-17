@@ -46,6 +46,45 @@ jobs:
         working-directory: apps/android
         run: ./gradlew :domain:test --no-daemon
 
+  android-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Decode upload keystore
+        working-directory: apps/android
+        env:
+          MYDRIVE_KEYSTORE_BASE64: ${{ secrets.MYDRIVE_KEYSTORE_BASE64 }}
+          MYDRIVE_STORE_PASSWORD: ${{ secrets.MYDRIVE_STORE_PASSWORD }}
+          MYDRIVE_KEY_PASSWORD: ${{ secrets.MYDRIVE_KEY_PASSWORD }}
+          MYDRIVE_KEY_ALIAS: ${{ secrets.MYDRIVE_KEY_ALIAS }}
+        run: |
+          if [ -z "$MYDRIVE_KEYSTORE_BASE64" ]; then
+            echo "No MYDRIVE_KEYSTORE_BASE64 secret; signing with the runner debug key"
+            exit 0
+          fi
+          echo "$MYDRIVE_KEYSTORE_BASE64" | base64 -d > mydrive-upload.jks
+          printf '%s\n' \
+            'storeFile=mydrive-upload.jks' \
+            "storePassword=$MYDRIVE_STORE_PASSWORD" \
+            "keyAlias=${MYDRIVE_KEY_ALIAS:-mydrive}" \
+            "keyPassword=${MYDRIVE_KEY_PASSWORD:-$MYDRIVE_STORE_PASSWORD}" \
+            > keystore.properties
+      - name: Assemble release APK
+        working-directory: apps/android
+        run: ./gradlew :app:assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: my-drive-apk
+          path: apps/android/app/build/outputs/apk/release/*.apk
+
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -72,7 +111,7 @@ jobs:
           MEMORY_BACKEND=true MDNS_ENABLE=false JWT_SECRET=ci-secret API_PORT=8080 API_PUBLIC_URL=http://localhost:8080 \
             ./apps/api/target/debug/mydrive-api &
           echo $! > /tmp/api.pid
-          cd apps/web && npx ng serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json &
+          cd apps/web && npm start -- --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json &
           echo $! > /tmp/web.pid
           for i in $(seq 1 60); do
             curl -sf http://127.0.0.1:8080/health && curl -sf http://127.0.0.1:4200 >/dev/null && break

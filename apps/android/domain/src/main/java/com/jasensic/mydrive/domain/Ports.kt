@@ -6,7 +6,7 @@ interface ConnectivityMonitor {
 }
 
 interface ServerDiscovery {
-    suspend fun find(timeoutMs: Long = 5_000): DiscoveredServer?
+    suspend fun find(timeoutMs: Long = 8_000): DiscoveredServer?
 }
 
 interface RemoteFileSource {
@@ -19,12 +19,16 @@ interface RemoteFileSource {
         lastSyncAt: String?,
         haveFileIds: Set<String>,
     ): SyncManifest
-    suspend fun download(url: String, token: String): ByteArray
+    suspend fun downloadTo(url: String, token: String, destinationPath: String)
+    suspend fun latestAppRelease(baseUrl: String, token: String): AppRelease?
 }
 
 interface LocalMediaStore {
-    suspend fun save(file: ManifestFile, bytes: ByteArray)
+    fun pathFor(fileId: String): String
+    suspend fun commit(file: ManifestFile, path: String)
     suspend fun knownIds(): Set<String>
+    suspend fun library(): LocalLibrary
+    suspend fun replaceAlbums(albums: List<Album>)
 }
 
 interface SyncStateRepository {
@@ -32,4 +36,17 @@ interface SyncStateRepository {
     suspend fun saveLastSyncAt(value: String)
     suspend fun saveSession(session: AuthSession)
     suspend fun session(): AuthSession?
+    suspend fun saveServer(server: DiscoveredServer)
+    suspend fun lastServer(): DiscoveredServer?
+    suspend fun clearSession()
+}
+
+interface AppVersion {
+    fun currentCode(): Int
+    fun currentName(): String
+}
+
+interface AppUpdateInstaller {
+    fun apkPath(release: AppRelease): String
+    suspend fun install(apkPath: String)
 }

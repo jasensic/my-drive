@@ -6,9 +6,10 @@ Almacenamiento y sincronización multimedia en la red local. El servidor vive on
 
 - API REST en Rust (Axum) con PostgreSQL y MinIO
 - Portal web Angular + PrimeNG (subida, álbumes, reproductor, perfiles de sync)
-- App Android nativa (descubrimiento mDNS, manifiesto JSON, descarga en paralelo)
+- App Android nativa (descubrimiento mDNS, manifiesto JSON, descarga en paralelo, biblioteca local, actualización in-app)
 - Docker Compose para levantar el stack y Watchtower para actualizar imágenes
 - Clean Architecture en API, portal y Android: las capas solo se hablan por interfaces
+- Catálogo de APKs en el backoffice (`/app-updates`) para actualizar móviles en la LAN
 
 No incluye (aún): iOS, Fastlane / tiendas, gRPC ni transcodificación de vídeo.
 
@@ -40,6 +41,8 @@ El primer acceso abre la pantalla de **setup**: crea el usuario administrador. D
 
 El API anuncia `_mydrive._tcp.local`. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API. En macOS/Windows de desarrollo, usa la IP del host o el nombre `host.docker.internal`.
 
+La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el host LAN descubierto. Si mDNS falla, se puede introducir `IP:puerto` a mano (por ejemplo `192.168.1.10:8080`).
+
 ### Actualizaciones on-premise
 
 Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódico y reinicia `api` y `web` sin tocar los volúmenes de PostgreSQL y MinIO.
@@ -48,14 +51,18 @@ Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódi
 docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
+Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en el portal (**App updates**): el servidor lee `versionCode`/`versionName` del propio APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` del APK es mayor, descarga e instala. CI genera `app-release.apk` en cada PR y en tags `v*`.
+
 ## Funcionalidades principales
 
 1. Setup inicial e inicio de sesión (JWT)
-2. Subida de fotos, vídeos y música a MinIO con metadatos en PostgreSQL
+2. Subida de fotos, vídeos y música a MinIO (prefijos `images/`, `videos/`, `music/`, `other/`; miniaturas en `images/thumbs/`) con metadatos en PostgreSQL
 3. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
 4. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
 5. Manifiesto JSON de archivos faltantes y descarga paralela en Android
-6. Descubrimiento automático del servidor en la Wi-Fi local
+6. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
+7. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
+8. Publicación de APKs en el portal y actualización de Android al reconectar
 
 ## Desarrollo sin Docker (API)
 
@@ -65,7 +72,7 @@ Necesitas PostgreSQL y MinIO en marcha (el compose de `deploy/` sirve). Luego:
 export $(grep -v '^#' .env | xargs)
 cd apps/api && cargo test && cargo run -p mydrive-api
 cd apps/web && npm install && npm start
-cd apps/android && ./gradlew :domain:test
+cd apps/android && ./gradlew :domain:test :app:assembleRelease
 ```
 
 ## Estructura

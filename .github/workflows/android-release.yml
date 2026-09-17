@@ -16,7 +16,28 @@ jobs:
           java-version: "17"
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-      - name: Assemble release APK (debug-signed)
+        with:
+          packages: platform-tools
+      - name: Decode upload keystore
+        working-directory: apps/android
+        env:
+          MYDRIVE_KEYSTORE_BASE64: ${{ secrets.MYDRIVE_KEYSTORE_BASE64 }}
+          MYDRIVE_STORE_PASSWORD: ${{ secrets.MYDRIVE_STORE_PASSWORD }}
+          MYDRIVE_KEY_PASSWORD: ${{ secrets.MYDRIVE_KEY_PASSWORD }}
+          MYDRIVE_KEY_ALIAS: ${{ secrets.MYDRIVE_KEY_ALIAS }}
+        run: |
+          if [ -z "$MYDRIVE_KEYSTORE_BASE64" ]; then
+            echo "No MYDRIVE_KEYSTORE_BASE64 secret; signing with the runner debug key"
+            exit 0
+          fi
+          echo "$MYDRIVE_KEYSTORE_BASE64" | base64 -d > mydrive-upload.jks
+          printf '%s\n' \
+            'storeFile=mydrive-upload.jks' \
+            "storePassword=$MYDRIVE_STORE_PASSWORD" \
+            "keyAlias=${MYDRIVE_KEY_ALIAS:-mydrive}" \
+            "keyPassword=${MYDRIVE_KEY_PASSWORD:-$MYDRIVE_STORE_PASSWORD}" \
+            > keystore.properties
+      - name: Assemble release APK
         working-directory: apps/android
         run: ./gradlew :app:assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4

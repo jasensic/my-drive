@@ -89,7 +89,7 @@ impl UploadFile for UploadFileService {
         };
         let media_kind = MediaKind::from_mime(&mime);
         let checksum = format!("sha256:{:x}", Sha256::digest(&cmd.bytes));
-        let object_key = format!("originals/{id}");
+        let object_key = domain::media::object_key(media_kind, id, &cmd.name);
         self.deps
             .objects
             .put(&object_key, cmd.bytes.clone(), &mime)
@@ -100,7 +100,7 @@ impl UploadFile for UploadFileService {
             .thumbnailer
             .jpeg_thumbnail(&cmd.bytes, &mime)
             .map(|thumb| {
-                let key = format!("thumbnails/{id}.jpg");
+                let key = domain::media::thumbnail_object_key(id);
                 (key, thumb)
             });
         if let Some((key, thumb)) = &thumbnail_key {

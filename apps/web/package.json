@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
+    "start": "node ./scripts/ng-env.mjs serve",
+    "build": "node ./scripts/ng-env.mjs build",
+    "watch": "node ./scripts/ng-env.mjs build --watch --configuration development",
+    "test": "node ./scripts/ng-env.mjs test",
     "test:e2e": "playwright test"
   },
   "private": true,

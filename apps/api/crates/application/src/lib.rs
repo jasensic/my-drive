@@ -4,8 +4,8 @@ pub mod usecases;
 use std::sync::Arc;
 
 use domain::ports::{
-    AlbumRepository, Clock, DeviceRepository, FileRepository, ObjectStore, PasswordHasher,
-    SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
+    AlbumRepository, ApkInspector, AppReleaseRepository, Clock, DeviceRepository, FileRepository, ObjectStore,
+    PasswordHasher, SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
 };
 
 pub use error::AppError;
@@ -18,11 +18,13 @@ pub struct Deps {
     pub files: Arc<dyn FileRepository>,
     pub devices: Arc<dyn DeviceRepository>,
     pub profiles: Arc<dyn SyncProfileRepository>,
+    pub app_releases: Arc<dyn AppReleaseRepository>,
     pub objects: Arc<dyn ObjectStore>,
     pub hasher: Arc<dyn PasswordHasher>,
     pub tokens: Arc<dyn TokenService>,
     pub clock: Arc<dyn Clock>,
     pub thumbnailer: Arc<dyn Thumbnailer>,
+    pub apk_inspector: Arc<dyn ApkInspector>,
 }
 
 /// Composition helper used by the presentation binary. Handlers still depend on the
@@ -45,6 +47,14 @@ pub struct Services {
     pub upsert_sync_profile: Arc<dyn UpsertSyncProfile>,
     pub get_sync_profile: Arc<dyn GetSyncProfile>,
     pub build_sync_manifest: Arc<dyn BuildSyncManifest>,
+    pub publish_app_release: Arc<dyn PublishAppRelease>,
+    pub list_app_releases: Arc<dyn ListAppReleases>,
+    pub get_latest_app_release: Arc<dyn GetLatestAppRelease>,
+    pub get_app_release: Arc<dyn GetAppRelease>,
+    pub get_app_release_apk: Arc<dyn GetAppReleaseApk>,
+    pub inspect_apk: Arc<dyn InspectApk>,
+    pub update_app_release: Arc<dyn UpdateAppRelease>,
+    pub delete_app_release: Arc<dyn DeleteAppRelease>,
 }
 
 impl Services {
@@ -66,7 +76,15 @@ impl Services {
             list_devices: Arc::new(ListDevicesService::new(deps.clone())),
             upsert_sync_profile: Arc::new(UpsertSyncProfileService::new(deps.clone())),
             get_sync_profile: Arc::new(GetSyncProfileService::new(deps.clone())),
-            build_sync_manifest: Arc::new(BuildSyncManifestService::new(deps)),
+            build_sync_manifest: Arc::new(BuildSyncManifestService::new(deps.clone())),
+            publish_app_release: Arc::new(PublishAppReleaseService::new(deps.clone())),
+            list_app_releases: Arc::new(ListAppReleasesService::new(deps.clone())),
+            get_latest_app_release: Arc::new(GetLatestAppReleaseService::new(deps.clone())),
+            get_app_release: Arc::new(GetAppReleaseService::new(deps.clone())),
+            get_app_release_apk: Arc::new(GetAppReleaseApkService::new(deps.clone())),
+            inspect_apk: Arc::new(InspectApkService::new(deps.clone())),
+            update_app_release: Arc::new(UpdateAppReleaseService::new(deps.clone())),
+            delete_app_release: Arc::new(DeleteAppReleaseService::new(deps)),
         }
     }
 }

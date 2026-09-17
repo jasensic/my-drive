@@ -19,4 +19,8 @@ test('setup, upload, and create a sync profile', async ({ page }) => {
   await expect(page.getByText('Device A')).toBeVisible();
   await page.getByRole('button', { name: 'Edit rules' }).click();
   await expect(page.getByText('Sync rules')).toBeVisible();
+
+  await page.getByRole('link', { name: 'App updates' }).click();
+  await expect(page.getByText('Android app updates')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publish' })).toBeVisible();
 });

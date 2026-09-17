@@ -1,3 +1,4 @@
+pub mod apk;
 pub mod clock;
 pub mod config;
 pub mod hasher;
@@ -11,7 +12,6 @@ pub mod thumbnail;
 use std::sync::Arc;
 
 use application::Deps;
-
 use crate::clock::SystemClock;
 use crate::config::Settings;
 use crate::hasher::Argon2Hasher;
@@ -20,12 +20,14 @@ use crate::memory::MemoryStore;
 use crate::postgres::PgRepos;
 use crate::s3::S3Store;
 use crate::thumbnail::ImageThumbnailer;
+use crate::apk::ZipApkInspector;
 
 pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::DomainError> {
     let hasher = Arc::new(Argon2Hasher::new());
     let tokens = Arc::new(JwtTokenService::new(&settings.jwt_secret));
     let clock = Arc::new(SystemClock);
     let thumbnailer = Arc::new(ImageThumbnailer);
+    let apk_inspector = Arc::new(ZipApkInspector);
 
     if settings.memory_backend {
         let store = MemoryStore::new();
@@ -35,11 +37,13 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             files: store.clone(),
             devices: store.clone(),
             profiles: store.clone(),
+            app_releases: store.clone(),
             objects: store,
             hasher,
             tokens,
             clock,
             thumbnailer,
+            apk_inspector,
         }));
     }
 
@@ -51,11 +55,13 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         albums: Arc::new(repos.clone()),
         files: Arc::new(repos.clone()),
         devices: Arc::new(repos.clone()),
-        profiles: Arc::new(repos),
+        profiles: Arc::new(repos.clone()),
+        app_releases: Arc::new(repos),
         objects: Arc::new(objects),
         hasher,
         tokens,
         clock,
         thumbnailer,
+        apk_inspector,
     }))
 }

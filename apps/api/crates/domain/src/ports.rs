@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 
-use crate::ids::{AlbumId, DeviceId, FileId, UserId};
-use crate::model::{Album, Device, FileRecord, SyncProfile, User};
+use crate::apk::ApkIdentity;
+use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, UserId};
+use crate::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
 use crate::DomainError;
 
 #[async_trait::async_trait]
@@ -58,6 +59,21 @@ pub trait SyncProfileRepository: Send + Sync {
 }
 
 #[async_trait::async_trait]
+pub trait AppReleaseRepository: Send + Sync {
+    async fn insert(&self, release: &AppRelease) -> Result<(), DomainError>;
+    async fn latest(&self) -> Result<Option<AppRelease>, DomainError>;
+    async fn list(&self) -> Result<Vec<AppRelease>, DomainError>;
+    async fn find_by_id(&self, id: AppReleaseId) -> Result<Option<AppRelease>, DomainError>;
+    async fn find_by_version_code(&self, version_code: i32) -> Result<Option<AppRelease>, DomainError>;
+    async fn update(&self, release: &AppRelease) -> Result<(), DomainError>;
+    async fn delete(&self, id: AppReleaseId) -> Result<(), DomainError>;
+}
+
+pub trait ApkInspector: Send + Sync {
+    fn inspect(&self, apk: &[u8]) -> Result<ApkIdentity, DomainError>;
+}
+
+#[async_trait::async_trait]
 pub trait ObjectStore: Send + Sync {
     async fn put(&self, key: &str, bytes: bytes::Bytes, content_type: &str) -> Result<(), DomainError>;
     async fn get(&self, key: &str) -> Result<bytes::Bytes, DomainError>;
@@ -67,6 +83,7 @@ pub trait ObjectStore: Send + Sync {
         start: u64,
         end: Option<u64>,
     ) -> Result<(bytes::Bytes, u64), DomainError>;
+    async fn delete(&self, key: &str) -> Result<(), DomainError>;
 }
 
 pub trait Thumbnailer: Send + Sync {

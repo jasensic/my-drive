@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use domain::model::{Album, Device, FileRecord, SyncProfile, User};
+use domain::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
 use domain::ports::{
-    AlbumRepository, DeviceRepository, FileRepository, ObjectStore, SyncProfileRepository,
-    UserRepository,
+    AlbumRepository, AppReleaseRepository, DeviceRepository, FileRepository, ObjectStore,
+    SyncProfileRepository, UserRepository,
 };
-use domain::{AlbumId, DeviceId, DomainError, FileId, UserId};
+use domain::{AlbumId, AppReleaseId, DeviceId, DomainError, FileId, UserId};
 
 #[derive(Clone, Default)]
 pub struct MemoryStore {
@@ -23,6 +23,7 @@ struct Inner {
     files: Vec<FileRecord>,
     devices: Vec<Device>,
     profiles: Vec<SyncProfile>,
+    app_releases: Vec<AppRelease>,
     objects: HashMap<String, Vec<u8>>,
 }
 
@@ -204,6 +205,78 @@ impl SyncProfileRepository for MemoryStore {
 }
 
 #[async_trait]
+impl AppReleaseRepository for MemoryStore {
+    async fn insert(&self, release: &AppRelease) -> Result<(), DomainError> {
+        self.inner.lock().unwrap().app_releases.push(release.clone());
+        Ok(())
+    }
+
+    async fn latest(&self) -> Result<Option<AppRelease>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .app_releases
+            .iter()
+            .max_by_key(|r| r.version_code)
+            .cloned())
+    }
+
+    async fn list(&self) -> Result<Vec<AppRelease>, DomainError> {
+        let mut releases = self.inner.lock().unwrap().app_releases.clone();
+        releases.sort_by(|a, b| b.version_code.cmp(&a.version_code));
+        Ok(releases)
+    }
+
+    async fn find_by_id(&self, id: AppReleaseId) -> Result<Option<AppRelease>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .app_releases
+            .iter()
+            .find(|r| r.id == id)
+            .cloned())
+    }
+
+    async fn find_by_version_code(
+        &self,
+        version_code: i32,
+    ) -> Result<Option<AppRelease>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .app_releases
+            .iter()
+            .find(|r| r.version_code == version_code)
+            .cloned())
+    }
+
+    async fn update(&self, release: &AppRelease) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.app_releases.iter().any(|r| r.version_code == release.version_code && r.id != release.id) {
+            return Err(DomainError::conflict("version_code already published"));
+        }
+        if let Some(existing) = inner.app_releases.iter_mut().find(|r| r.id == release.id) {
+            *existing = release.clone();
+            return Ok(());
+        }
+        Err(DomainError::not_found("app release not found"))
+    }
+
+    async fn delete(&self, id: AppReleaseId) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let before = inner.app_releases.len();
+        inner.app_releases.retain(|r| r.id != id);
+        if inner.app_releases.len() == before {
+            return Err(DomainError::not_found("app release not found"));
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl ObjectStore for MemoryStore {
     async fn put(&self, key: &str, bytes: Bytes, _content_type: &str) -> Result<(), DomainError> {
         self.inner
@@ -236,5 +309,10 @@ impl ObjectStore for MemoryStore {
         let end = end.unwrap_or(total.saturating_sub(1)).min(total.saturating_sub(1));
         let start = start.min(end);
         Ok((data.slice(start as usize..=end as usize), total))
+    }
+
+    async fn delete(&self, key: &str) -> Result<(), DomainError> {
+        self.inner.lock().unwrap().objects.remove(key);
+        Ok(())
     }
 }
