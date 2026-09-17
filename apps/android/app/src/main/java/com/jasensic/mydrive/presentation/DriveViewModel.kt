@@ -151,7 +151,11 @@ class DriveViewModel @Inject constructor(
             _ui.value = _ui.value.copy(progress = "Downloading update ${release.versionName}…", error = null)
             runCatching { installUpdate.execute(release) }
                 .onSuccess {
-                    _ui.value = _ui.value.copy(progress = null, availableUpdate = null)
+                    _ui.value = _ui.value.copy(
+                        progress = "Installed ${release.versionName}. Restart the app if it did not reopen.",
+                        availableUpdate = null,
+                        error = null,
+                    )
                 }
                 .onFailure {
                     _ui.value = _ui.value.copy(progress = null, error = it.message)

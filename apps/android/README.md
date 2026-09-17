@@ -20,7 +20,11 @@ URLs in the manifest often use `API_PUBLIC_URL` (`http://localhost` in compose).
 
 ## In-app updates
 
-The portal **App updates** page publishes an APK to `POST /v1/app/releases`. After a successful connect, the app calls `GET /v1/app/releases/latest` and, if `versionCode` is higher than `BuildConfig.VERSION_CODE`, offers to download and install it (requires “install unknown apps” for my-drive).
+The portal **App updates** page publishes an APK to `POST /v1/app/releases`. After a successful connect, the app calls `GET /v1/app/releases/latest` and, if `versionCode` is higher than `BuildConfig.VERSION_CODE`, offers to download and install it (requires “install unknown apps” for my-drive). Failures surface in the app and in logcat tag `MyDriveUpdate`. On Windows:
+
+```powershell
+.\apps\android\scripts\dump-update-logs.ps1
+```
 
 Publish APKs produced by CI:
 
