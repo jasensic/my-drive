@@ -1,11 +1,8 @@
 package com.jasensic.mydrive.data
 
-import android.content.ContentValues
 import android.content.Context
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Dao
@@ -17,32 +14,68 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.AuthSession
+import com.jasensic.mydrive.domain.DiscoveredServer
+import com.jasensic.mydrive.domain.LocalFile
+import com.jasensic.mydrive.domain.LocalLibrary
 import com.jasensic.mydrive.domain.LocalMediaStore
 import com.jasensic.mydrive.domain.ManifestFile
 import com.jasensic.mydrive.domain.SyncStateRepository
+import com.jasensic.mydrive.domain.parseMediaKind
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore("mydrive")
 
 @Entity(tableName = "local_files")
-data class LocalFileEntity(@PrimaryKey val id: String, val name: String)
+data class LocalFileEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val mime: String,
+    val mediaKind: String,
+    val albumId: String?,
+    val size: Long,
+    val path: String,
+)
+
+@Entity(tableName = "local_albums")
+data class LocalAlbumEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+)
 
 @Dao
 interface LocalFileDao {
     @Query("SELECT id FROM local_files")
     suspend fun ids(): List<String>
 
+    @Query("SELECT * FROM local_files ORDER BY name")
+    suspend fun all(): List<LocalFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: LocalFileEntity)
 }
 
-@Database(entities = [LocalFileEntity::class], version = 1)
+@Dao
+interface LocalAlbumDao {
+    @Query("SELECT * FROM local_albums ORDER BY name")
+    suspend fun all(): List<LocalAlbumEntity>
+
+    @Query("DELETE FROM local_albums")
+    suspend fun clear()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<LocalAlbumEntity>)
+}
+
+@Database(entities = [LocalFileEntity::class, LocalAlbumEntity::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun files(): LocalFileDao
+    abstract fun albums(): LocalAlbumDao
 }
 
 @Singleton
@@ -50,33 +83,53 @@ class RoomLocalMediaStore @Inject constructor(
     @ApplicationContext private val context: Context,
     db: AppDb,
 ) : LocalMediaStore {
-    private val dao = db.files()
+    private val files = db.files()
+    private val albums = db.albums()
+    private val mediaDir = File(context.filesDir, "media").apply { mkdirs() }
 
-    override suspend fun knownIds(): Set<String> = dao.ids().toSet()
+    override fun pathFor(fileId: String): String = File(mediaDir, fileId).absolutePath
 
-    override suspend fun save(file: ManifestFile, bytes: ByteArray) {
-        val collection = when {
-            file.mime.startsWith("image/") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            file.mime.startsWith("video/") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            file.mime.startsWith("audio/") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            else -> MediaStore.Downloads.EXTERNAL_CONTENT_URI
+    override suspend fun commit(file: ManifestFile, path: String) {
+        files.upsert(
+            LocalFileEntity(
+                id = file.id,
+                name = file.name,
+                mime = file.mime,
+                mediaKind = file.mediaKind.name.lowercase(),
+                albumId = file.albumId,
+                size = file.size,
+                path = path,
+            ),
+        )
+    }
+
+    override suspend fun knownIds(): Set<String> = files.ids().toSet()
+
+    override suspend fun library(): LocalLibrary {
+        val albumRows = albums.all()
+        val albumById = albumRows.associate { it.id to it.name }
+        return LocalLibrary(
+            albums = albumRows.map { Album(it.id, it.name) },
+            files = files.all().map { row ->
+                LocalFile(
+                    id = row.id,
+                    name = row.name,
+                    mime = row.mime,
+                    mediaKind = parseMediaKind(row.mediaKind),
+                    albumId = row.albumId,
+                    albumName = row.albumId?.let { albumById[it] },
+                    size = row.size,
+                    path = row.path,
+                )
+            },
+        )
+    }
+
+    override suspend fun replaceAlbums(albums: List<Album>) {
+        this.albums.clear()
+        if (albums.isNotEmpty()) {
+            this.albums.upsertAll(albums.map { LocalAlbumEntity(it.id, it.name) })
         }
-        val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-            put(MediaStore.MediaColumns.MIME_TYPE, file.mime)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/my-drive")
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
-            }
-        }
-        val uri = context.contentResolver.insert(collection, values) ?: error("cannot insert ${file.name}")
-        context.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            values.clear()
-            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-            context.contentResolver.update(uri, values, null, null)
-        }
-        dao.upsert(LocalFileEntity(file.id, file.name))
     }
 }
 
@@ -88,6 +141,9 @@ class DataStoreSyncState @Inject constructor(
     private val userKey = stringPreferencesKey("username")
     private val deviceKey = stringPreferencesKey("deviceId")
     private val syncKey = stringPreferencesKey("lastSync")
+    private val hostKey = stringPreferencesKey("serverHost")
+    private val portKey = intPreferencesKey("serverPort")
+    private val serverNameKey = stringPreferencesKey("serverName")
 
     override suspend fun lastSyncAt(): String? = context.dataStore.data.first()[syncKey]
 
@@ -108,9 +164,26 @@ class DataStoreSyncState @Inject constructor(
         val token = prefs[tokenKey] ?: return null
         return AuthSession(token, prefs[userKey] ?: "", prefs[deviceKey])
     }
+
+    override suspend fun saveServer(server: DiscoveredServer) {
+        context.dataStore.edit {
+            it[hostKey] = server.host
+            it[portKey] = server.port
+            it[serverNameKey] = server.name
+        }
+    }
+
+    override suspend fun lastServer(): DiscoveredServer? {
+        val prefs = context.dataStore.data.first()
+        val host = prefs[hostKey] ?: return null
+        val port = prefs[portKey] ?: return null
+        return DiscoveredServer(host, port, prefs[serverNameKey] ?: host)
+    }
 }
 
 @Singleton
 class DbProvider @Inject constructor(@ApplicationContext context: Context) {
-    val db: AppDb = Room.databaseBuilder(context, AppDb::class.java, "mydrive.db").build()
+    val db: AppDb = Room.databaseBuilder(context, AppDb::class.java, "mydrive.db")
+        .fallbackToDestructiveMigration()
+        .build()
 }

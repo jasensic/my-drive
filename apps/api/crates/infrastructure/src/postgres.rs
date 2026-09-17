@@ -1,10 +1,13 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use domain::model::{Album, Device, FileRecord, SyncProfile, SyncRule, User};
+use domain::model::{Album, AppRelease, Device, FileRecord, SyncProfile, SyncRule, User};
 use domain::ports::{
-    AlbumRepository, DeviceRepository, FileRepository, SyncProfileRepository, UserRepository,
+    AlbumRepository, AppReleaseRepository, DeviceRepository, FileRepository,
+    SyncProfileRepository, UserRepository,
 };
-use domain::{AlbumId, DeviceId, DomainError, FileId, MediaKind, SyncProfileId, UserId};
+use domain::{
+    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, MediaKind, SyncProfileId, UserId,
+};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -357,4 +360,88 @@ impl SyncProfileRepository for PgRepos {
             rules,
         }))
     }
+}
+
+#[async_trait]
+impl AppReleaseRepository for PgRepos {
+    async fn insert(&self, release: &AppRelease) -> Result<(), DomainError> {
+        sqlx::query(
+            "INSERT INTO app_releases (id, version_code, version_name, changelog, object_key, checksum, size, published_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        )
+        .bind(release.id.0)
+        .bind(release.version_code)
+        .bind(&release.version_name)
+        .bind(&release.changelog)
+        .bind(&release.object_key)
+        .bind(&release.checksum)
+        .bind(release.size as i64)
+        .bind(release.published_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn latest(&self) -> Result<Option<AppRelease>, DomainError> {
+        let row = sqlx::query(
+            "SELECT id, version_code, version_name, changelog, object_key, checksum, size, published_at
+             FROM app_releases ORDER BY version_code DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        row.map(row_to_release).transpose()
+    }
+
+    async fn list(&self) -> Result<Vec<AppRelease>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, version_code, version_name, changelog, object_key, checksum, size, published_at
+             FROM app_releases ORDER BY version_code DESC",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_release).collect()
+    }
+
+    async fn find_by_id(&self, id: AppReleaseId) -> Result<Option<AppRelease>, DomainError> {
+        let row = sqlx::query(
+            "SELECT id, version_code, version_name, changelog, object_key, checksum, size, published_at
+             FROM app_releases WHERE id = $1",
+        )
+        .bind(id.0)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        row.map(row_to_release).transpose()
+    }
+
+    async fn find_by_version_code(
+        &self,
+        version_code: i32,
+    ) -> Result<Option<AppRelease>, DomainError> {
+        let row = sqlx::query(
+            "SELECT id, version_code, version_name, changelog, object_key, checksum, size, published_at
+             FROM app_releases WHERE version_code = $1",
+        )
+        .bind(version_code)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        row.map(row_to_release).transpose()
+    }
+}
+
+fn row_to_release(r: sqlx::postgres::PgRow) -> Result<AppRelease, DomainError> {
+    Ok(AppRelease {
+        id: AppReleaseId::from_uuid(r.get("id")),
+        version_code: r.get("version_code"),
+        version_name: r.get("version_name"),
+        changelog: r.get("changelog"),
+        object_key: r.get("object_key"),
+        checksum: r.get("checksum"),
+        size: r.get::<i64, _>("size") as u64,
+        published_at: r.get("published_at"),
+    })
 }

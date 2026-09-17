@@ -1,7 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::dto::*;
-use crate::handlers::{albums, auth, devices, files, health, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, sync};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -24,6 +24,10 @@ use crate::handlers::{albums, auth, devices, files, health, sync};
         devices::get_profile,
         devices::put_profile,
         sync::manifest,
+        app::list,
+        app::latest,
+        app::publish,
+        app::apk,
     ),
     components(schemas(
         HealthResponse,
@@ -43,6 +47,7 @@ use crate::handlers::{albums, auth, devices, files, health, sync};
         ManifestRequest,
         ManifestFileDto,
         ManifestResponse,
+        AppReleaseDto,
         crate::error::ErrorBody,
     )),
     tags(

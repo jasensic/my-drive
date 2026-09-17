@@ -18,6 +18,10 @@ import {
   SaveSyncProfileService,
 } from './application/devices.use-cases';
 import {
+  ListAppReleasesService,
+  PublishAppReleaseService,
+} from './application/app-releases.use-cases';
+import {
   AssignFileAlbumService,
   CreateAlbumService,
   ListLibraryService,
@@ -27,10 +31,12 @@ import {
   ASSIGN_FILE_ALBUM,
   CHECK_SETUP,
   CREATE_ALBUM,
+  LIST_APP_RELEASES,
   LIST_DEVICES,
   LIST_LIBRARY,
   LOAD_SYNC_PROFILE,
   LOGIN,
+  PUBLISH_APP_RELEASE,
   REGISTER_DEVICE,
   SAVE_SYNC_PROFILE,
   SESSION_QUERY,
@@ -59,5 +65,7 @@ export const appConfig: ApplicationConfig = {
     { provide: REGISTER_DEVICE, useClass: RegisterDeviceService },
     { provide: LOAD_SYNC_PROFILE, useClass: LoadSyncProfileService },
     { provide: SAVE_SYNC_PROFILE, useClass: SaveSyncProfileService },
+    { provide: LIST_APP_RELEASES, useClass: ListAppReleasesService },
+    { provide: PUBLISH_APP_RELEASE, useClass: PublishAppReleaseService },
   ],
 };

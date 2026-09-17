@@ -193,6 +193,9 @@ pub struct ManifestFileDto {
     pub mime: String,
     pub checksum: String,
     pub url: String,
+    #[schema(value_type = String)]
+    pub media_kind: MediaKind,
+    pub album_id: Option<Uuid>,
 }
 
 impl ManifestFileDto {
@@ -204,6 +207,8 @@ impl ManifestFileDto {
             mime: entry.mime,
             checksum: entry.checksum,
             url: format!("{public_url}/v1/files/{}/content", entry.id),
+            media_kind: entry.media_kind,
+            album_id: entry.album_id.map(|a| a.0),
         }
     }
 }
@@ -212,6 +217,7 @@ impl ManifestFileDto {
 pub struct ManifestResponse {
     pub generated_at: DateTime<Utc>,
     pub files: Vec<ManifestFileDto>,
+    pub albums: Vec<AlbumDto>,
 }
 
 impl ManifestResponse {
@@ -223,6 +229,34 @@ impl ManifestResponse {
                 .into_iter()
                 .map(|e| ManifestFileDto::from_entry(e, public_url))
                 .collect(),
+            albums: manifest.albums.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct AppReleaseDto {
+    pub id: Uuid,
+    pub version_code: i32,
+    pub version_name: String,
+    pub changelog: String,
+    pub checksum: String,
+    pub size: u64,
+    pub published_at: DateTime<Utc>,
+    pub download_url: String,
+}
+
+impl AppReleaseDto {
+    pub fn from_release(release: domain::model::AppRelease, public_url: &str) -> Self {
+        Self {
+            id: release.id.0,
+            version_code: release.version_code,
+            version_name: release.version_name,
+            changelog: release.changelog,
+            checksum: release.checksum,
+            size: release.size,
+            published_at: release.published_at,
+            download_url: format!("{public_url}/v1/app/releases/{}/apk", release.id),
         }
     }
 }

@@ -1,11 +1,13 @@
 import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Album, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
+  APP_RELEASE_REPOSITORY,
   AUTH_REPOSITORY,
   AlbumRepository,
+  AppReleaseRepository,
   AuthRepository,
   DEVICE_REPOSITORY,
   DeviceRepository,
@@ -121,10 +123,42 @@ export class HttpDeviceRepository implements DeviceRepository {
   }
 }
 
+@Injectable()
+export class HttpAppReleaseRepository implements AppReleaseRepository {
+  constructor(private readonly http: HttpClient) {}
+
+  list(): Promise<AppRelease[]> {
+    return firstValueFrom(this.http.get<AppRelease[]>('/v1/app/releases'));
+  }
+
+  async latest(): Promise<AppRelease | null> {
+    try {
+      return await firstValueFrom(this.http.get<AppRelease>('/v1/app/releases/latest'));
+    } catch {
+      return null;
+    }
+  }
+
+  publish(input: {
+    versionCode: number;
+    versionName: string;
+    changelog: string;
+    apk: File;
+  }): Promise<AppRelease> {
+    const body = new FormData();
+    body.append('version_code', String(input.versionCode));
+    body.append('version_name', input.versionName);
+    body.append('changelog', input.changelog);
+    body.append('apk', input.apk, input.apk.name);
+    return firstValueFrom(this.http.post<AppRelease>('/v1/app/releases', body));
+  }
+}
+
 export const DATA_PROVIDERS = [
   { provide: TOKEN_STORE, useClass: LocalTokenStore },
   { provide: AUTH_REPOSITORY, useClass: HttpAuthRepository },
   { provide: ALBUM_REPOSITORY, useClass: HttpAlbumRepository },
   { provide: FILE_REPOSITORY, useClass: HttpFileRepository },
   { provide: DEVICE_REPOSITORY, useClass: HttpDeviceRepository },
+  { provide: APP_RELEASE_REPOSITORY, useClass: HttpAppReleaseRepository },
 ];

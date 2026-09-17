@@ -10,3 +10,4 @@ globs: deploy/**/*
 - Never put secrets in compose files; use `.env`.
 - Nginx serves the Angular SPA and reverse-proxies `/v1` and `/api-docs` to the API.
 - Persist Postgres and MinIO volumes; Watchtower may recreate `api` and `web` only.
+- Android APKs are **not** shipped by Watchtower. Publish them in the portal (stored in MinIO) so phones update on the next LAN connect.

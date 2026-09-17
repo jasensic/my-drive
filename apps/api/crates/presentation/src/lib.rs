@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{albums, auth, devices, files, health, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, sync};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
@@ -52,6 +52,12 @@ pub fn router(state: AppState) -> Router {
             get(devices::get_profile).put(devices::put_profile),
         )
         .route("/v1/sync/manifest", post(sync::manifest))
+        .route(
+            "/v1/app/releases",
+            get(app::list).post(app::publish),
+        )
+        .route("/v1/app/releases/latest", get(app::latest))
+        .route("/v1/app/releases/{id}/apk", get(app::apk))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 512))
         .layer(cors)
         .layer(TraceLayer::new_for_http())

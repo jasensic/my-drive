@@ -108,6 +108,63 @@ async fn setup_upload_and_manifest_flow() {
         .unwrap();
     assert_eq!(manifest["files"].as_array().unwrap().len(), 1);
     assert!(manifest["files"][0]["url"].as_str().unwrap().contains("/content"));
+    assert_eq!(manifest["files"][0]["media_kind"], "photo");
+    assert!(manifest["albums"].as_array().unwrap().is_empty());
+
+    let latest = client
+        .get(format!("{base}/v1/app/releases/latest"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(latest.status(), 404);
+
+    let apk_form = multipart::Form::new()
+        .text("version_code", "2")
+        .text("version_name", "0.2.0")
+        .text("changelog", "LAN sync and library browser")
+        .part(
+            "apk",
+            multipart::Part::bytes(b"fake-apk-bytes")
+                .file_name("my-drive-0.2.0.apk")
+                .mime_str("application/vnd.android.package-archive")
+                .unwrap(),
+        );
+    let published: Value = client
+        .post(format!("{base}/v1/app/releases"))
+        .bearer_auth(token)
+        .multipart(apk_form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(published["version_code"], 2);
+    assert_eq!(published["version_name"], "0.2.0");
+
+    let latest: Value = client
+        .get(format!("{base}/v1/app/releases/latest"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(latest["version_code"], 2);
+    assert!(latest["download_url"].as_str().unwrap().contains("/apk"));
+
+    let apk_bytes = client
+        .get(latest["download_url"].as_str().unwrap())
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(&apk_bytes[..], b"fake-apk-bytes");
 }
 
 #[allow(dead_code)]

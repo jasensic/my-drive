@@ -29,6 +29,7 @@ export class ShellComponent {
   items: MenuItem[] = [
     { label: 'Library', routerLink: '/library' },
     { label: 'Devices', routerLink: '/devices' },
+    { label: 'App updates', routerLink: '/app-updates' },
   ];
 
   constructor(

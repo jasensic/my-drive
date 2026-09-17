@@ -44,3 +44,14 @@ export interface SyncProfile {
   name: string;
   rules: SyncRule[];
 }
+
+export interface AppRelease {
+  id: string;
+  version_code: number;
+  version_name: string;
+  changelog: string;
+  checksum: string;
+  size: number;
+  published_at: string;
+  download_url: string;
+}

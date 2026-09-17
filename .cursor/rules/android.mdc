@@ -6,6 +6,9 @@ globs: apps/android/**/*
 # Android (`apps/android`)
 
 - `:domain` is pure JVM Kotlin (no Android SDK). Put entities, ports, and sync helpers there so `./gradlew :domain:test` runs in CI.
-- `:app` has `data` (Retrofit, Room, NSD, MediaStore, WorkManager) and `presentation` (Compose + ViewModels).
+- `:app` has `data` (Retrofit, Room, NSD, WorkManager, FileProvider) and `presentation` (Compose + ViewModels).
 - ViewModels depend on use-case interfaces. Hilt binds implementations.
 - mDNS service type: `_mydrive._tcp`.
+- After LAN login the client downloads the sync manifest, stores files under `filesDir/media`, and browses them offline.
+- In-app updates: `GET /v1/app/releases/latest` vs `BuildConfig.VERSION_CODE`, then install the APK from the backoffice catalog.
+- Compile the APK with `./gradlew :app:assembleRelease` (CI job `android-apk`).

@@ -43,12 +43,15 @@ pub fn evaluate_manifest(
             size: file.size,
             mime: file.mime.clone(),
             checksum: file.checksum.clone(),
+            media_kind: file.media_kind,
+            album_id: file.album_id,
         })
         .collect();
 
     SyncManifest {
         generated_at: now,
         files: selected,
+        albums: Vec::new(),
     }
 }
 
@@ -58,7 +61,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::ids::{FileId, UserId};
+    use crate::ids::{AlbumId, FileId, UserId};
     use crate::media::MediaKind;
 
     fn file(kind: MediaKind, days_ago: i64, size: u64) -> FileRecord {
@@ -139,5 +142,22 @@ mod tests {
         have.insert(photo.id);
         let manifest = evaluate_manifest(&[photo], &rules, &have, now);
         assert!(manifest.files.is_empty());
+    }
+
+    #[test]
+    fn copies_media_kind_and_album_onto_entries() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let mut photo = file(MediaKind::Photo, 1, 10);
+        photo.album_id = Some(AlbumId::from_uuid(Uuid::new_v4()));
+        let rules = vec![SyncRule {
+            media_kind: MediaKind::Photo,
+            max_age_days: None,
+            max_size_bytes: None,
+            include_all: true,
+        }];
+        let manifest = evaluate_manifest(&[photo.clone()], &rules, &HashSet::new(), now);
+        assert_eq!(manifest.files[0].media_kind, MediaKind::Photo);
+        assert_eq!(manifest.files[0].album_id, photo.album_id);
+        assert!(manifest.albums.is_empty());
     }
 }

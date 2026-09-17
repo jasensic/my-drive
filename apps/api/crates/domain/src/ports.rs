@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 
-use crate::ids::{AlbumId, DeviceId, FileId, UserId};
-use crate::model::{Album, Device, FileRecord, SyncProfile, User};
+use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, UserId};
+use crate::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
 use crate::DomainError;
 
 #[async_trait::async_trait]
@@ -55,6 +55,15 @@ pub trait DeviceRepository: Send + Sync {
 pub trait SyncProfileRepository: Send + Sync {
     async fn upsert(&self, profile: &SyncProfile) -> Result<(), DomainError>;
     async fn find_by_device(&self, device_id: DeviceId) -> Result<Option<SyncProfile>, DomainError>;
+}
+
+#[async_trait::async_trait]
+pub trait AppReleaseRepository: Send + Sync {
+    async fn insert(&self, release: &AppRelease) -> Result<(), DomainError>;
+    async fn latest(&self) -> Result<Option<AppRelease>, DomainError>;
+    async fn list(&self) -> Result<Vec<AppRelease>, DomainError>;
+    async fn find_by_id(&self, id: AppReleaseId) -> Result<Option<AppRelease>, DomainError>;
+    async fn find_by_version_code(&self, version_code: i32) -> Result<Option<AppRelease>, DomainError>;
 }
 
 #[async_trait::async_trait]

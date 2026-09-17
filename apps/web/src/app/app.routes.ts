@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, setupGuard } from './presentation/auth.guard';
+import { AppUpdatesPage } from './presentation/app-updates.page';
 import { DevicesPage } from './presentation/devices.page';
 import { LibraryPage } from './presentation/library.page';
 import { LoginPage } from './presentation/login.page';
@@ -17,6 +18,7 @@ export const routes: Routes = [
       { path: 'library', component: LibraryPage },
       { path: 'player/:id', component: PlayerPage },
       { path: 'devices', component: DevicesPage },
+      { path: 'app-updates', component: AppUpdatesPage },
     ],
   },
 ];

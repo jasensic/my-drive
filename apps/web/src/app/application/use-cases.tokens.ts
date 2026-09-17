@@ -1,5 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import { Album, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 
 export interface CheckSetup {
   execute(): Promise<boolean>;
@@ -51,6 +51,19 @@ export interface SaveSyncProfile {
   execute(deviceId: string, name: string, rules: SyncRule[]): Promise<SyncProfile>;
 }
 
+export interface ListAppReleases {
+  execute(): Promise<AppRelease[]>;
+}
+
+export interface PublishAppRelease {
+  execute(input: {
+    versionCode: number;
+    versionName: string;
+    changelog: string;
+    apk: File;
+  }): Promise<AppRelease>;
+}
+
 export const CHECK_SETUP = new InjectionToken<CheckSetup>('CHECK_SETUP');
 export const SETUP_ADMIN = new InjectionToken<SetupAdmin>('SETUP_ADMIN');
 export const LOGIN = new InjectionToken<Login>('LOGIN');
@@ -63,3 +76,5 @@ export const LIST_DEVICES = new InjectionToken<ListDevices>('LIST_DEVICES');
 export const REGISTER_DEVICE = new InjectionToken<RegisterDevice>('REGISTER_DEVICE');
 export const LOAD_SYNC_PROFILE = new InjectionToken<LoadSyncProfile>('LOAD_SYNC_PROFILE');
 export const SAVE_SYNC_PROFILE = new InjectionToken<SaveSyncProfile>('SAVE_SYNC_PROFILE');
+export const LIST_APP_RELEASES = new InjectionToken<ListAppReleases>('LIST_APP_RELEASES');
+export const PUBLISH_APP_RELEASE = new InjectionToken<PublishAppRelease>('PUBLISH_APP_RELEASE');
