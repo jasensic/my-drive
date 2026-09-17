@@ -139,8 +139,10 @@ class AndroidAppUpdateInstaller @Inject constructor(
             PackageInstaller.STATUS_FAILURE -> "generic failure"
             PackageInstaller.STATUS_FAILURE_ABORTED -> "aborted"
             PackageInstaller.STATUS_FAILURE_BLOCKED -> "blocked"
-            PackageInstaller.STATUS_FAILURE_CONFLICT -> "signature or package conflict"
-            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "incompatible (wrong signature, versionCode, or SDK)"
+            PackageInstaller.STATUS_FAILURE_CONFLICT,
+            PackageInstaller.STATUS_FAILURE_INCOMPATIBLE,
+            ->
+                "signing key mismatch. Uninstall my-drive, then install this APK. Later updates must use the same keystore."
             PackageInstaller.STATUS_FAILURE_INVALID -> "invalid APK"
             PackageInstaller.STATUS_FAILURE_STORAGE -> "not enough storage"
             else -> "status $status"
