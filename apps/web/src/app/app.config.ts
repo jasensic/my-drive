@@ -58,7 +58,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
-    providePrimeNG({ theme: { preset: Aura } }),
+    providePrimeNG({ theme: { preset: Aura }, license: PRIMENG_LICENSE }),
     MessageService,
     ...DATA_PROVIDERS,
     { provide: CHECK_SETUP, useClass: CheckSetupService },

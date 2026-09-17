@@ -33,6 +33,8 @@ jobs:
         with:
           context: .
           file: apps/web/Dockerfile
+          build-args: |
+            PRIMENG_LICENSE=${{ secrets.PRIMENG_LICENSE }}
           push: true
           tags: |
             ghcr.io/jasensic/my-drive-web:latest
