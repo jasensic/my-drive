@@ -6,7 +6,7 @@
     "start": "node ./scripts/ng-env.mjs serve",
     "build": "node ./scripts/ng-env.mjs build",
     "watch": "node ./scripts/ng-env.mjs build --watch --configuration development",
-    "test": "ng test",
+    "test": "node ./scripts/ng-env.mjs test",
     "test:e2e": "playwright test"
   },
   "private": true,

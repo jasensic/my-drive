@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,12 +41,17 @@ const license = process.env['PRIMENG_LICENSE'] ?? '';
 if (!license) {
   console.warn('PRIMENG_LICENSE is empty; PrimeNG will run without a license key.');
 }
-const ngJs = join(webRoot, 'node_modules', '@angular', 'cli', 'bin', 'ng.js');
-const child = spawn(
-  process.execPath,
-  [ngJs, ...process.argv.slice(2), '--define', `PRIMENG_LICENSE=${JSON.stringify(license)}`],
-  { stdio: 'inherit', cwd: webRoot },
+
+writeFileSync(
+  join(webRoot, 'src', 'primeng-license.ts'),
+  `export const PRIMENG_LICENSE = ${JSON.stringify(license)};\n`,
 );
+
+const ngJs = join(webRoot, 'node_modules', '@angular', 'cli', 'bin', 'ng.js');
+const child = spawn(process.execPath, [ngJs, ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  cwd: webRoot,
+});
 child.on('exit', (code) => process.exit(code ?? 1));
 child.on('error', (err) => {
   console.error(err);

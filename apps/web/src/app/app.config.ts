@@ -52,6 +52,7 @@ import {
   UPLOAD_MEDIA,
 } from './application/use-cases.tokens';
 import { DATA_PROVIDERS, authInterceptor } from './data/http.adapters';
+import { PRIMENG_LICENSE } from '../primeng-license';
 
 export const appConfig: ApplicationConfig = {
   providers: [

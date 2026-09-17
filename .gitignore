@@ -13,6 +13,7 @@ node_modules/
 # Environment / secrets
 .env
 .env.local
+apps/web/src/primeng-license.ts
 *.pem
 *.jks
 keystore.properties

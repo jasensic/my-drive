@@ -32,10 +32,7 @@
             ],
             "styles": [
               "src/styles.scss"
-            ],
-            "define": {
-              "PRIMENG_LICENSE": "''"
-            }
+            ]
           },
           "configurations": {
             "production": {
