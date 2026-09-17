@@ -19,7 +19,6 @@ jobs:
         with:
           packages: platform-tools
       - name: Decode upload keystore
-        if: ${{ secrets.MYDRIVE_KEYSTORE_BASE64 != '' }}
         working-directory: apps/android
         env:
           MYDRIVE_KEYSTORE_BASE64: ${{ secrets.MYDRIVE_KEYSTORE_BASE64 }}
@@ -27,6 +26,10 @@ jobs:
           MYDRIVE_KEY_PASSWORD: ${{ secrets.MYDRIVE_KEY_PASSWORD }}
           MYDRIVE_KEY_ALIAS: ${{ secrets.MYDRIVE_KEY_ALIAS }}
         run: |
+          if [ -z "$MYDRIVE_KEYSTORE_BASE64" ]; then
+            echo "No MYDRIVE_KEYSTORE_BASE64 secret; signing with the runner debug key"
+            exit 0
+          fi
           echo "$MYDRIVE_KEYSTORE_BASE64" | base64 -d > mydrive-upload.jks
           printf '%s\n' \
             'storeFile=mydrive-upload.jks' \
