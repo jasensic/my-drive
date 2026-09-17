@@ -1,3 +1,4 @@
+pub mod apk;
 pub mod clock;
 pub mod config;
 pub mod hasher;
@@ -11,7 +12,6 @@ pub mod thumbnail;
 use std::sync::Arc;
 
 use application::Deps;
-
 use crate::clock::SystemClock;
 use crate::config::Settings;
 use crate::hasher::Argon2Hasher;
@@ -20,12 +20,14 @@ use crate::memory::MemoryStore;
 use crate::postgres::PgRepos;
 use crate::s3::S3Store;
 use crate::thumbnail::ImageThumbnailer;
+use crate::apk::ZipApkInspector;
 
 pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::DomainError> {
     let hasher = Arc::new(Argon2Hasher::new());
     let tokens = Arc::new(JwtTokenService::new(&settings.jwt_secret));
     let clock = Arc::new(SystemClock);
     let thumbnailer = Arc::new(ImageThumbnailer);
+    let apk_inspector = Arc::new(ZipApkInspector);
 
     if settings.memory_backend {
         let store = MemoryStore::new();
@@ -41,6 +43,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             tokens,
             clock,
             thumbnailer,
+            apk_inspector,
         }));
     }
 
@@ -59,5 +62,6 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         tokens,
         clock,
         thumbnailer,
+        apk_inspector,
     }))
 }

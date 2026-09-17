@@ -431,6 +431,46 @@ impl AppReleaseRepository for PgRepos {
         .map_err(|e| DomainError::infra(e.to_string()))?;
         row.map(row_to_release).transpose()
     }
+
+    async fn update(&self, release: &AppRelease) -> Result<(), DomainError> {
+        let result = sqlx::query(
+            "UPDATE app_releases
+             SET version_code = $2, version_name = $3, changelog = $4, object_key = $5, checksum = $6, size = $7
+             WHERE id = $1",
+        )
+        .bind(release.id.0)
+        .bind(release.version_code)
+        .bind(&release.version_name)
+        .bind(&release.changelog)
+        .bind(&release.object_key)
+        .bind(&release.checksum)
+        .bind(release.size as i64)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("unique") || e.to_string().contains("duplicate") {
+                DomainError::conflict("version_code already published")
+            } else {
+                DomainError::infra(e.to_string())
+            }
+        })?;
+        if result.rows_affected() == 0 {
+            return Err(DomainError::not_found("app release not found"));
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, id: AppReleaseId) -> Result<(), DomainError> {
+        let result = sqlx::query("DELETE FROM app_releases WHERE id = $1")
+            .bind(id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        if result.rows_affected() == 0 {
+            return Err(DomainError::not_found("app release not found"));
+        }
+        Ok(())
+    }
 }
 
 fn row_to_release(r: sqlx::postgres::PgRow) -> Result<AppRelease, DomainError> {

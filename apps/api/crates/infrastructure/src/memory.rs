@@ -252,6 +252,28 @@ impl AppReleaseRepository for MemoryStore {
             .find(|r| r.version_code == version_code)
             .cloned())
     }
+
+    async fn update(&self, release: &AppRelease) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.app_releases.iter().any(|r| r.version_code == release.version_code && r.id != release.id) {
+            return Err(DomainError::conflict("version_code already published"));
+        }
+        if let Some(existing) = inner.app_releases.iter_mut().find(|r| r.id == release.id) {
+            *existing = release.clone();
+            return Ok(());
+        }
+        Err(DomainError::not_found("app release not found"))
+    }
+
+    async fn delete(&self, id: AppReleaseId) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let before = inner.app_releases.len();
+        inner.app_releases.retain(|r| r.id != id);
+        if inner.app_releases.len() == before {
+            return Err(DomainError::not_found("app release not found"));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -287,5 +309,10 @@ impl ObjectStore for MemoryStore {
         let end = end.unwrap_or(total.saturating_sub(1)).min(total.saturating_sub(1));
         let start = start.min(end);
         Ok((data.slice(start as usize..=end as usize), total))
+    }
+
+    async fn delete(&self, key: &str) -> Result<(), DomainError> {
+        self.inner.lock().unwrap().objects.remove(key);
+        Ok(())
     }
 }

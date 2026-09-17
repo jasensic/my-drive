@@ -60,12 +60,19 @@ export interface ListAppReleases {
 }
 
 export interface PublishAppRelease {
-  execute(input: {
-    versionCode: number;
-    versionName: string;
-    changelog: string;
-    apk: File;
-  }): Promise<AppRelease>;
+  execute(input: { changelog: string; apk: File }): Promise<AppRelease>;
+}
+
+export interface InspectApk {
+  execute(apk: File): Promise<{ version_code: number; version_name: string }>;
+}
+
+export interface UpdateAppRelease {
+  execute(id: string, input: { changelog?: string; apk?: File }): Promise<AppRelease>;
+}
+
+export interface DeleteAppRelease {
+  execute(id: string): Promise<void>;
 }
 
 export const CHECK_SETUP = new InjectionToken<CheckSetup>('CHECK_SETUP');
@@ -83,3 +90,6 @@ export const LOAD_SYNC_PROFILE = new InjectionToken<LoadSyncProfile>('LOAD_SYNC_
 export const SAVE_SYNC_PROFILE = new InjectionToken<SaveSyncProfile>('SAVE_SYNC_PROFILE');
 export const LIST_APP_RELEASES = new InjectionToken<ListAppReleases>('LIST_APP_RELEASES');
 export const PUBLISH_APP_RELEASE = new InjectionToken<PublishAppRelease>('PUBLISH_APP_RELEASE');
+export const INSPECT_APK = new InjectionToken<InspectApk>('INSPECT_APK');
+export const UPDATE_APP_RELEASE = new InjectionToken<UpdateAppRelease>('UPDATE_APP_RELEASE');
+export const DELETE_APP_RELEASE = new InjectionToken<DeleteAppRelease>('DELETE_APP_RELEASE');

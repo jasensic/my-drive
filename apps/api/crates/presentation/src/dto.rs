@@ -235,6 +235,21 @@ impl ManifestResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct ApkIdentityDto {
+    pub version_code: i32,
+    pub version_name: String,
+}
+
+impl ApkIdentityDto {
+    pub fn from_identity(identity: domain::apk::ApkIdentity) -> Self {
+        Self {
+            version_code: identity.version_code,
+            version_name: identity.version_name,
+        }
+    }
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct AppReleaseDto {
     pub id: Uuid,
     pub version_code: i32,

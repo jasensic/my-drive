@@ -127,13 +127,33 @@ async fn setup_upload_and_manifest_flow() {
         .unwrap();
     assert_eq!(latest.status(), 404);
 
+    let apk_bytes = infrastructure::apk::package_apk(2, "0.2.0").unwrap();
+    let inspect: Value = client
+        .post(format!("{base}/v1/app/releases/inspect"))
+        .bearer_auth(token)
+        .multipart(
+            multipart::Form::new().part(
+                "apk",
+                multipart::Part::bytes(apk_bytes.clone())
+                    .file_name("my-drive-0.2.0.apk")
+                    .mime_str("application/vnd.android.package-archive")
+                    .unwrap(),
+            ),
+        )
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(inspect["version_code"], 2);
+    assert_eq!(inspect["version_name"], "0.2.0");
+
     let apk_form = multipart::Form::new()
-        .text("version_code", "2")
-        .text("version_name", "0.2.0")
         .text("changelog", "LAN sync and library browser")
         .part(
             "apk",
-            multipart::Part::bytes(b"fake-apk-bytes")
+            multipart::Part::bytes(apk_bytes.clone())
                 .file_name("my-drive-0.2.0.apk")
                 .mime_str("application/vnd.android.package-archive")
                 .unwrap(),
@@ -150,6 +170,20 @@ async fn setup_upload_and_manifest_flow() {
         .unwrap();
     assert_eq!(published["version_code"], 2);
     assert_eq!(published["version_name"], "0.2.0");
+
+    let release_id = published["id"].as_str().unwrap();
+    let updated: Value = client
+        .patch(format!("{base}/v1/app/releases/{release_id}"))
+        .bearer_auth(token)
+        .multipart(multipart::Form::new().text("changelog", "notes for 0.2.0"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated["changelog"], "notes for 0.2.0");
+    assert_eq!(updated["version_code"], 2);
 
     let latest: Value = client
         .get(format!("{base}/v1/app/releases/latest"))
@@ -169,7 +203,7 @@ async fn setup_upload_and_manifest_flow() {
     } else {
         format!("{base}{apk_path}")
     };
-    let apk_bytes = client
+    let downloaded = client
         .get(apk_url)
         .bearer_auth(token)
         .send()
@@ -178,7 +212,22 @@ async fn setup_upload_and_manifest_flow() {
         .bytes()
         .await
         .unwrap();
-    assert_eq!(&apk_bytes[..], b"fake-apk-bytes");
+    assert_eq!(&downloaded[..], apk_bytes);
+
+    let deleted = client
+        .delete(format!("{base}/v1/app/releases/{release_id}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+    let missing = client
+        .get(format!("{base}/v1/app/releases/latest"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
 }
 
 #[allow(dead_code)]

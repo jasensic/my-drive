@@ -118,6 +118,9 @@ mod tests {
         ) -> Result<(Bytes, u64), DomainError> {
             Ok((Bytes::new(), 0))
         }
+        async fn delete(&self, _k: &str) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
 
     #[derive(Default)]
@@ -264,6 +267,19 @@ mod tests {
         ) -> Result<Option<domain::model::AppRelease>, DomainError> {
             Ok(None)
         }
+        async fn update(&self, _release: &domain::model::AppRelease) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete(&self, _id: domain::AppReleaseId) -> Result<(), DomainError> {
+            Ok(())
+        }
+    }
+
+    struct NoopApk;
+    impl domain::ports::ApkInspector for NoopApk {
+        fn inspect(&self, _apk: &[u8]) -> Result<domain::apk::ApkIdentity, DomainError> {
+            Err(DomainError::validation("no apk"))
+        }
     }
 
     #[tokio::test]
@@ -326,6 +342,7 @@ mod tests {
             tokens: Arc::new(NoopTokens),
             clock: Arc::new(FakeClock(now)),
             thumbnailer: Arc::new(NoopThumbs),
+            apk_inspector: Arc::new(NoopApk),
         });
         let svc = BuildSyncManifestService::new(deps);
         let manifest = svc

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use application::Services;
 use axum::extract::DefaultBodyLimit;
 use axum::http::{header, Method};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -56,7 +56,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/app/releases",
             get(app::list).post(app::publish),
         )
+        .route("/v1/app/releases/inspect", post(app::inspect))
         .route("/v1/app/releases/latest", get(app::latest))
+        .route(
+            "/v1/app/releases/{id}",
+            patch(app::update).delete(app::delete),
+        )
         .route("/v1/app/releases/{id}/apk", get(app::apk))
         .layer(DefaultBodyLimit::max(1024 * 1024 * 512))
         .layer(cors)

@@ -26,7 +26,10 @@ use crate::handlers::{albums, app, auth, devices, files, health, sync};
         sync::manifest,
         app::list,
         app::latest,
+        app::inspect,
         app::publish,
+        app::update,
+        app::delete,
         app::apk,
     ),
     components(schemas(
@@ -48,6 +51,7 @@ use crate::handlers::{albums, app, auth, devices, files, health, sync};
         ManifestFileDto,
         ManifestResponse,
         AppReleaseDto,
+        ApkIdentityDto,
         crate::error::ErrorBody,
     )),
     tags(

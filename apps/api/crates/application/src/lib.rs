@@ -4,7 +4,7 @@ pub mod usecases;
 use std::sync::Arc;
 
 use domain::ports::{
-    AlbumRepository, AppReleaseRepository, Clock, DeviceRepository, FileRepository, ObjectStore,
+    AlbumRepository, ApkInspector, AppReleaseRepository, Clock, DeviceRepository, FileRepository, ObjectStore,
     PasswordHasher, SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
 };
 
@@ -24,6 +24,7 @@ pub struct Deps {
     pub tokens: Arc<dyn TokenService>,
     pub clock: Arc<dyn Clock>,
     pub thumbnailer: Arc<dyn Thumbnailer>,
+    pub apk_inspector: Arc<dyn ApkInspector>,
 }
 
 /// Composition helper used by the presentation binary. Handlers still depend on the
@@ -51,6 +52,9 @@ pub struct Services {
     pub get_latest_app_release: Arc<dyn GetLatestAppRelease>,
     pub get_app_release: Arc<dyn GetAppRelease>,
     pub get_app_release_apk: Arc<dyn GetAppReleaseApk>,
+    pub inspect_apk: Arc<dyn InspectApk>,
+    pub update_app_release: Arc<dyn UpdateAppRelease>,
+    pub delete_app_release: Arc<dyn DeleteAppRelease>,
 }
 
 impl Services {
@@ -77,7 +81,10 @@ impl Services {
             list_app_releases: Arc::new(ListAppReleasesService::new(deps.clone())),
             get_latest_app_release: Arc::new(GetLatestAppReleaseService::new(deps.clone())),
             get_app_release: Arc::new(GetAppReleaseService::new(deps.clone())),
-            get_app_release_apk: Arc::new(GetAppReleaseApkService::new(deps)),
+            get_app_release_apk: Arc::new(GetAppReleaseApkService::new(deps.clone())),
+            inspect_apk: Arc::new(InspectApkService::new(deps.clone())),
+            update_app_release: Arc::new(UpdateAppReleaseService::new(deps.clone())),
+            delete_app_release: Arc::new(DeleteAppReleaseService::new(deps)),
         }
     }
 }

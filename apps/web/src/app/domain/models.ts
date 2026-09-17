@@ -47,6 +47,11 @@ export interface SyncProfile {
   rules: SyncRule[];
 }
 
+export interface ApkIdentity {
+  version_code: number;
+  version_name: string;
+}
+
 export interface AppRelease {
   id: string;
   version_code: number;

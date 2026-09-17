@@ -1,5 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import { Album, AppRelease, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from './models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from './models';
 
 export interface TokenStore {
   get(): string | null;
@@ -38,12 +38,10 @@ export interface DeviceRepository {
 export interface AppReleaseRepository {
   list(): Promise<AppRelease[]>;
   latest(): Promise<AppRelease | null>;
-  publish(input: {
-    versionCode: number;
-    versionName: string;
-    changelog: string;
-    apk: File;
-  }): Promise<AppRelease>;
+  inspect(apk: File): Promise<ApkIdentity>;
+  publish(input: { changelog: string; apk: File }): Promise<AppRelease>;
+  update(id: string, input: { changelog?: string; apk?: File }): Promise<AppRelease>;
+  remove(id: string): Promise<void>;
 }
 
 export const TOKEN_STORE = new InjectionToken<TokenStore>('TOKEN_STORE');

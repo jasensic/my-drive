@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.AppRelease
+import com.jasensic.mydrive.domain.AppVersion
 import com.jasensic.mydrive.domain.CheckAppUpdateUseCase
 import com.jasensic.mydrive.domain.InstallAppUpdateUseCase
 import com.jasensic.mydrive.domain.ListLocalLibraryUseCase
@@ -33,6 +34,7 @@ data class UiState(
     val progress: String? = null,
     val error: String? = null,
     val availableUpdate: AppRelease? = null,
+    val appVersion: String = "",
 ) {
     val visibleFiles: List<LocalFile>
         get() = if (selectedAlbumId == null) files else files.filter { it.albumId == selectedAlbumId }
@@ -48,8 +50,9 @@ class DriveViewModel @Inject constructor(
     private val loadState: LoadAppStateUseCase,
     private val checkUpdate: CheckAppUpdateUseCase,
     private val installUpdate: InstallAppUpdateUseCase,
+    appVersion: AppVersion,
 ) : ViewModel() {
-    private val _ui = MutableStateFlow(UiState())
+    private val _ui = MutableStateFlow(UiState(appVersion = "${appVersion.currentName()} (${appVersion.currentCode()})"))
     val ui = _ui.asStateFlow()
 
     init {

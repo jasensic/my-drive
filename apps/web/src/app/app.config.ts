@@ -18,8 +18,11 @@ import {
   SaveSyncProfileService,
 } from './application/devices.use-cases';
 import {
+  DeleteAppReleaseService,
+  InspectApkService,
   ListAppReleasesService,
   PublishAppReleaseService,
+  UpdateAppReleaseService,
 } from './application/app-releases.use-cases';
 import {
   AssignFileAlbumService,
@@ -38,11 +41,14 @@ import {
   LOAD_MEDIA_BLOB,
   LOAD_SYNC_PROFILE,
   LOGIN,
+  INSPECT_APK,
   PUBLISH_APP_RELEASE,
   REGISTER_DEVICE,
   SAVE_SYNC_PROFILE,
   SESSION_QUERY,
   SETUP_ADMIN,
+  UPDATE_APP_RELEASE,
+  DELETE_APP_RELEASE,
   UPLOAD_MEDIA,
 } from './application/use-cases.tokens';
 import { DATA_PROVIDERS, authInterceptor } from './data/http.adapters';
@@ -69,6 +75,9 @@ export const appConfig: ApplicationConfig = {
     { provide: LOAD_SYNC_PROFILE, useClass: LoadSyncProfileService },
     { provide: SAVE_SYNC_PROFILE, useClass: SaveSyncProfileService },
     { provide: LIST_APP_RELEASES, useClass: ListAppReleasesService },
+    { provide: INSPECT_APK, useClass: InspectApkService },
     { provide: PUBLISH_APP_RELEASE, useClass: PublishAppReleaseService },
+    { provide: UPDATE_APP_RELEASE, useClass: UpdateAppReleaseService },
+    { provide: DELETE_APP_RELEASE, useClass: DeleteAppReleaseService },
   ],
 };

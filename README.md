@@ -51,7 +51,7 @@ Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódi
 docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
-Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en el portal (**App updates**), se guarda en MinIO (`app-releases/…`) y cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` publicado es mayor, descarga e instala el APK. CI genera `app-release.apk` en cada PR y en tags `v*`.
+Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en el portal (**App updates**): el servidor lee `versionCode`/`versionName` del propio APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` del APK es mayor, descarga e instala. CI genera `app-release.apk` en cada PR y en tags `v*`.
 
 ## Funcionalidades principales
 

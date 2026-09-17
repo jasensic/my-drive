@@ -119,7 +119,7 @@ private fun ConnectScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("my-drive", style = MaterialTheme.typography.headlineSmall)
+        Text("my-drive ${state.appVersion}", style = MaterialTheme.typography.headlineSmall)
         Text("Server: ${state.serverLabel}")
         Text("Last sync: ${state.lastSync ?: "never"}")
         OutlinedTextField(host, { host = it }, label = { Text("Host (optional, e.g. 192.168.1.10:8080)") }, modifier = Modifier.fillMaxWidth())
@@ -166,7 +166,7 @@ private fun LibraryScreen(
             Column(Modifier.weight(1f)) {
                 Text("Library", style = MaterialTheme.typography.headlineSmall)
                 Text("Server ${state.serverLabel}")
-                Text("${state.files.size} files · last sync ${state.lastSync ?: "never"}")
+                Text("App ${state.appVersion} · ${state.files.size} files · last sync ${state.lastSync ?: "never"}")
             }
             OutlinedButton(onClick = onSync) { Text("Sync") }
         }

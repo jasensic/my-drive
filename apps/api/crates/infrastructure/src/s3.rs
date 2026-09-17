@@ -132,4 +132,15 @@ impl ObjectStore for S3Store {
             .map_err(|e| DomainError::infra(e.to_string()))?;
         Ok((Bytes::from(data.into_bytes().to_vec()), total))
     }
+
+    async fn delete(&self, key: &str) -> Result<(), DomainError> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await
+            .map_err(|e| DomainError::infra(format!("delete object: {e}")))?;
+        Ok(())
+    }
 }

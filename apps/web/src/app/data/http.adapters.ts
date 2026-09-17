@@ -1,7 +1,7 @@
 import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Album, AppRelease, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
   APP_RELEASE_REPOSITORY,
@@ -143,18 +143,32 @@ export class HttpAppReleaseRepository implements AppReleaseRepository {
     }
   }
 
-  publish(input: {
-    versionCode: number;
-    versionName: string;
-    changelog: string;
-    apk: File;
-  }): Promise<AppRelease> {
+  inspect(apk: File): Promise<ApkIdentity> {
     const body = new FormData();
-    body.append('version_code', String(input.versionCode));
-    body.append('version_name', input.versionName);
+    body.append('apk', apk, apk.name);
+    return firstValueFrom(this.http.post<ApkIdentity>('/v1/app/releases/inspect', body));
+  }
+
+  publish(input: { changelog: string; apk: File }): Promise<AppRelease> {
+    const body = new FormData();
     body.append('changelog', input.changelog);
     body.append('apk', input.apk, input.apk.name);
     return firstValueFrom(this.http.post<AppRelease>('/v1/app/releases', body));
+  }
+
+  update(id: string, input: { changelog?: string; apk?: File }): Promise<AppRelease> {
+    const body = new FormData();
+    if (input.changelog !== undefined) {
+      body.append('changelog', input.changelog);
+    }
+    if (input.apk) {
+      body.append('apk', input.apk, input.apk.name);
+    }
+    return firstValueFrom(this.http.patch<AppRelease>(`/v1/app/releases/${id}`, body));
+  }
+
+  async remove(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/app/releases/${id}`));
   }
 }
 
