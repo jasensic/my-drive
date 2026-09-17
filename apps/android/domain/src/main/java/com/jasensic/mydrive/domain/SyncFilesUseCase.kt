@@ -69,32 +69,39 @@ class SyncFilesUseCase(
         val server = discovery.execute(manualHost)
         val base = server.baseUrl
         var session = state.session()
-        if (session == null || (!username.isNullOrBlank() && !password.isNullOrBlank())) {
+        if (session == null) {
             require(!username.isNullOrBlank() && !password.isNullOrBlank()) { "login required" }
             val loggedIn = remote.login(base, username, password)
-            val deviceId = session?.deviceId ?: remote.registerDevice(base, loggedIn.token, deviceName)
+            val deviceId = remote.registerDevice(base, loggedIn.token, deviceName)
             session = loggedIn.copy(deviceId = deviceId)
             state.saveSession(session)
         }
         val deviceId = session.deviceId ?: error("device is not registered")
-        val have = localStore.knownIds()
-        val manifest = remote.fetchManifest(base, session.token, deviceId, state.lastSyncAt(), have)
-        localStore.replaceAlbums(manifest.albums)
-        var downloaded = 0
-        for (file in manifest.files) {
-            val path = localStore.pathFor(file.id)
-            remote.downloadTo(lanUrl(base, file.url), session.token, path)
-            if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
-                !checksumMatchesPath(file.checksum, path)
-            ) {
-                java.io.File(path).delete()
-                error("checksum mismatch for ${file.name}")
+        return try {
+            val have = localStore.knownIds()
+            val manifest = remote.fetchManifest(base, session.token, deviceId, state.lastSyncAt(), have)
+            localStore.replaceAlbums(manifest.albums)
+            var downloaded = 0
+            for (file in manifest.files) {
+                val path = localStore.pathFor(file.id)
+                remote.downloadTo(lanUrl(base, file.url), session.token, path)
+                if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
+                    !checksumMatchesPath(file.checksum, path)
+                ) {
+                    java.io.File(path).delete()
+                    error("checksum mismatch for ${file.name}")
+                }
+                localStore.commit(file, path)
+                downloaded += 1
             }
-            localStore.commit(file, path)
-            downloaded += 1
+            state.saveLastSyncAt(manifest.generatedAt)
+            SyncResult(server, manifest, downloaded)
+        } catch (err: Throwable) {
+            if (err.message == "login required") {
+                state.clearSession()
+            }
+            throw err
         }
-        state.saveLastSyncAt(manifest.generatedAt)
-        return SyncResult(server, manifest, downloaded)
     }
 }
 

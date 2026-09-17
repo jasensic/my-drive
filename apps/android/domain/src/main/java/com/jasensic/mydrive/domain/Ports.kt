@@ -38,6 +38,7 @@ interface SyncStateRepository {
     suspend fun session(): AuthSession?
     suspend fun saveServer(server: DiscoveredServer)
     suspend fun lastServer(): DiscoveredServer?
+    suspend fun clearSession()
 }
 
 interface AppVersion {

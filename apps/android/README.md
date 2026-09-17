@@ -9,9 +9,9 @@ Native client for LAN sync. Layers:
 ## Connect and download
 
 1. The phone must be on the same Wi-Fi as the server.
-2. The API advertises `_mydrive._tcp` (production compose uses `network_mode: host` so multicast works).
-3. The app logs in, registers the device, and calls `POST /v1/sync/manifest`.
-4. Files that match the device **sync profile** (configured in the portal under Devices) are downloaded into app-private storage.
+2. Sign in **once**. The JWT and device id stay in DataStore.
+3. Later launches scan `_mydrive._tcp` (production compose uses `network_mode: host` so multicast works) and reuse the stored session. No password prompt unless the token is rejected (401).
+4. `POST /v1/sync/manifest` returns files that match the device **sync profile** (portal → Devices). Those files are stored in app-private storage.
 5. The library UI filters by album and opens a viewer with previous/next.
 
 If mDNS does not resolve (typical of Docker *bridge* networking on a laptop), type `host:port` on the connect screen, for example `192.168.1.10:8080`.

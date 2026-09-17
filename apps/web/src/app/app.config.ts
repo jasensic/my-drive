@@ -25,6 +25,7 @@ import {
   AssignFileAlbumService,
   CreateAlbumService,
   ListLibraryService,
+  LoadMediaBlobService,
   UploadMediaService,
 } from './application/library.use-cases';
 import {
@@ -34,6 +35,7 @@ import {
   LIST_APP_RELEASES,
   LIST_DEVICES,
   LIST_LIBRARY,
+  LOAD_MEDIA_BLOB,
   LOAD_SYNC_PROFILE,
   LOGIN,
   PUBLISH_APP_RELEASE,
@@ -61,6 +63,7 @@ export const appConfig: ApplicationConfig = {
     { provide: UPLOAD_MEDIA, useClass: UploadMediaService },
     { provide: CREATE_ALBUM, useClass: CreateAlbumService },
     { provide: ASSIGN_FILE_ALBUM, useClass: AssignFileAlbumService },
+    { provide: LOAD_MEDIA_BLOB, useClass: LoadMediaBlobService },
     { provide: LIST_DEVICES, useClass: ListDevicesService },
     { provide: REGISTER_DEVICE, useClass: RegisterDeviceService },
     { provide: LOAD_SYNC_PROFILE, useClass: LoadSyncProfileService },

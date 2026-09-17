@@ -26,7 +26,7 @@ pub async fn list(
     Ok(Json(
         releases
             .into_iter()
-            .map(|r| AppReleaseDto::from_release(r, &state.public_url))
+            .map(AppReleaseDto::from_release)
             .collect(),
     ))
 }
@@ -41,7 +41,7 @@ pub async fn latest(
         .get_latest_app_release
         .execute(user.user_id)
         .await?;
-    Ok(Json(AppReleaseDto::from_release(release, &state.public_url)))
+    Ok(Json(AppReleaseDto::from_release(release)))
 }
 
 #[utoipa::path(post, path = "/v1/app/releases", responses((status = 200, body = AppReleaseDto)), security(("bearer" = [])))]
@@ -102,7 +102,7 @@ pub async fn publish(
             bytes,
         })
         .await?;
-    Ok(Json(AppReleaseDto::from_release(release, &state.public_url)))
+    Ok(Json(AppReleaseDto::from_release(release)))
 }
 
 #[utoipa::path(get, path = "/v1/app/releases/{id}/apk", params(("id" = Uuid, Path)), responses((status = 200)), security(("bearer" = [])))]

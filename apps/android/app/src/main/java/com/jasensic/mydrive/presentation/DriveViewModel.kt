@@ -53,7 +53,12 @@ class DriveViewModel @Inject constructor(
     val ui = _ui.asStateFlow()
 
     init {
-        viewModelScope.launch { refresh(discoverOnStart = true) }
+        viewModelScope.launch {
+            refresh(discoverOnStart = true)
+            if (_ui.value.loggedIn) {
+                syncExisting()
+            }
+        }
     }
 
     fun selectAlbum(albumId: String?) {
@@ -88,13 +93,28 @@ class DriveViewModel @Inject constructor(
     }
 
     fun sync(username: String, password: String, manualHost: String) {
+        connect(username, password, manualHost)
+    }
+
+    fun syncExisting() {
+        scanLan("")
+    }
+
+    fun scanLan(manualHost: String) {
+        connect(null, null, manualHost.ifBlank { null })
+    }
+
+    private fun connect(username: String?, password: String?, manualHost: String?) {
         viewModelScope.launch {
-            _ui.value = _ui.value.copy(progress = "Connecting…", error = null)
+            _ui.value = _ui.value.copy(
+                progress = if (username.isNullOrBlank()) "Searching the LAN…" else "Signing in…",
+                error = null,
+            )
             runCatching {
                 syncFiles.execute(
-                    username.ifBlank { null },
-                    password.ifBlank { null },
-                    manualHost.ifBlank { null },
+                    username?.ifBlank { null },
+                    password?.ifBlank { null },
+                    manualHost?.ifBlank { null },
                 )
             }.onSuccess { result ->
                 val library = listLibrary.execute()
@@ -111,7 +131,13 @@ class DriveViewModel @Inject constructor(
                     availableUpdate = update,
                 )
             }.onFailure {
-                _ui.value = _ui.value.copy(progress = null, error = it.message)
+                val needsLogin = it.message == "login required"
+                _ui.value = _ui.value.copy(
+                    progress = null,
+                    error = if (needsLogin) "Sign in once to this server" else it.message,
+                    loggedIn = if (needsLogin) false else _ui.value.loggedIn,
+                    screen = if (needsLogin) Screen.Connect else _ui.value.screen,
+                )
             }
         }
     }
@@ -133,7 +159,6 @@ class DriveViewModel @Inject constructor(
     private suspend fun refresh(discoverOnStart: Boolean) {
         val snapshot = runCatching { loadState.execute(discoverOnStart) }.getOrNull() ?: return
         val update = if (snapshot.loggedIn) runCatching { checkUpdate.execute() }.getOrNull() else null
-        val hasLocal = snapshot.library.files.isNotEmpty()
         _ui.value = _ui.value.copy(
             serverLabel = snapshot.server?.let { "${it.host}:${it.port}" } ?: "not found",
             lastSync = snapshot.lastSync,
@@ -141,7 +166,7 @@ class DriveViewModel @Inject constructor(
             files = snapshot.library.files,
             availableUpdate = update,
             loggedIn = snapshot.loggedIn,
-            screen = if (hasLocal) Screen.Library else Screen.Connect,
+            screen = if (snapshot.loggedIn) Screen.Library else Screen.Connect,
         )
     }
 }

@@ -35,6 +35,10 @@ export interface AssignFileAlbum {
   execute(fileId: string, albumId: string | null): Promise<MediaFile>;
 }
 
+export interface LoadMediaBlob {
+  execute(fileId: string, thumbnail: boolean): Promise<string>;
+}
+
 export interface ListDevices {
   execute(): Promise<Device[]>;
 }
@@ -72,6 +76,7 @@ export const LIST_LIBRARY = new InjectionToken<ListLibrary>('LIST_LIBRARY');
 export const UPLOAD_MEDIA = new InjectionToken<UploadMedia>('UPLOAD_MEDIA');
 export const CREATE_ALBUM = new InjectionToken<CreateAlbum>('CREATE_ALBUM');
 export const ASSIGN_FILE_ALBUM = new InjectionToken<AssignFileAlbum>('ASSIGN_FILE_ALBUM');
+export const LOAD_MEDIA_BLOB = new InjectionToken<LoadMediaBlob>('LOAD_MEDIA_BLOB');
 export const LIST_DEVICES = new InjectionToken<ListDevices>('LIST_DEVICES');
 export const REGISTER_DEVICE = new InjectionToken<RegisterDevice>('REGISTER_DEVICE');
 export const LOAD_SYNC_PROFILE = new InjectionToken<LoadSyncProfile>('LOAD_SYNC_PROFILE');

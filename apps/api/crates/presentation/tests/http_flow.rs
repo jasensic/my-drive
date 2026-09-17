@@ -81,6 +81,14 @@ async fn setup_upload_and_manifest_flow() {
         .await
         .unwrap();
     assert_eq!(uploaded["name"], "photo.jpg");
+    let content_path = uploaded["content_url"].as_str().unwrap();
+    let content = client
+        .get(format!("{base}{content_path}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert!(content.status().is_success());
 
     let device: Value = client
         .post(format!("{base}/v1/devices"))
@@ -155,8 +163,14 @@ async fn setup_upload_and_manifest_flow() {
     assert_eq!(latest["version_code"], 2);
     assert!(latest["download_url"].as_str().unwrap().contains("/apk"));
 
+    let apk_path = latest["download_url"].as_str().unwrap();
+    let apk_url = if apk_path.starts_with("http") {
+        apk_path.to_string()
+    } else {
+        format!("{base}{apk_path}")
+    };
     let apk_bytes = client
-        .get(latest["download_url"].as_str().unwrap())
+        .get(apk_url)
         .bearer_auth(token)
         .send()
         .await

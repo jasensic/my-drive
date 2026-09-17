@@ -4,6 +4,7 @@ import kotlinx.coroutines.test.runTest
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -18,9 +19,13 @@ class FakeDiscovery(private val server: DiscoveredServer?) : ServerDiscovery {
 
 class FakeRemote : RemoteFileSource {
     var downloaded = 0
+    var logins = 0
     var latest: AppRelease? = null
-    override suspend fun login(baseUrl: String, username: String, password: String) =
-        AuthSession("token", username, null)
+    var failAuth = false
+    override suspend fun login(baseUrl: String, username: String, password: String): AuthSession {
+        logins += 1
+        return AuthSession("token", username, null)
+    }
 
     override suspend fun registerDevice(baseUrl: String, token: String, name: String) = "dev-1"
 
@@ -30,13 +35,17 @@ class FakeRemote : RemoteFileSource {
         deviceId: String,
         lastSyncAt: String?,
         haveFileIds: Set<String>,
-    ) = SyncManifest(
-        generatedAt = "2026-09-15T12:00:00Z",
-        files = listOf(
-            ManifestFile("1", "a.jpg", 3, "image/jpeg", "", "/v1/files/1/content", MediaKind.PHOTO, "album-1"),
-        ).filter { it.id !in haveFileIds },
-        albums = listOf(Album("album-1", "Vacation")),
-    )
+    ) = if (failAuth) {
+        error("login required")
+    } else {
+        SyncManifest(
+            generatedAt = "2026-09-15T12:00:00Z",
+            files = listOf(
+                ManifestFile("1", "a.jpg", 3, "image/jpeg", "", "/v1/files/1/content", MediaKind.PHOTO, "album-1"),
+            ).filter { it.id !in haveFileIds },
+            albums = listOf(Album("album-1", "Vacation")),
+        )
+    }
 
     override suspend fun downloadTo(url: String, token: String, destinationPath: String) {
         downloaded += 1
@@ -91,6 +100,9 @@ class FakeState : SyncStateRepository {
         this.server = server
     }
     override suspend fun lastServer() = server
+    override suspend fun clearSession() {
+        stored = null
+    }
 }
 
 class FakeVersion(private val code: Int = 1) : AppVersion {
@@ -126,6 +138,36 @@ class SyncFilesUseCaseTest {
         assertEquals(1, remote.downloaded)
         assertEquals("Vacation", store.albums.single().name)
         assertEquals("192.168.1.10", state.server?.host)
+        assertEquals(1, remote.logins)
+    }
+
+    @Test
+    fun requiresCredentialsOnlyWhenNoStoredSession() = runTest {
+        val err = assertFailsWith<IllegalArgumentException> {
+            useCase().execute()
+        }
+        assertEquals("login required", err.message)
+    }
+
+    @Test
+    fun reusesStoredSessionAndDoesNotLoginAgain() = runTest {
+        val remote = FakeRemote()
+        val store = FakeStore()
+        val state = FakeState().apply { stored = AuthSession("t", "admin", "dev-1") }
+        useCase(remote, store, state).execute("admin", "ignored-password")
+        assertEquals(0, remote.logins)
+        assertEquals("t", state.stored?.token)
+    }
+
+    @Test
+    fun clearsSessionWhenServerRejectsStoredToken() = runTest {
+        val remote = FakeRemote().apply { failAuth = true }
+        val state = FakeState().apply { stored = AuthSession("expired", "admin", "dev-1") }
+        val err = assertFailsWith<IllegalStateException> {
+            useCase(remote, FakeStore(), state).execute()
+        }
+        assertEquals("login required", err.message)
+        assertNull(state.stored)
     }
 
     @Test

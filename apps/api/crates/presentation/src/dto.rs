@@ -76,7 +76,7 @@ pub struct FileDto {
 }
 
 impl FileDto {
-    pub fn from_record(file: FileRecord, public_url: &str) -> Self {
+    pub fn from_record(file: FileRecord) -> Self {
         Self {
             id: file.id.0,
             album_id: file.album_id.map(|a| a.0),
@@ -87,10 +87,10 @@ impl FileDto {
             media_kind: file.media_kind,
             created_at: file.created_at,
             uploaded_at: file.uploaded_at,
-            content_url: format!("{public_url}/v1/files/{}/content", file.id),
+            content_url: format!("/v1/files/{}/content", file.id),
             thumbnail_url: file
                 .thumbnail_key
-                .map(|_| format!("{public_url}/v1/files/{}/thumbnail", file.id)),
+                .map(|_| format!("/v1/files/{}/thumbnail", file.id)),
         }
     }
 }
@@ -199,14 +199,14 @@ pub struct ManifestFileDto {
 }
 
 impl ManifestFileDto {
-    pub fn from_entry(entry: ManifestEntry, public_url: &str) -> Self {
+    pub fn from_entry(entry: ManifestEntry) -> Self {
         Self {
             id: entry.id.0,
             name: entry.name,
             size: entry.size,
             mime: entry.mime,
             checksum: entry.checksum,
-            url: format!("{public_url}/v1/files/{}/content", entry.id),
+            url: format!("/v1/files/{}/content", entry.id),
             media_kind: entry.media_kind,
             album_id: entry.album_id.map(|a| a.0),
         }
@@ -221,13 +221,13 @@ pub struct ManifestResponse {
 }
 
 impl ManifestResponse {
-    pub fn from_manifest(manifest: SyncManifest, public_url: &str) -> Self {
+    pub fn from_manifest(manifest: SyncManifest) -> Self {
         Self {
             generated_at: manifest.generated_at,
             files: manifest
                 .files
                 .into_iter()
-                .map(|e| ManifestFileDto::from_entry(e, public_url))
+                .map(ManifestFileDto::from_entry)
                 .collect(),
             albums: manifest.albums.into_iter().map(Into::into).collect(),
         }
@@ -247,7 +247,7 @@ pub struct AppReleaseDto {
 }
 
 impl AppReleaseDto {
-    pub fn from_release(release: domain::model::AppRelease, public_url: &str) -> Self {
+    pub fn from_release(release: domain::model::AppRelease) -> Self {
         Self {
             id: release.id.0,
             version_code: release.version_code,
@@ -256,7 +256,7 @@ impl AppReleaseDto {
             checksum: release.checksum,
             size: release.size,
             published_at: release.published_at,
-            download_url: format!("{public_url}/v1/app/releases/{}/apk", release.id),
+            download_url: format!("/v1/app/releases/{}/apk", release.id),
         }
     }
 }

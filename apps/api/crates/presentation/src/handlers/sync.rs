@@ -32,8 +32,5 @@ pub async fn manifest(
             have_file_ids: have,
         })
         .await?;
-    Ok(Json(ManifestResponse::from_manifest(
-        manifest,
-        &state.public_url,
-    )))
+    Ok(Json(ManifestResponse::from_manifest(manifest)))
 }

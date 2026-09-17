@@ -22,7 +22,7 @@ pub async fn list(
     Ok(Json(
         files
             .into_iter()
-            .map(|f| FileDto::from_record(f, &state.public_url))
+            .map(FileDto::from_record)
             .collect(),
     ))
 }
@@ -94,7 +94,7 @@ pub async fn upload(
             created_at,
         })
         .await?;
-    Ok(Json(FileDto::from_record(record, &state.public_url)))
+    Ok(Json(FileDto::from_record(record)))
 }
 
 #[utoipa::path(get, path = "/v1/files/{id}", params(("id" = Uuid, Path)), responses((status = 200, body = FileDto)), security(("bearer" = [])))]
@@ -108,7 +108,7 @@ pub async fn get(
         .get_file
         .execute(user.user_id, FileId::from_uuid(id))
         .await?;
-    Ok(Json(FileDto::from_record(file, &state.public_url)))
+    Ok(Json(FileDto::from_record(file)))
 }
 
 #[utoipa::path(patch, path = "/v1/files/{id}", params(("id" = Uuid, Path)), request_body = AssignAlbumRequest, responses((status = 200, body = FileDto)), security(("bearer" = [])))]
@@ -127,7 +127,7 @@ pub async fn assign(
             body.album_id.map(AlbumId::from_uuid),
         )
         .await?;
-    Ok(Json(FileDto::from_record(file, &state.public_url)))
+    Ok(Json(FileDto::from_record(file)))
 }
 
 #[utoipa::path(get, path = "/v1/files/{id}/content", params(("id" = Uuid, Path)), responses((status = 200), (status = 206)), security(("bearer" = [])))]

@@ -102,6 +102,10 @@ export class HttpFileRepository implements FileRepository {
   contentUrl(id: string): string {
     return `/v1/files/${id}/content`;
   }
+  blob(id: string, thumbnail: boolean): Promise<Blob> {
+    const path = thumbnail ? `/v1/files/${id}/thumbnail` : `/v1/files/${id}/content`;
+    return firstValueFrom(this.http.get(path, { responseType: 'blob' }));
+  }
 }
 
 @Injectable()

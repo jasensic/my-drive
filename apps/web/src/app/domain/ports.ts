@@ -25,6 +25,7 @@ export interface FileRepository {
   upload(file: File, albumId?: string): Promise<MediaFile>;
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile>;
   contentUrl(id: string): string;
+  blob(id: string, thumbnail: boolean): Promise<Blob>;
 }
 
 export interface DeviceRepository {

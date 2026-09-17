@@ -62,12 +62,12 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     val state by vm.ui.collectAsState()
                     when (val screen = state.screen) {
-                        Screen.Connect -> ConnectScreen(state, vm::sync, vm::openLibrary)
+                        Screen.Connect -> ConnectScreen(state, vm::sync, vm::scanLan, vm::openLibrary)
                         Screen.Library -> LibraryScreen(
                             state = state,
                             onAlbum = vm::selectAlbum,
                             onOpen = vm::openFile,
-                            onSync = { vm.showConnect() },
+                            onSync = vm::syncExisting,
                             onUpdate = vm::installUpdate,
                         )
                         is Screen.Viewer -> {
@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
                                     state = state,
                                     onAlbum = vm::selectAlbum,
                                     onOpen = vm::openFile,
-                                    onSync = { vm.showConnect() },
+                                    onSync = vm::syncExisting,
                                     onUpdate = vm::installUpdate,
                                 )
                             } else {
@@ -105,7 +105,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun ConnectScreen(
     state: UiState,
-    onSync: (String, String, String) -> Unit,
+    onSignIn: (String, String, String) -> Unit,
+    onScanLan: (String) -> Unit,
     onOpenLibrary: () -> Unit,
 ) {
     var user by remember { mutableStateOf("admin") }
@@ -121,15 +122,25 @@ private fun ConnectScreen(
         Text("my-drive", style = MaterialTheme.typography.headlineSmall)
         Text("Server: ${state.serverLabel}")
         Text("Last sync: ${state.lastSync ?: "never"}")
-        Text(
-            "On the same Wi-Fi, the app discovers the portal automatically. If mDNS is blocked (Docker bridge), type the host:port.",
-            style = MaterialTheme.typography.bodySmall,
-        )
         OutlinedTextField(host, { host = it }, label = { Text("Host (optional, e.g. 192.168.1.10:8080)") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(user, { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(pass, { pass = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = { onSync(user, pass, host) }, enabled = state.progress == null) {
-            Text("Connect and download")
+        if (state.loggedIn) {
+            Text(
+                "You are already signed in. The app scans the Wi-Fi for `_mydrive._tcp` and syncs without asking for a password again.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Button(onClick = { onScanLan(host) }, enabled = state.progress == null) {
+                Text("Scan LAN and sync")
+            }
+        } else {
+            Text(
+                "Sign in once. After that, keep the phone on the same Wi-Fi: the app finds the server by scanning the network.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(user, { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(pass, { pass = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
+            Button(onClick = { onSignIn(user, pass, host) }, enabled = state.progress == null) {
+                Text("Sign in and download")
+            }
         }
         if (state.files.isNotEmpty()) {
             TextButton(onClick = onOpenLibrary) { Text("Open library (${state.files.size} files)") }

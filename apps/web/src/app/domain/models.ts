@@ -23,6 +23,8 @@ export interface MediaFile {
   uploaded_at: string;
   content_url: string;
   thumbnail_url: string | null;
+  preview_url?: string;
+  media_url?: string;
 }
 
 export interface Device {

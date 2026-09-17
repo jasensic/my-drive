@@ -59,8 +59,8 @@ import { extractError } from './login.page';
       @for (file of visible(); track file.id) {
         <p-card>
           <div class="thumb">
-            @if (file.media_kind === 'photo' && file.thumbnail_url) {
-              <img [src]="file.thumbnail_url" [alt]="file.name" />
+            @if (file.preview_url) {
+              <img [src]="file.preview_url" [alt]="file.name" />
             } @else if (file.media_kind === 'video') {
               <video [src]="file.content_url" muted></video>
             } @else if (file.media_kind === 'audio') {

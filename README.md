@@ -56,11 +56,11 @@ Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en e
 ## Funcionalidades principales
 
 1. Setup inicial e inicio de sesión (JWT)
-2. Subida de fotos, vídeos y música a MinIO con metadatos en PostgreSQL
+2. Subida de fotos, vídeos y música a MinIO (prefijos `images/`, `videos/`, `music/`, `other/`; miniaturas en `images/thumbs/`) con metadatos en PostgreSQL
 3. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
 4. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
 5. Manifiesto JSON de archivos faltantes y descarga paralela en Android
-6. Descubrimiento automático del servidor en la Wi-Fi local
+6. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
 7. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
 8. Publicación de APKs en el portal y actualización de Android al reconectar
 

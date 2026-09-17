@@ -179,6 +179,14 @@ class DataStoreSyncState @Inject constructor(
         val port = prefs[portKey] ?: return null
         return DiscoveredServer(host, port, prefs[serverNameKey] ?: host)
     }
+
+    override suspend fun clearSession() {
+        context.dataStore.edit {
+            it.remove(tokenKey)
+            it.remove(userKey)
+            it.remove(deviceKey)
+        }
+    }
 }
 
 @Singleton

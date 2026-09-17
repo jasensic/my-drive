@@ -101,13 +101,14 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
             .build()
             .create(DriveApi::class.java)
 
-    override suspend fun login(baseUrl: String, username: String, password: String): AuthSession {
-        val dto = api(baseUrl).login(CredentialsDto(username, password))
-        return AuthSession(dto.token, dto.user.username, null)
-    }
+    override suspend fun login(baseUrl: String, username: String, password: String): AuthSession =
+        wrapAuth {
+            val dto = api(baseUrl).login(CredentialsDto(username, password))
+            AuthSession(dto.token, dto.user.username, null)
+        }
 
     override suspend fun registerDevice(baseUrl: String, token: String, name: String): String =
-        api(baseUrl).registerDevice("Bearer $token", NameDto(name)).id
+        wrapAuth { api(baseUrl).registerDevice("Bearer $token", NameDto(name)).id }
 
     override suspend fun fetchManifest(
         baseUrl: String,
@@ -115,12 +116,12 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         deviceId: String,
         lastSyncAt: String?,
         haveFileIds: Set<String>,
-    ): SyncManifest {
+    ): SyncManifest = wrapAuth {
         val dto = api(baseUrl).manifest(
             "Bearer $token",
             ManifestRequestDto(deviceId, lastSyncAt, haveFileIds.toList()),
         )
-        return SyncManifest(
+        SyncManifest(
             generatedAt = dto.generatedAt,
             files = dto.files.map {
                 ManifestFile(
@@ -145,6 +146,7 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                 .header("Authorization", "Bearer $token")
                 .build()
             http.newCall(req).execute().use { resp ->
+                if (resp.code == 401) error("login required")
                 if (!resp.isSuccessful) error("download failed: ${resp.code}")
                 val body = resp.body ?: error("empty body")
                 val dest = File(destinationPath)
@@ -167,6 +169,13 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                 downloadUrl = dto.downloadUrl,
             )
         } catch (ex: HttpException) {
-            if (ex.code() == 404) null else throw ex
+            if (ex.code() == 404) null else if (ex.code() == 401) error("login required") else throw ex
+        }
+
+    private suspend fun <T> wrapAuth(block: suspend () -> T): T =
+        try {
+            block()
+        } catch (ex: HttpException) {
+            if (ex.code() == 401) error("login required") else throw ex
         }
 }
