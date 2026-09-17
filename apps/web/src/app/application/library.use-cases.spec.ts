@@ -43,14 +43,14 @@ describe('filesInAlbum', () => {
 
 describe('isImagePreviewBlob', () => {
   it('accepts image blobs and generic binary types', () => {
-    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: 'image/png' }))).toBeTrue();
-    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: '' }))).toBeTrue();
-    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: 'application/octet-stream' }))).toBeTrue();
+    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: 'image/png' }))).toBe(true);
+    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: '' }))).toBe(true);
+    expect(isImagePreviewBlob(new Blob([new Uint8Array([1, 2])], { type: 'application/octet-stream' }))).toBe(true);
   });
 
   it('rejects empty or non-image blobs', () => {
-    expect(isImagePreviewBlob(new Blob([], { type: 'image/png' }))).toBeFalse();
-    expect(isImagePreviewBlob(new Blob([new Uint8Array([1])], { type: 'application/json' }))).toBeFalse();
+    expect(isImagePreviewBlob(new Blob([], { type: 'image/png' }))).toBe(false);
+    expect(isImagePreviewBlob(new Blob([new Uint8Array([1])], { type: 'application/json' }))).toBe(false);
   });
 });
 
