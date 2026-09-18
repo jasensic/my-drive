@@ -15,8 +15,8 @@ android {
         applicationId = "com.jasensic.mydrive"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     val keystoreFile = rootProject.file("keystore.properties")
@@ -81,5 +81,10 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("io.coil-kt:coil-video:2.7.0")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     testImplementation("junit:junit:4.13.2")
 }

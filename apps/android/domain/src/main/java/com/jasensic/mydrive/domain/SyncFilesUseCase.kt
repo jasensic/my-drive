@@ -79,17 +79,20 @@ class SyncFilesUseCase(
         val deviceId = session.deviceId ?: error("device is not registered")
         return try {
             val have = localStore.knownIds()
-            val manifest = remote.fetchManifest(base, session.token, deviceId, state.lastSyncAt(), have)
+            val lastSync = state.lastSyncAt().takeIf { have.isNotEmpty() }
+            val manifest = remote.fetchManifest(base, session.token, deviceId, lastSync, have)
             localStore.replaceAlbums(manifest.albums)
             var downloaded = 0
             for (file in manifest.files) {
                 val path = localStore.pathFor(file.id)
-                remote.downloadTo(lanUrl(base, file.url), session.token, path)
-                if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
-                    !checksumMatchesPath(file.checksum, path)
-                ) {
-                    java.io.File(path).delete()
-                    error("checksum mismatch for ${file.name}")
+                if (!reuseLocalFile(file, path)) {
+                    remote.downloadTo(lanUrl(base, file.url), session.token, path)
+                    if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
+                        !checksumMatchesPath(file.checksum, path)
+                    ) {
+                        java.io.File(path).delete()
+                        error("checksum mismatch for ${file.name}")
+                    }
                 }
                 localStore.commit(file, path)
                 downloaded += 1
@@ -118,6 +121,18 @@ class CheckAppUpdateUseCase(
     }
 }
 
+class OpenLocalFileUseCase(
+    private val opener: ExternalFileOpener,
+) {
+    fun execute(file: LocalFile) {
+        val local = java.io.File(file.path)
+        if (!local.isFile) {
+            error("File is not on this device yet. Sync first.")
+        }
+        opener.open(file)
+    }
+}
+
 class InstallAppUpdateUseCase(
     private val remote: RemoteFileSource,
     private val state: SyncStateRepository,
@@ -136,6 +151,15 @@ class InstallAppUpdateUseCase(
         }
         installer.install(path)
     }
+}
+
+fun reuseLocalFile(file: ManifestFile, path: String): Boolean {
+    val dest = java.io.File(path)
+    if (!dest.isFile || dest.length() <= 0L) return false
+    if (file.checksum.isBlank() || !file.checksum.startsWith("sha256:")) return true
+    if (checksumMatchesPath(file.checksum, path)) return true
+    dest.delete()
+    return false
 }
 
 fun absoluteUrl(base: String, url: String): String =

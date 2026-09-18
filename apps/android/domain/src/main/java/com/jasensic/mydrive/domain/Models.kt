@@ -42,7 +42,12 @@ data class DiscoveredServer(
     val port: Int,
     val name: String,
 ) {
-    val baseUrl: String get() = "http://$host:$port"
+    val baseUrl: String
+        get() {
+            val raw = host.substringBefore('%')
+            val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
+            return "http://$hostPart:$port"
+        }
 }
 
 data class AuthSession(
@@ -60,12 +65,65 @@ data class LocalFile(
     val albumName: String?,
     val size: Long,
     val path: String,
-)
+    val artist: String? = null,
+    val durationMs: Long? = null,
+    val modifiedAtMillis: Long = 0L,
+    val artworkPath: String? = null,
+) {
+    val displayArtist: String
+        get() = artist?.takeIf { it.isNotBlank() } ?: UNKNOWN_ARTIST
+
+    val displayAlbum: String
+        get() = albumName?.takeIf { it.isNotBlank() } ?: UNKNOWN_ALBUM
+
+    val isVisual: Boolean
+        get() = mediaKind == MediaKind.PHOTO || mediaKind == MediaKind.VIDEO
+}
 
 data class LocalLibrary(
     val albums: List<Album>,
     val files: List<LocalFile>,
 )
+
+data class ClassifiedLibrary(
+    val music: List<LocalFile>,
+    val photos: List<LocalFile>,
+    val documents: List<LocalFile>,
+)
+
+data class MusicGroup(
+    val id: String,
+    val name: String,
+    val tracks: List<LocalFile>,
+    val artworkPath: String?,
+)
+
+data class DatedMediaGroup(
+    val epochDay: Long,
+    val files: List<LocalFile>,
+)
+
+enum class DateSectionKind { TODAY, YESTERDAY, DATE }
+
+enum class RepeatMode { OFF, ALL, ONE }
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+data class PlaybackState(
+    val queue: List<LocalFile> = emptyList(),
+    val currentIndex: Int = -1,
+    val playing: Boolean = false,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    val shuffle: Boolean = false,
+    val repeat: RepeatMode = RepeatMode.OFF,
+) {
+    val current: LocalFile? get() = queue.getOrNull(currentIndex)
+    val isActive: Boolean get() = current != null
+}
+
+const val UNKNOWN_ARTIST = "Unknown artist"
+const val UNKNOWN_ALBUM = "Unknown album"
 
 data class AppRelease(
     val id: String,
