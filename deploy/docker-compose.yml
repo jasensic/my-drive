@@ -38,6 +38,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost}
       MDNS_ENABLE: "false"
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +60,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    restart: unless-stopped
     ports:
       - "80:80"
 

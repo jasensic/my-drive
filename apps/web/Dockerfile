@@ -13,6 +13,8 @@ RUN --mount=type=bind,source=.,target=/src \
     npm run build
 
 FROM nginx:1.27-alpine
-COPY deploy/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+ENV NGINX_RESOLVER=127.0.0.11
+ENV API_UPSTREAM_HOST=api:8080
+COPY deploy/nginx/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 EXPOSE 80

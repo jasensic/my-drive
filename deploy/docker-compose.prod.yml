@@ -49,8 +49,8 @@ services:
     restart: unless-stopped
     network_mode: host
     environment:
-      # nginx in the image proxies /v1 to 127.0.0.1:8080 when using host network
-      API_UPSTREAM: http://127.0.0.1:8080
+      NGINX_RESOLVER: 127.0.0.1
+      API_UPSTREAM_HOST: 127.0.0.1:8080
     depends_on:
       api:
         condition: service_healthy
