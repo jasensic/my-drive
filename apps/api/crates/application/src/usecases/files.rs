@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use domain::model::FileRecord;
-use domain::{AlbumId, FileId, MediaKind, UserId};
+use domain::{AlbumId, FileId, LibrarySilo, MediaKind, UserId};
 use sha2::{Digest, Sha256};
 
 use crate::{AppError, Deps};
@@ -31,7 +31,11 @@ pub trait UploadFile: Send + Sync {
 
 #[async_trait]
 pub trait ListFiles: Send + Sync {
-    async fn execute(&self, owner_id: UserId) -> Result<Vec<FileRecord>, AppError>;
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<Vec<FileRecord>, AppError>;
 }
 
 #[async_trait]
@@ -59,6 +63,39 @@ pub trait GetFileContent: Send + Sync {
         end: Option<u64>,
         thumbnail: bool,
     ) -> Result<FileContent, AppError>;
+}
+
+#[async_trait]
+pub trait ListTrash: Send + Sync {
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<Vec<FileRecord>, AppError>;
+}
+
+#[async_trait]
+pub trait TrashFile: Send + Sync {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError>;
+}
+
+#[async_trait]
+pub trait RestoreFile: Send + Sync {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError>;
+}
+
+#[async_trait]
+pub trait PurgeFile: Send + Sync {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<(), AppError>;
+}
+
+#[async_trait]
+pub trait EmptyTrash: Send + Sync {
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<u64, AppError>;
 }
 
 pub struct UploadFileService {
@@ -123,6 +160,7 @@ impl UploadFile for UploadFileService {
             media_kind,
             created_at: cmd.created_at.unwrap_or(now),
             uploaded_at: now,
+            deleted_at: None,
         };
         self.deps.files.insert(&record).await?;
         Ok(record)
@@ -141,8 +179,16 @@ impl ListFilesService {
 
 #[async_trait]
 impl ListFiles for ListFilesService {
-    async fn execute(&self, owner_id: UserId) -> Result<Vec<FileRecord>, AppError> {
-        Ok(self.deps.files.list_by_owner(owner_id).await?)
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<Vec<FileRecord>, AppError> {
+        let mut files = self.deps.files.list_by_owner(owner_id).await?;
+        if let Some(silo) = silo {
+            files.retain(|file| silo.contains(file.media_kind));
+        }
+        Ok(files)
     }
 }
 
@@ -263,3 +309,139 @@ async fn owned_file(deps: &Deps, owner_id: UserId, id: FileId) -> Result<FileRec
     }
     Ok(file)
 }
+
+fn in_silo(file: &FileRecord, silo: Option<LibrarySilo>) -> bool {
+    silo.is_none_or(|silo| silo.contains(file.media_kind))
+}
+
+async fn remove_stored_file(deps: &Deps, file: &FileRecord) -> Result<(), AppError> {
+    deps.objects.delete(&file.object_key).await?;
+    if let Some(thumb) = &file.thumbnail_key {
+        let _ = deps.objects.delete(thumb).await;
+    }
+    deps.files.delete(file.id).await?;
+    Ok(())
+}
+
+pub struct ListTrashService {
+    deps: Arc<Deps>,
+}
+
+impl ListTrashService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl ListTrash for ListTrashService {
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<Vec<FileRecord>, AppError> {
+        let now = self.deps.clock.now();
+        let trashed = self.deps.files.list_trashed_by_owner(owner_id).await?;
+        let (keep, expired) = domain::library::partition_expired_trash(trashed, now, silo);
+        for file in expired {
+            remove_stored_file(&self.deps, &file).await?;
+        }
+        Ok(keep)
+    }
+}
+
+pub struct TrashFileService {
+    deps: Arc<Deps>,
+}
+
+impl TrashFileService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl TrashFile for TrashFileService {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
+        let file = owned_file(&self.deps, owner_id, id).await?;
+        if file.is_trashed() {
+            return Err(AppError::validation("file is already in the trash"));
+        }
+        let now = self.deps.clock.now();
+        self.deps.files.set_deleted_at(id, Some(now)).await?;
+        owned_file(&self.deps, owner_id, id).await
+    }
+}
+
+pub struct RestoreFileService {
+    deps: Arc<Deps>,
+}
+
+impl RestoreFileService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl RestoreFile for RestoreFileService {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
+        let file = owned_file(&self.deps, owner_id, id).await?;
+        if !file.is_trashed() {
+            return Err(AppError::validation("file is not in the trash"));
+        }
+        self.deps.files.set_deleted_at(id, None).await?;
+        owned_file(&self.deps, owner_id, id).await
+    }
+}
+
+pub struct PurgeFileService {
+    deps: Arc<Deps>,
+}
+
+impl PurgeFileService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl PurgeFile for PurgeFileService {
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<(), AppError> {
+        let file = owned_file(&self.deps, owner_id, id).await?;
+        if !file.is_trashed() {
+            return Err(AppError::validation("move the file to trash before deleting it"));
+        }
+        remove_stored_file(&self.deps, &file).await
+    }
+}
+
+pub struct EmptyTrashService {
+    deps: Arc<Deps>,
+}
+
+impl EmptyTrashService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl EmptyTrash for EmptyTrashService {
+    async fn execute(
+        &self,
+        owner_id: UserId,
+        silo: Option<LibrarySilo>,
+    ) -> Result<u64, AppError> {
+        let trashed = self.deps.files.list_trashed_by_owner(owner_id).await?;
+        let mut removed = 0u64;
+        for file in trashed {
+            if in_silo(&file, silo) {
+                remove_stored_file(&self.deps, &file).await?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
+    }
+}
+

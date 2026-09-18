@@ -7,6 +7,7 @@ import { Toast } from 'primeng/toast';
 import { SESSION_QUERY } from '../application/use-cases.tokens';
 import type { SessionQuery } from '../application/use-cases.tokens';
 import { Router } from '@angular/router';
+import { ThemeModeService } from './theme.service';
 
 @Component({
   selector: 'app-shell',
@@ -15,25 +16,37 @@ import { Router } from '@angular/router';
     <p-toast />
     <p-menubar [model]="items">
       <ng-template #end>
-        <span class="user">{{ session.username() }}</span>
-        <p-button label="Logout" [text]="true" (onClick)="logout()" />
+        <div class="end">
+          <p-button
+            [label]="theme.mode() === 'dark' ? 'Light mode' : 'Dark mode'"
+            [icon]="theme.mode() === 'dark' ? 'pi pi-sun' : 'pi pi-moon'"
+            [text]="true"
+            (onClick)="theme.toggle()"
+          />
+          <span class="user">{{ session.username() }}</span>
+          <p-button label="Logout" [text]="true" (onClick)="logout()" />
+        </div>
       </ng-template>
     </p-menubar>
     <router-outlet />
   `,
   styles: `
-    .user { margin-right: 0.75rem; }
+    .end { display: flex; align-items: center; gap: 0.5rem; }
+    .user { margin-right: 0.25rem; }
   `,
 })
 export class ShellComponent {
   items: MenuItem[] = [
-    { label: 'Library', routerLink: '/library' },
+    { label: 'Music', routerLink: '/music', icon: 'pi pi-volume-up' },
+    { label: 'Photos & videos', routerLink: '/photos', icon: 'pi pi-images' },
+    { label: 'Files', routerLink: '/files', icon: 'pi pi-folder' },
     { label: 'Devices', routerLink: '/devices' },
     { label: 'App updates', routerLink: '/app-updates' },
   ];
 
   constructor(
     @Inject(SESSION_QUERY) readonly session: SessionQuery,
+    readonly theme: ThemeModeService,
     private readonly router: Router,
   ) {}
 

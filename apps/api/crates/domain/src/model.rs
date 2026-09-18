@@ -40,6 +40,7 @@ pub struct FileRecord {
     pub media_kind: MediaKind,
     pub created_at: DateTime<Utc>,
     pub uploaded_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

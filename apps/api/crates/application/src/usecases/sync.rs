@@ -175,7 +175,17 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|f| f.owner_id == owner_id)
+                .filter(|f| f.owner_id == owner_id && f.deleted_at.is_none())
+                .cloned()
+                .collect())
+        }
+        async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
+            Ok(self
+                .files
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|f| f.owner_id == owner_id && f.deleted_at.is_some())
                 .cloned()
                 .collect())
         }
@@ -187,6 +197,16 @@ mod tests {
             _id: FileId,
             _album_id: Option<domain::AlbumId>,
         ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn set_deleted_at(
+            &self,
+            _id: FileId,
+            _deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete(&self, _id: FileId) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -312,6 +332,7 @@ mod tests {
             media_kind: MediaKind::Photo,
             created_at: now - chrono::Duration::days(400),
             uploaded_at: now,
+            deleted_at: None,
         };
         let new_photo = FileRecord {
             id: FileId::new(),
@@ -326,6 +347,7 @@ mod tests {
             media_kind: MediaKind::Photo,
             created_at: now - chrono::Duration::days(3),
             uploaded_at: now,
+            deleted_at: None,
         };
         FileRepository::insert(mem.as_ref(), &old_photo).await.unwrap();
         FileRepository::insert(mem.as_ref(), &new_photo).await.unwrap();

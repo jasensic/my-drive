@@ -40,8 +40,15 @@ pub trait AlbumRepository: Send + Sync {
 pub trait FileRepository: Send + Sync {
     async fn insert(&self, file: &FileRecord) -> Result<(), DomainError>;
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
+    async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError>;
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError>;
+    async fn set_deleted_at(
+        &self,
+        id: FileId,
+        deleted_at: Option<DateTime<Utc>>,
+    ) -> Result<(), DomainError>;
+    async fn delete(&self, id: FileId) -> Result<(), DomainError>;
 }
 
 #[async_trait::async_trait]

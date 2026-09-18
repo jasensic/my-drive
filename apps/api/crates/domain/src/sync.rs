@@ -35,6 +35,7 @@ pub fn evaluate_manifest(
 ) -> SyncManifest {
     let selected = files
         .iter()
+        .filter(|file| !file.is_trashed())
         .filter(|file| !have_file_ids.contains(&file.id))
         .filter(|file| rules.iter().any(|rule| rule.matches(file, now)))
         .map(|file| ManifestEntry {
@@ -80,6 +81,7 @@ mod tests {
             media_kind: kind,
             created_at: created,
             uploaded_at: created,
+            deleted_at: None,
         }
     }
 
@@ -159,5 +161,20 @@ mod tests {
         assert_eq!(manifest.files[0].media_kind, MediaKind::Photo);
         assert_eq!(manifest.files[0].album_id, photo.album_id);
         assert!(manifest.albums.is_empty());
+    }
+
+    #[test]
+    fn skips_trashed_files() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let mut photo = file(MediaKind::Photo, 1, 10);
+        photo.deleted_at = Some(now);
+        let rules = vec![SyncRule {
+            media_kind: MediaKind::Photo,
+            max_age_days: None,
+            max_size_bytes: None,
+            include_all: true,
+        }];
+        let manifest = evaluate_manifest(&[photo], &rules, &HashSet::new(), now);
+        assert!(manifest.files.is_empty());
     }
 }

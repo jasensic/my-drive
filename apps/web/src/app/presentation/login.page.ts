@@ -7,12 +7,22 @@ import { InputText } from 'primeng/inputtext';
 import { Password } from 'primeng/password';
 import { CHECK_SETUP, LOGIN, SETUP_ADMIN } from '../application/use-cases.tokens';
 import type { CheckSetup, Login, SetupAdmin } from '../application/use-cases.tokens';
+import { ThemeModeService } from './theme.service';
 
 @Component({
   selector: 'app-login-page',
   imports: [FormsModule, Button, Card, InputText, Password],
   template: `
     <div class="auth-wrap">
+      <div class="theme">
+        <p-button
+          [icon]="theme.mode() === 'dark' ? 'pi pi-sun' : 'pi pi-moon'"
+          [rounded]="true"
+          [text]="true"
+          [attr.aria-label]="theme.mode() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+          (onClick)="theme.toggle()"
+        />
+      </div>
       <p-card [header]="setupRequired() ? 'Create admin' : 'Sign in to my-drive'">
         <div class="field">
           <label for="user">Username</label>
@@ -34,7 +44,8 @@ import type { CheckSetup, Login, SetupAdmin } from '../application/use-cases.tok
     </div>
   `,
   styles: `
-    .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
+    .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1rem; position: relative; }
+    .theme { position: absolute; top: 1rem; right: 1rem; }
     .field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
     .error { color: var(--p-red-500); }
   `,
@@ -50,6 +61,7 @@ export class LoginPage {
     @Inject(CHECK_SETUP) private readonly checkSetup: CheckSetup,
     @Inject(SETUP_ADMIN) private readonly setupAdmin: SetupAdmin,
     @Inject(LOGIN) private readonly login: Login,
+    readonly theme: ThemeModeService,
     private readonly router: Router,
   ) {
     void this.checkSetup.execute().then((required) => this.setupRequired.set(required));
@@ -64,7 +76,7 @@ export class LoginPage {
       } else {
         await this.login.execute(this.username, this.password);
       }
-      await this.router.navigateByUrl('/library');
+      await this.router.navigateByUrl('/photos');
     } catch (err) {
       this.error.set(extractError(err));
     } finally {

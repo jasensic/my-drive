@@ -139,8 +139,8 @@ impl AlbumRepository for PgRepos {
 impl FileRepository for PgRepos {
     async fn insert(&self, file: &FileRecord) -> Result<(), DomainError> {
         sqlx::query(
-            "INSERT INTO files (id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+            "INSERT INTO files (id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
         )
         .bind(file.id.0)
         .bind(file.owner_id.0)
@@ -154,6 +154,7 @@ impl FileRepository for PgRepos {
         .bind(file.media_kind.as_str())
         .bind(file.created_at)
         .bind(file.uploaded_at)
+        .bind(file.deleted_at)
         .execute(&self.pool)
         .await
         .map_err(|e| DomainError::infra(e.to_string()))?;
@@ -162,8 +163,20 @@ impl FileRepository for PgRepos {
 
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
         let rows = sqlx::query(
-            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at
-             FROM files WHERE owner_id = $1 ORDER BY created_at DESC",
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
+             FROM files WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
+        )
+        .bind(owner_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_file).collect()
+    }
+
+    async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
+             FROM files WHERE owner_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
         )
         .bind(owner_id.0)
         .fetch_all(&self.pool)
@@ -174,7 +187,7 @@ impl FileRepository for PgRepos {
 
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError> {
         let row = sqlx::query(
-            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
              FROM files WHERE id = $1",
         )
         .bind(id.0)
@@ -188,6 +201,29 @@ impl FileRepository for PgRepos {
         sqlx::query("UPDATE files SET album_id = $2 WHERE id = $1")
             .bind(id.0)
             .bind(album_id.map(|a| a.0))
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn set_deleted_at(
+        &self,
+        id: FileId,
+        deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<(), DomainError> {
+        sqlx::query("UPDATE files SET deleted_at = $2 WHERE id = $1")
+            .bind(id.0)
+            .bind(deleted_at)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn delete(&self, id: FileId) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM files WHERE id = $1")
+            .bind(id.0)
             .execute(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
@@ -210,6 +246,7 @@ fn row_to_file(r: sqlx::postgres::PgRow) -> Result<FileRecord, DomainError> {
         media_kind: MediaKind::parse(&kind).unwrap_or(MediaKind::Other),
         created_at: r.get("created_at"),
         uploaded_at: r.get("uploaded_at"),
+        deleted_at: r.get("deleted_at"),
     })
 }
 

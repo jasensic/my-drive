@@ -1,7 +1,7 @@
 import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
   APP_RELEASE_REPOSITORY,
@@ -85,8 +85,13 @@ export class HttpAlbumRepository implements AlbumRepository {
 @Injectable()
 export class HttpFileRepository implements FileRepository {
   constructor(private readonly http: HttpClient) {}
-  list(): Promise<MediaFile[]> {
-    return firstValueFrom(this.http.get<MediaFile[]>('/v1/files'));
+  list(silo?: LibrarySilo, trash = false): Promise<MediaFile[]> {
+    const params = silo ? `?silo=${silo}` : '';
+    const path = trash ? `/v1/files/trash${params}` : `/v1/files${params}`;
+    return firstValueFrom(this.http.get<MediaFile[]>(path));
+  }
+  get(id: string): Promise<MediaFile> {
+    return firstValueFrom(this.http.get<MediaFile>(`/v1/files/${id}`));
   }
   upload(file: File, albumId?: string): Promise<MediaFile> {
     const body = new FormData();
@@ -98,6 +103,19 @@ export class HttpFileRepository implements FileRepository {
   }
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile> {
     return firstValueFrom(this.http.patch<MediaFile>(`/v1/files/${id}`, { album_id: albumId }));
+  }
+  trash(id: string): Promise<MediaFile> {
+    return firstValueFrom(this.http.post<MediaFile>(`/v1/files/${id}/trash`, {}));
+  }
+  restore(id: string): Promise<MediaFile> {
+    return firstValueFrom(this.http.post<MediaFile>(`/v1/files/${id}/restore`, {}));
+  }
+  async purge(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/files/${id}`));
+  }
+  emptyTrash(silo?: LibrarySilo): Promise<{ deleted: number }> {
+    const params = silo ? `?silo=${silo}` : '';
+    return firstValueFrom(this.http.delete<{ deleted: number }>(`/v1/files/trash${params}`));
   }
   contentUrl(id: string): string {
     return `/v1/files/${id}/content`;
