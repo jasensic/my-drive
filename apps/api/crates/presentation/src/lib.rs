@@ -43,7 +43,16 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me", get(auth::me))
         .route("/v1/albums", get(albums::list).post(albums::create))
         .route("/v1/files", get(files::list).post(files::upload))
-        .route("/v1/files/{id}", get(files::get).patch(files::assign))
+        .route(
+            "/v1/files/trash",
+            get(files::list_trash).delete(files::empty_trash),
+        )
+        .route(
+            "/v1/files/{id}",
+            get(files::get).patch(files::assign).delete(files::purge),
+        )
+        .route("/v1/files/{id}/trash", post(files::trash))
+        .route("/v1/files/{id}/restore", post(files::restore))
         .route("/v1/files/{id}/content", get(files::content))
         .route("/v1/files/{id}/thumbnail", get(files::thumbnail))
         .route("/v1/devices", get(devices::list).post(devices::register))

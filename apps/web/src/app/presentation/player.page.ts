@@ -2,15 +2,15 @@ import { Component, Inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
-import { LIST_LIBRARY, LOAD_MEDIA_BLOB } from '../application/use-cases.tokens';
-import type { ListLibrary, LoadMediaBlob } from '../application/use-cases.tokens';
-import { MediaFile } from '../domain/models';
+import { GET_MEDIA, LOAD_MEDIA_BLOB } from '../application/use-cases.tokens';
+import type { GetMedia, LoadMediaBlob } from '../application/use-cases.tokens';
+import { MediaFile, siloForKind } from '../domain/models';
 
 @Component({
   selector: 'app-player-page',
   imports: [RouterLink, Button, Card],
   template: `
-    <p-button label="Back" icon="pi pi-arrow-left" routerLink="/library" [text]="true" />
+    <p-button label="Back" icon="pi pi-arrow-left" [routerLink]="backLink()" [text]="true" />
     @if (file(); as current) {
       <p-card [header]="current.name">
         @if (mediaSrc(); as src) {
@@ -37,22 +37,31 @@ export class PlayerPage implements OnInit {
   mediaSrc = signal<string | null>(null);
 
   constructor(
-    @Inject(LIST_LIBRARY) private readonly listLibrary: ListLibrary,
+    @Inject(GET_MEDIA) private readonly getMedia: GetMedia,
     @Inject(LOAD_MEDIA_BLOB) private readonly loadMedia: LoadMediaBlob,
     private readonly route: ActivatedRoute,
   ) {}
 
+  backLink() {
+    const current = this.file();
+    return current ? '/' + siloForKind(current.media_kind) : '/photos';
+  }
+
   async ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
-    const data = await this.listLibrary.execute();
-    const current = data.files.find((f) => f.id === id) ?? null;
-    this.file.set(current);
-    if (current) {
+    if (!id) {
+      return;
+    }
+    try {
+      const current = await this.getMedia.execute(id);
+      this.file.set(current);
       try {
         this.mediaSrc.set(await this.loadMedia.execute(current.id, false));
       } catch {
         this.mediaSrc.set(current.preview_url ?? null);
       }
+    } catch {
+      this.file.set(null);
     }
   }
 }

@@ -1,30 +1,77 @@
 use application::UploadCommand;
 use axum::body::Body;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::Json;
 use bytes::Bytes;
-use domain::{AlbumId, FileId};
+use domain::{AlbumId, FileId, LibrarySilo};
 use uuid::Uuid;
 
-use crate::dto::{AssignAlbumRequest, FileDto};
+use crate::dto::{AssignAlbumRequest, EmptyTrashResponse, FileDto, FileListQuery};
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
 use crate::state::AppState;
 
-#[utoipa::path(get, path = "/v1/files", responses((status = 200, body = [FileDto])), security(("bearer" = [])))]
+fn parse_silo(value: Option<&str>) -> Result<Option<LibrarySilo>, ApiError> {
+    match value {
+        None => Ok(None),
+        Some(raw) if raw.is_empty() => Ok(None),
+        Some(raw) => LibrarySilo::parse(raw)
+            .map(Some)
+            .ok_or_else(|| ApiError(application::AppError::validation("invalid silo"))),
+    }
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/files",
+    params(("silo" = Option<String>, Query, description = "music, photos, or files")),
+    responses((status = 200, body = [FileDto])),
+    security(("bearer" = []))
+)]
 pub async fn list(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
+    Query(query): Query<FileListQuery>,
 ) -> Result<Json<Vec<FileDto>>, ApiError> {
-    let files = state.services.list_files.execute(user.user_id).await?;
-    Ok(Json(
-        files
-            .into_iter()
-            .map(FileDto::from_record)
-            .collect(),
-    ))
+    let silo = parse_silo(query.silo.as_deref())?;
+    let files = state.services.list_files.execute(user.user_id, silo).await?;
+    Ok(Json(files.into_iter().map(FileDto::from_record).collect()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/files/trash",
+    params(("silo" = Option<String>, Query, description = "music, photos, or files")),
+    responses((status = 200, body = [FileDto])),
+    security(("bearer" = []))
+)]
+pub async fn list_trash(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(query): Query<FileListQuery>,
+) -> Result<Json<Vec<FileDto>>, ApiError> {
+    let silo = parse_silo(query.silo.as_deref())?;
+    let files = state.services.list_trash.execute(user.user_id, silo).await?;
+    Ok(Json(files.into_iter().map(FileDto::from_record).collect()))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/files/trash",
+    params(("silo" = Option<String>, Query, description = "music, photos, or files")),
+    responses((status = 200, body = EmptyTrashResponse)),
+    security(("bearer" = []))
+)]
+pub async fn empty_trash(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Query(query): Query<FileListQuery>,
+) -> Result<Json<EmptyTrashResponse>, ApiError> {
+    let silo = parse_silo(query.silo.as_deref())?;
+    let deleted = state.services.empty_trash.execute(user.user_id, silo).await?;
+    Ok(Json(EmptyTrashResponse { deleted }))
 }
 
 #[utoipa::path(post, path = "/v1/files", responses((status = 200, body = FileDto)), security(("bearer" = [])))]
@@ -128,6 +175,66 @@ pub async fn assign(
         )
         .await?;
     Ok(Json(FileDto::from_record(file)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/files/{id}/trash",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = FileDto)),
+    security(("bearer" = []))
+)]
+pub async fn trash(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<FileDto>, ApiError> {
+    let file = state
+        .services
+        .trash_file
+        .execute(user.user_id, FileId::from_uuid(id))
+        .await?;
+    Ok(Json(FileDto::from_record(file)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/files/{id}/restore",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = FileDto)),
+    security(("bearer" = []))
+)]
+pub async fn restore(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<FileDto>, ApiError> {
+    let file = state
+        .services
+        .restore_file
+        .execute(user.user_id, FileId::from_uuid(id))
+        .await?;
+    Ok(Json(FileDto::from_record(file)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/files/{id}",
+    params(("id" = Uuid, Path)),
+    responses((status = 204)),
+    security(("bearer" = []))
+)]
+pub async fn purge(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .services
+        .purge_file
+        .execute(user.user_id, FileId::from_uuid(id))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(get, path = "/v1/files/{id}/content", params(("id" = Uuid, Path)), responses((status = 200), (status = 206)), security(("bearer" = [])))]

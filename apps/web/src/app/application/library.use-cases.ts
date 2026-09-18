@@ -1,12 +1,12 @@
 import { Inject, Injectable } from '@angular/core';
-import { Album, MediaFile } from '../domain/models';
+import { Album, LibrarySilo, MediaFile, siloContains } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
   AlbumRepository,
   FILE_REPOSITORY,
   FileRepository,
 } from '../domain/ports';
-import { AssignFileAlbum, CreateAlbum, ListLibrary, LoadMediaBlob, UploadMedia } from './use-cases.tokens';
+import { AssignFileAlbum, CreateAlbum, EmptyTrash, GetMedia, ListLibrary, LoadMediaBlob, PurgeMedia, RestoreMedia, TrashMedia, UploadMedia } from './use-cases.tokens';
 
 @Injectable()
 export class ListLibraryService implements ListLibrary {
@@ -14,8 +14,8 @@ export class ListLibraryService implements ListLibrary {
     @Inject(FILE_REPOSITORY) private readonly files: FileRepository,
     @Inject(ALBUM_REPOSITORY) private readonly albums: AlbumRepository,
   ) {}
-  async execute(): Promise<{ files: MediaFile[]; albums: Album[] }> {
-    const [files, albums] = await Promise.all([this.files.list(), this.albums.list()]);
+  async execute(silo?: LibrarySilo, trash = false): Promise<{ files: MediaFile[]; albums: Album[] }> {
+    const [files, albums] = await Promise.all([this.files.list(silo, trash), this.albums.list()]);
     const withPreviews = await Promise.all(files.map((file) => this.withPreview(file)));
     return { files: withPreviews, albums };
   }
@@ -40,6 +40,14 @@ export class ListLibraryService implements ListLibrary {
     } catch {
       return file;
     }
+  }
+}
+
+@Injectable()
+export class GetMediaService implements GetMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(fileId: string): Promise<MediaFile> {
+    return this.files.get(fileId);
   }
 }
 
@@ -80,11 +88,57 @@ export class AssignFileAlbumService implements AssignFileAlbum {
   }
 }
 
+@Injectable()
+export class TrashMediaService implements TrashMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(fileId: string): Promise<MediaFile> {
+    return this.files.trash(fileId);
+  }
+}
+
+@Injectable()
+export class RestoreMediaService implements RestoreMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(fileId: string): Promise<MediaFile> {
+    return this.files.restore(fileId);
+  }
+}
+
+@Injectable()
+export class PurgeMediaService implements PurgeMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(fileId: string): Promise<void> {
+    return this.files.purge(fileId);
+  }
+}
+
+@Injectable()
+export class EmptyTrashService implements EmptyTrash {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(silo?: LibrarySilo): Promise<{ deleted: number }> {
+    return this.files.emptyTrash(silo);
+  }
+}
+
 export function filesInAlbum(files: MediaFile[], albumId: string | null): MediaFile[] {
   if (!albumId) {
     return files;
   }
   return files.filter((f) => f.album_id === albumId);
+}
+
+export function fileMatchesSilo(file: Pick<MediaFile, 'mime' | 'media_kind'>, silo: LibrarySilo): boolean {
+  const mime = file.mime.toLowerCase();
+  if (mime.startsWith('audio/')) {
+    return silo === 'music';
+  }
+  if (mime.startsWith('image/') || mime.startsWith('video/')) {
+    return silo === 'photos';
+  }
+  if (file.media_kind) {
+    return siloContains(silo, file.media_kind);
+  }
+  return silo === 'files';
 }
 
 export function isImagePreviewBlob(blob: Blob): boolean {
