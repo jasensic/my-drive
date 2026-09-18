@@ -3,17 +3,21 @@ package com.jasensic.mydrive.data
 import com.jasensic.mydrive.BuildConfig
 import com.jasensic.mydrive.domain.AppUpdateInstaller
 import com.jasensic.mydrive.domain.AppVersion
+import com.jasensic.mydrive.domain.AudioPlayer
 import com.jasensic.mydrive.domain.CheckAppUpdateUseCase
 import com.jasensic.mydrive.domain.ConnectivityMonitor
 import com.jasensic.mydrive.domain.DiscoverServerUseCase
+import com.jasensic.mydrive.domain.ExternalFileOpener
 import com.jasensic.mydrive.domain.InstallAppUpdateUseCase
 import com.jasensic.mydrive.domain.ListLocalLibraryUseCase
 import com.jasensic.mydrive.domain.LoadAppStateUseCase
 import com.jasensic.mydrive.domain.LocalMediaStore
+import com.jasensic.mydrive.domain.OpenLocalFileUseCase
 import com.jasensic.mydrive.domain.RemoteFileSource
 import com.jasensic.mydrive.domain.ServerDiscovery
 import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncStateRepository
+import com.jasensic.mydrive.domain.ThemePreferences
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -30,6 +34,9 @@ abstract class PortBindings {
     @Binds abstract fun local(impl: RoomLocalMediaStore): LocalMediaStore
     @Binds abstract fun state(impl: DataStoreSyncState): SyncStateRepository
     @Binds abstract fun installer(impl: AndroidAppUpdateInstaller): AppUpdateInstaller
+    @Binds abstract fun audioPlayer(impl: ExoPlayerAudioPlayer): AudioPlayer
+    @Binds abstract fun fileOpener(impl: AndroidExternalFileOpener): ExternalFileOpener
+    @Binds abstract fun themePrefs(impl: DataStoreThemePreferences): ThemePreferences
 }
 
 @Module
@@ -85,4 +92,7 @@ object AppProvides {
         state: SyncStateRepository,
         installer: AppUpdateInstaller,
     ) = InstallAppUpdateUseCase(remote, state, installer)
+
+    @Provides
+    fun openLocalFileUseCase(opener: ExternalFileOpener) = OpenLocalFileUseCase(opener)
 }

@@ -21,10 +21,15 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.LocalLibrary
 import com.jasensic.mydrive.domain.LocalMediaStore
 import com.jasensic.mydrive.domain.ManifestFile
+import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.SyncStateRepository
+import com.jasensic.mydrive.domain.ThemeMode
+import com.jasensic.mydrive.domain.ThemePreferences
 import com.jasensic.mydrive.domain.parseMediaKind
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -103,7 +108,8 @@ class RoomLocalMediaStore @Inject constructor(
         )
     }
 
-    override suspend fun knownIds(): Set<String> = files.ids().toSet()
+    override suspend fun knownIds(): Set<String> =
+        files.all().mapNotNull { row -> row.id.takeIf { File(row.path).isFile } }.toSet()
 
     override suspend fun library(): LocalLibrary {
         val albumRows = albums.all()
@@ -111,18 +117,100 @@ class RoomLocalMediaStore @Inject constructor(
         return LocalLibrary(
             albums = albumRows.map { Album(it.id, it.name) },
             files = files.all().map { row ->
-                LocalFile(
-                    id = row.id,
-                    name = row.name,
-                    mime = row.mime,
-                    mediaKind = parseMediaKind(row.mediaKind),
-                    albumId = row.albumId,
-                    albumName = row.albumId?.let { albumById[it] },
-                    size = row.size,
-                    path = row.path,
+                enrich(
+                    LocalFile(
+                        id = row.id,
+                        name = row.name,
+                        mime = row.mime,
+                        mediaKind = parseMediaKind(row.mediaKind),
+                        albumId = row.albumId,
+                        albumName = row.albumId?.let { albumById[it] },
+                        size = row.size,
+                        path = row.path,
+                    ),
                 )
             },
         )
+    }
+
+    private fun enrich(file: LocalFile): LocalFile {
+        val disk = File(file.path)
+        val modified = if (disk.isFile) disk.lastModified() else 0L
+        return when (file.mediaKind) {
+            MediaKind.AUDIO, MediaKind.VIDEO -> file.copy(
+                modifiedAtMillis = modified,
+                artist = file.artist,
+            ).let { readAvMetadata(it, modified) }
+            MediaKind.PHOTO -> file.copy(
+                modifiedAtMillis = photoTakenAt(disk, file.mime, modified),
+                artworkPath = file.path.takeIf { disk.isFile },
+            )
+            MediaKind.OTHER -> file.copy(modifiedAtMillis = modified)
+        }
+    }
+
+    private fun readAvMetadata(file: LocalFile, modified: Long): LocalFile {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.path)
+            val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?.takeIf { it.isNotBlank() }
+            val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                ?.takeIf { it.isNotBlank() }
+            val duration = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+            val artPath = if (file.mediaKind == MediaKind.AUDIO) {
+                retriever.embeddedPicture?.let { bytes ->
+                    val art = File(mediaDir, "${file.id}.art.jpg")
+                    if (!art.isFile) art.writeBytes(bytes)
+                    art.absolutePath
+                }
+            } else {
+                null
+            }
+            file.copy(
+                artist = artist,
+                albumName = file.albumName ?: album,
+                durationMs = duration,
+                modifiedAtMillis = modified,
+                artworkPath = artPath,
+            )
+        } catch (_: Exception) {
+            file.copy(modifiedAtMillis = modified)
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun photoTakenAt(disk: File, mime: String, fallback: Long): Long {
+        if (!disk.isFile) return fallback
+        val jpeg = mime.contains("jpeg", ignoreCase = true) ||
+            mime.contains("jpg", ignoreCase = true) ||
+            disk.name.endsWith(".jpg", true) ||
+            disk.name.endsWith(".jpeg", true)
+        if (!jpeg) return fallback
+        return try {
+            val exif = androidx.exifinterface.media.ExifInterface(disk)
+            val raw = exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME_ORIGINAL)
+                ?: exif.getAttribute(androidx.exifinterface.media.ExifInterface.TAG_DATETIME)
+            parseExifDate(raw) ?: fallback
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private fun parseExifDate(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
+        val formats = listOf(
+            java.text.SimpleDateFormat("yyyy:MM:dd HH:mm:ss", java.util.Locale.US),
+            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US),
+        )
+        for (format in formats) {
+            format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            val parsed = runCatching { format.parse(raw)?.time }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return null
     }
 
     override suspend fun replaceAlbums(albums: List<Album>) {
@@ -185,6 +273,32 @@ class DataStoreSyncState @Inject constructor(
             it.remove(tokenKey)
             it.remove(userKey)
             it.remove(deviceKey)
+        }
+    }
+}
+
+@Singleton
+class DataStoreThemePreferences @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : ThemePreferences {
+    private val themeKey = stringPreferencesKey("themeMode")
+
+    override fun observe(): Flow<ThemeMode> =
+        context.dataStore.data.map { prefs ->
+            when (prefs[themeKey]) {
+                "light" -> ThemeMode.LIGHT
+                "dark" -> ThemeMode.DARK
+                else -> ThemeMode.SYSTEM
+            }
+        }
+
+    override suspend fun set(mode: ThemeMode) {
+        context.dataStore.edit {
+            it[themeKey] = when (mode) {
+                ThemeMode.LIGHT -> "light"
+                ThemeMode.DARK -> "dark"
+                ThemeMode.SYSTEM -> "system"
+            }
         }
     }
 }

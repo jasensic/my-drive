@@ -118,6 +118,18 @@ class CheckAppUpdateUseCase(
     }
 }
 
+class OpenLocalFileUseCase(
+    private val opener: ExternalFileOpener,
+) {
+    fun execute(file: LocalFile) {
+        val local = java.io.File(file.path)
+        if (!local.isFile) {
+            error("File is not on this device yet. Sync first.")
+        }
+        opener.open(file)
+    }
+}
+
 class InstallAppUpdateUseCase(
     private val remote: RemoteFileSource,
     private val state: SyncStateRepository,

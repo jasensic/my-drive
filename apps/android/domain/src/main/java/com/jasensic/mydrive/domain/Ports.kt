@@ -50,3 +50,25 @@ interface AppUpdateInstaller {
     fun apkPath(release: AppRelease): String
     suspend fun install(apkPath: String)
 }
+
+interface AudioPlayer {
+    fun observe(): kotlinx.coroutines.flow.Flow<PlaybackState>
+    fun playQueue(files: List<LocalFile>, startId: String)
+    fun playPause()
+    fun seekTo(positionMs: Long)
+    fun skipToNext()
+    fun skipToPrevious()
+    fun toggleShuffle()
+    fun cycleRepeat()
+    fun pause()
+    fun stop()
+}
+
+interface ExternalFileOpener {
+    fun open(file: LocalFile)
+}
+
+interface ThemePreferences {
+    fun observe(): kotlinx.coroutines.flow.Flow<ThemeMode>
+    suspend fun set(mode: ThemeMode)
+}
