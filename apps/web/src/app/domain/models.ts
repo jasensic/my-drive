@@ -1,4 +1,29 @@
 export type MediaKind = 'photo' | 'video' | 'audio' | 'other';
+export type LibrarySilo = 'music' | 'photos' | 'files';
+export type ThemeMode = 'light' | 'dark';
+
+export const TRASH_RETENTION_DAYS = 30;
+
+export function siloContains(silo: LibrarySilo, kind: MediaKind): boolean {
+  switch (silo) {
+    case 'music':
+      return kind === 'audio';
+    case 'photos':
+      return kind === 'photo' || kind === 'video';
+    case 'files':
+      return kind === 'other';
+  }
+}
+
+export function siloForKind(kind: MediaKind): LibrarySilo {
+  if (kind === 'audio') {
+    return 'music';
+  }
+  if (kind === 'photo' || kind === 'video') {
+    return 'photos';
+  }
+  return 'files';
+}
 
 export interface AuthSession {
   token: string;
@@ -25,6 +50,8 @@ export interface MediaFile {
   thumbnail_url: string | null;
   preview_url?: string;
   media_url?: string;
+  deleted_at?: string | null;
+  purge_at?: string | null;
 }
 
 export interface Device {

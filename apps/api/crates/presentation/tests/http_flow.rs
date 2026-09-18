@@ -119,6 +119,48 @@ async fn setup_upload_and_manifest_flow() {
     assert_eq!(manifest["files"][0]["media_kind"], "photo");
     assert!(manifest["albums"].as_array().unwrap().is_empty());
 
+    let file_id = uploaded["id"].as_str().unwrap();
+    let trashed: Value = client
+        .post(format!("{base}/v1/files/{file_id}/trash"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(trashed["deleted_at"].as_str().is_some());
+    let library: Value = client
+        .get(format!("{base}/v1/files?silo=photos"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(library.as_array().unwrap().is_empty());
+    let bin: Value = client
+        .get(format!("{base}/v1/files/trash?silo=photos"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(bin.as_array().unwrap().len(), 1);
+    let restored: Value = client
+        .post(format!("{base}/v1/files/{file_id}/restore"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(restored["deleted_at"].is_null());
+
     let latest = client
         .get(format!("{base}/v1/app/releases/latest"))
         .bearer_auth(token)

@@ -1,4 +1,4 @@
-import { filesInAlbum, isImagePreviewBlob, ListLibraryService } from './library.use-cases';
+import { fileMatchesSilo, filesInAlbum, isImagePreviewBlob, ListLibraryService } from './library.use-cases';
 import { MediaFile } from '../domain/models';
 import { AlbumRepository, FileRepository } from '../domain/ports';
 
@@ -38,6 +38,16 @@ describe('filesInAlbum', () => {
 
   it('filters by album id', () => {
     expect(filesInAlbum(files, 'a').map((f) => f.id)).toEqual(['1']);
+  });
+});
+
+describe('fileMatchesSilo', () => {
+  it('routes mime types into music, photos, and files', () => {
+    expect(fileMatchesSilo({ mime: 'audio/mpeg', media_kind: 'audio' }, 'music')).toBe(true);
+    expect(fileMatchesSilo({ mime: 'image/jpeg', media_kind: 'photo' }, 'photos')).toBe(true);
+    expect(fileMatchesSilo({ mime: 'video/mp4', media_kind: 'video' }, 'photos')).toBe(true);
+    expect(fileMatchesSilo({ mime: 'application/pdf', media_kind: 'other' }, 'files')).toBe(true);
+    expect(fileMatchesSilo({ mime: 'audio/mpeg', media_kind: 'audio' }, 'photos')).toBe(false);
   });
 });
 
@@ -87,8 +97,13 @@ describe('ListLibraryService', () => {
           thumbnail_url: null,
         },
       ],
+      get: async () => Promise.reject(new Error('unused')),
       upload: async () => Promise.reject(new Error('unused')),
       assignAlbum: async () => Promise.reject(new Error('unused')),
+      trash: async () => Promise.reject(new Error('unused')),
+      restore: async () => Promise.reject(new Error('unused')),
+      purge: async () => Promise.reject(new Error('unused')),
+      emptyTrash: async () => ({ deleted: 0 }),
       contentUrl: () => '',
       blob: async () => new Blob([new Uint8Array([0xff, 0xd8])], { type: 'application/octet-stream' }),
     };

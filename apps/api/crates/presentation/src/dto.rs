@@ -71,12 +71,15 @@ pub struct FileDto {
     pub media_kind: MediaKind,
     pub created_at: DateTime<Utc>,
     pub uploaded_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub purge_at: Option<DateTime<Utc>>,
     pub content_url: String,
     pub thumbnail_url: Option<String>,
 }
 
 impl FileDto {
     pub fn from_record(file: FileRecord) -> Self {
+        let purge_at = file.purge_at();
         Self {
             id: file.id.0,
             album_id: file.album_id.map(|a| a.0),
@@ -87,6 +90,8 @@ impl FileDto {
             media_kind: file.media_kind,
             created_at: file.created_at,
             uploaded_at: file.uploaded_at,
+            deleted_at: file.deleted_at,
+            purge_at,
             content_url: format!("/v1/files/{}/content", file.id),
             thumbnail_url: file
                 .thumbnail_key
@@ -98,6 +103,16 @@ impl FileDto {
 #[derive(Deserialize, ToSchema)]
 pub struct AssignAlbumRequest {
     pub album_id: Option<Uuid>,
+}
+
+#[derive(Deserialize, Default, ToSchema)]
+pub struct FileListQuery {
+    pub silo: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct EmptyTrashResponse {
+    pub deleted: u64,
 }
 
 #[derive(Deserialize, ToSchema)]

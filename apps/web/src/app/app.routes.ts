@@ -14,8 +14,11 @@ export const routes: Routes = [
     component: ShellComponent,
     canActivate: [authGuard],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'library' },
-      { path: 'library', component: LibraryPage },
+      { path: '', pathMatch: 'full', redirectTo: 'photos' },
+      { path: 'library', pathMatch: 'full', redirectTo: 'photos' },
+      { path: 'music', component: LibraryPage, data: { silo: 'music' } },
+      { path: 'photos', component: LibraryPage, data: { silo: 'photos' } },
+      { path: 'files', component: LibraryPage, data: { silo: 'files' } },
       { path: 'player/:id', component: PlayerPage },
       { path: 'devices', component: DevicesPage },
       { path: 'app-updates', component: AppUpdatesPage },

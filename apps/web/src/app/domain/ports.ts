@@ -1,5 +1,5 @@
 import { InjectionToken } from '@angular/core';
-import { Album, AppRelease, ApkIdentity, AuthSession, Device, MediaFile, SyncProfile, SyncRule } from './models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from './models';
 
 export interface TokenStore {
   get(): string | null;
@@ -21,9 +21,14 @@ export interface AlbumRepository {
 }
 
 export interface FileRepository {
-  list(): Promise<MediaFile[]>;
+  list(silo?: LibrarySilo, trash?: boolean): Promise<MediaFile[]>;
+  get(id: string): Promise<MediaFile>;
   upload(file: File, albumId?: string): Promise<MediaFile>;
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile>;
+  trash(id: string): Promise<MediaFile>;
+  restore(id: string): Promise<MediaFile>;
+  purge(id: string): Promise<void>;
+  emptyTrash(silo?: LibrarySilo): Promise<{ deleted: number }>;
   contentUrl(id: string): string;
   blob(id: string, thumbnail: boolean): Promise<Blob>;
 }

@@ -116,7 +116,19 @@ impl FileRepository for MemoryStore {
             .unwrap()
             .files
             .iter()
-            .filter(|f| f.owner_id == owner_id)
+            .filter(|f| f.owner_id == owner_id && f.deleted_at.is_none())
+            .cloned()
+            .collect())
+    }
+
+    async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .files
+            .iter()
+            .filter(|f| f.owner_id == owner_id && f.deleted_at.is_some())
             .cloned()
             .collect())
     }
@@ -140,6 +152,31 @@ impl FileRepository for MemoryStore {
             .find(|f| f.id == id)
             .ok_or_else(|| DomainError::not_found("file not found"))?;
         file.album_id = album_id;
+        Ok(())
+    }
+
+    async fn set_deleted_at(
+        &self,
+        id: FileId,
+        deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let file = inner
+            .files
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or_else(|| DomainError::not_found("file not found"))?;
+        file.deleted_at = deleted_at;
+        Ok(())
+    }
+
+    async fn delete(&self, id: FileId) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let before = inner.files.len();
+        inner.files.retain(|f| f.id != id);
+        if inner.files.len() == before {
+            return Err(DomainError::not_found("file not found"));
+        }
         Ok(())
     }
 }
