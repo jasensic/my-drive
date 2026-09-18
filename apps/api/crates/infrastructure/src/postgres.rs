@@ -25,10 +25,46 @@ impl PgRepos {
     }
 
     pub async fn migrate(&self) -> Result<(), DomainError> {
-        sqlx::migrate!("../../migrations")
-            .run(&self.pool)
-            .await
-            .map_err(|e| DomainError::infra(e.to_string()))
+        // A second API replica may apply the same version first. sqlx then tries
+        // to INSERT into `_sqlx_migrations` and hits the primary key. Retry until
+        // the committed row is visible and sqlx treats the version as applied.
+        let mut last_err = None;
+        for attempt in 1..=8 {
+            match sqlx::migrate!("../../migrations").run(&self.pool).await {
+                Ok(()) => return Ok(()),
+                Err(err) if is_sqlx_migration_race(&err.to_string()) => {
+                    tracing::warn!(attempt, error = %err, "sqlx migration raced; retrying");
+                    last_err = Some(err);
+                    tokio::time::sleep(std::time::Duration::from_millis(50 * attempt)).await;
+                }
+                Err(err) => return Err(DomainError::infra(err.to_string())),
+            }
+        }
+        Err(DomainError::infra(format!(
+            "migrations still racing after retries: {}",
+            last_err
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        )))
+    }
+}
+
+fn is_sqlx_migration_race(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("_sqlx_migrations_pkey")
+        || (lower.contains("duplicate key") && lower.contains("_sqlx_migrations"))
+}
+
+#[cfg(test)]
+mod migrate_tests {
+    use super::is_sqlx_migration_race;
+
+    #[test]
+    fn detects_concurrent_sqlx_version_insert() {
+        assert!(is_sqlx_migration_race(
+            r#"while executing migrations: error returned from database: duplicate key value violates unique constraint "_sqlx_migrations_pkey""#
+        ));
+        assert!(!is_sqlx_migration_race("relation files already exists"));
     }
 }
 
