@@ -169,14 +169,15 @@ class DriveViewModel @Inject constructor(
                 error = null,
             )
             runCatching {
-                syncFiles.execute(
+                val result = syncFiles.execute(
                     username?.ifBlank { null },
                     password?.ifBlank { null },
                     manualHost?.ifBlank { null },
                 )
-            }.onSuccess { result ->
                 val library = listLibrary.execute()
                 val update = runCatching { checkUpdate.execute() }.getOrNull()
+                Triple(result, library, update)
+            }.onSuccess { (result, library, update) ->
                 _ui.value = _ui.value.copy(
                     progress = null,
                     error = null,

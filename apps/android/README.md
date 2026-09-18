@@ -32,7 +32,16 @@ cd apps/android
 ./gradlew :app:assembleRelease
 ```
 
-Add GitHub secrets `MYDRIVE_KEYSTORE_BASE64` (base64 of the `.jks`), `MYDRIVE_STORE_PASSWORD`, `MYDRIVE_KEY_PASSWORD`, and `MYDRIVE_KEY_ALIAS=mydrive`. Local builds must use the same `keystore.properties`.
+Add **repository** secrets (Settings → Secrets and variables → Actions → *Repository* secrets — not an Environment):
+
+- `MYDRIVE_KEYSTORE_BASE64` (base64 of the `.jks`, no PEM headers)
+- `MYDRIVE_STORE_PASSWORD`
+- `MYDRIVE_KEY_PASSWORD` (same value unless the key uses another)
+- `MYDRIVE_KEY_ALIAS=mydrive`
+
+CI (`ci.yml` / `android-release.yml`) reads `${{ secrets.* }}` with **no** `jobs.*.environment`. Secrets attached to a GitHub Environment (`production`, `staging`, …) never reach the job, so Gradle generates a new debug certificate and in-app updates fail with a signing/certificate error.
+
+If you really want Environment secrets, add `environment: <name>` to the `android-apk` / `apk` jobs and put the four secrets in that Environment. Local builds must use the same `keystore.properties`.
 
 The portal **App updates** page publishes that APK. After connect, the phone installs it if `versionCode` is higher (needs “install unknown apps”). Failures show in the app and logcat tag `MyDriveUpdate`.
 

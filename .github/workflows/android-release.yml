@@ -27,8 +27,8 @@ jobs:
           MYDRIVE_KEY_ALIAS: ${{ secrets.MYDRIVE_KEY_ALIAS }}
         run: |
           if [ -z "$MYDRIVE_KEYSTORE_BASE64" ]; then
-            echo "No MYDRIVE_KEYSTORE_BASE64 secret; signing with the runner debug key"
-            exit 0
+            echo "::error::MYDRIVE_KEYSTORE_BASE64 is not visible to this job. Add repository secrets (not GitHub Environment secrets). This workflow does not set jobs.apk.environment."
+            exit 1
           fi
           echo "$MYDRIVE_KEYSTORE_BASE64" | base64 -d > mydrive-upload.jks
           printf '%s\n' \

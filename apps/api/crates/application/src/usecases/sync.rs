@@ -43,10 +43,7 @@ impl BuildSyncManifest for BuildSyncManifestService {
             .await?
             .ok_or_else(|| AppError::not_found("sync profile not found"))?;
         let now = self.deps.clock.now();
-        let mut files = self.deps.files.list_by_owner(query.user_id).await?;
-        if let Some(since) = query.last_sync_at {
-            files.retain(|f| f.uploaded_at > since || f.created_at > since);
-        }
+        let files = self.deps.files.list_by_owner(query.user_id).await?;
         let mut manifest = evaluate_manifest(&files, &profile.rules, &query.have_file_ids, now);
         manifest.albums = self.deps.albums.list_by_owner(query.user_id).await?;
         self.deps.devices.touch_sync(device.id, now).await?;
@@ -356,5 +353,66 @@ mod tests {
             .unwrap();
         assert_eq!(manifest.files.len(), 1);
         assert_eq!(manifest.files[0].id, new_photo.id);
+    }
+
+    #[tokio::test]
+    async fn manifest_still_returns_files_the_device_does_not_have_after_last_sync() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let user_id = UserId::new();
+        let mem = Arc::new(Mem::default());
+        let device = domain::model::Device {
+            id: DeviceId::new(),
+            user_id,
+            name: "Phone A".into(),
+            last_sync_at: Some(now),
+            created_at: now,
+        };
+        DeviceRepository::insert(mem.as_ref(), &device).await.unwrap();
+        SyncProfileRepository::upsert(mem.as_ref(), &default_profile(device.id))
+            .await
+            .unwrap();
+
+        let photo = FileRecord {
+            id: FileId::new(),
+            owner_id: user_id,
+            album_id: None,
+            name: "kept.jpg".into(),
+            size: 10,
+            mime: "image/jpeg".into(),
+            checksum: "sha256:y".into(),
+            object_key: "b".into(),
+            thumbnail_key: None,
+            media_kind: MediaKind::Photo,
+            created_at: now - chrono::Duration::days(3),
+            uploaded_at: now - chrono::Duration::days(3),
+        };
+        FileRepository::insert(mem.as_ref(), &photo).await.unwrap();
+
+        let deps = Arc::new(Deps {
+            users: mem.clone(),
+            albums: mem.clone(),
+            files: mem.clone(),
+            devices: mem.clone(),
+            profiles: mem.clone(),
+            app_releases: mem.clone(),
+            objects: Arc::new(NoopObjects),
+            hasher: Arc::new(NoopHasher),
+            tokens: Arc::new(NoopTokens),
+            clock: Arc::new(FakeClock(now)),
+            thumbnailer: Arc::new(NoopThumbs),
+            apk_inspector: Arc::new(NoopApk),
+        });
+        let svc = BuildSyncManifestService::new(deps);
+        let manifest = svc
+            .execute(ManifestQuery {
+                user_id,
+                device_id: device.id,
+                last_sync_at: Some(now),
+                have_file_ids: HashSet::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(manifest.files.len(), 1);
+        assert_eq!(manifest.files[0].id, photo.id);
     }
 }

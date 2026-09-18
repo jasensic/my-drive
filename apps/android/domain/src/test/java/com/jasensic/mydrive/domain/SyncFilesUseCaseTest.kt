@@ -20,6 +20,7 @@ class FakeDiscovery(private val server: DiscoveredServer?) : ServerDiscovery {
 class FakeRemote : RemoteFileSource {
     var downloaded = 0
     var logins = 0
+    var lastSyncSeen: String? = "unset"
     var latest: AppRelease? = null
     var failAuth = false
     override suspend fun login(baseUrl: String, username: String, password: String): AuthSession {
@@ -38,6 +39,7 @@ class FakeRemote : RemoteFileSource {
     ) = if (failAuth) {
         error("login required")
     } else {
+        lastSyncSeen = lastSyncAt
         SyncManifest(
             generatedAt = "2026-09-15T12:00:00Z",
             files = listOf(
@@ -168,6 +170,41 @@ class SyncFilesUseCaseTest {
         }
         assertEquals("login required", err.message)
         assertNull(state.stored)
+    }
+
+    @Test
+    fun omitsLastSyncWhenLocalCatalogIsEmpty() = runTest {
+        val remote = FakeRemote()
+        val state = FakeState().apply {
+            stored = AuthSession("t", "admin", "dev-1")
+            last = "2026-09-15T12:00:00Z"
+        }
+        useCase(remote, FakeStore(), state).execute()
+        assertNull(remote.lastSyncSeen)
+        assertEquals(1, remote.downloaded)
+    }
+
+    @Test
+    fun recommitsExistingBytesWithoutDownloadingAgain() = runTest {
+        val remote = FakeRemote()
+        val store = FakeStore()
+        val state = FakeState().apply { stored = AuthSession("t", "admin", "dev-1") }
+        java.io.File(store.pathFor("1")).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(1, 2, 3))
+        }
+        val result = useCase(remote, store, state).execute()
+        assertEquals(0, remote.downloaded)
+        assertEquals(listOf("1"), store.saved)
+        assertEquals(1, result.downloaded)
+    }
+
+    @Test
+    fun ipv6BaseUrlUsesBrackets() {
+        assertEquals(
+            "http://[fe80::1]:8080",
+            DiscoveredServer("fe80::1%wlan0", 8080, "my-drive").baseUrl,
+        )
     }
 
     @Test

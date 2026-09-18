@@ -42,7 +42,12 @@ data class DiscoveredServer(
     val port: Int,
     val name: String,
 ) {
-    val baseUrl: String get() = "http://$host:$port"
+    val baseUrl: String
+        get() {
+            val raw = host.substringBefore('%')
+            val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
+            return "http://$hostPart:$port"
+        }
 }
 
 data class AuthSession(

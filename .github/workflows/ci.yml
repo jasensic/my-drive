@@ -67,8 +67,8 @@ jobs:
           MYDRIVE_KEY_ALIAS: ${{ secrets.MYDRIVE_KEY_ALIAS }}
         run: |
           if [ -z "$MYDRIVE_KEYSTORE_BASE64" ]; then
-            echo "No MYDRIVE_KEYSTORE_BASE64 secret; signing with the runner debug key"
-            exit 0
+            echo "::error::MYDRIVE_KEYSTORE_BASE64 is not visible to this job. Add repository secrets (Settings → Secrets and variables → Actions → Repository secrets), not GitHub Environment secrets. These workflows do not set jobs.<id>.environment, so Environment secrets are ignored and Gradle generates a throwaway debug certificate."
+            exit 1
           fi
           echo "$MYDRIVE_KEYSTORE_BASE64" | base64 -d > mydrive-upload.jks
           printf '%s\n' \

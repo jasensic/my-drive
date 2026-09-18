@@ -181,6 +181,12 @@ pub fn default_profile(device_id: DeviceId) -> SyncProfile {
                 max_size_bytes: None,
                 include_all: true,
             },
+            SyncRule {
+                media_kind: MediaKind::Other,
+                max_age_days: None,
+                max_size_bytes: None,
+                include_all: true,
+            },
         ],
     }
 }
