@@ -58,6 +58,25 @@ class FakeRemote : RemoteFileSource {
     }
 
     override suspend fun latestAppRelease(baseUrl: String, token: String) = latest
+
+    override suspend fun createAlbum(baseUrl: String, token: String, name: String, silo: LibrarySilo) =
+        Album("new-album", name, silo)
+
+    override suspend fun renameAlbum(baseUrl: String, token: String, id: String, name: String) =
+        Album(id, name)
+
+    override suspend fun deleteAlbum(baseUrl: String, token: String, id: String) = Unit
+
+    override suspend fun updateFile(
+        baseUrl: String,
+        token: String,
+        id: String,
+        name: String?,
+        albumId: String?,
+        clearAlbum: Boolean,
+    ) = ManifestFile(id, name ?: "a.jpg", 3, "image/jpeg", "", "/v1/files/$id/content", MediaKind.PHOTO, if (clearAlbum) null else albumId)
+
+    override suspend fun trashFile(baseUrl: String, token: String, id: String) = Unit
 }
 
 class FakeStore : LocalMediaStore {
@@ -83,6 +102,23 @@ class FakeStore : LocalMediaStore {
     override suspend fun replaceAlbums(albums: List<Album>) {
         this.albums.clear()
         this.albums += albums
+    }
+
+    override suspend fun upsertAlbum(album: Album) {
+        albums.removeAll { it.id == album.id }
+        albums += album
+    }
+
+    override suspend fun deleteAlbum(id: String) {
+        albums.removeAll { it.id == id }
+    }
+
+    override suspend fun renameFile(id: String, name: String) = Unit
+
+    override suspend fun assignAlbum(id: String, albumId: String?) = Unit
+
+    override suspend fun removeFiles(ids: Collection<String>) {
+        saved.removeAll(ids.toSet())
     }
 }
 
@@ -196,7 +232,7 @@ class SyncFilesUseCaseTest {
         val result = useCase(remote, store, state).execute()
         assertEquals(0, remote.downloaded)
         assertEquals(listOf("1"), store.saved)
-        assertEquals(1, result.downloaded)
+        assertEquals(0, result.downloaded)
     }
 
     @Test

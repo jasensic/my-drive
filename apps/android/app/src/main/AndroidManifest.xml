@@ -12,9 +12,12 @@
     <application
         android:name=".MyDriveApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="my-drive"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.MyDrive">
         <activity
             android:name=".presentation.MainActivity"

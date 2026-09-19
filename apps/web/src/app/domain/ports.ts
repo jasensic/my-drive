@@ -16,14 +16,17 @@ export interface AuthRepository {
 }
 
 export interface AlbumRepository {
-  list(): Promise<Album[]>;
-  create(name: string): Promise<Album>;
+  list(silo?: LibrarySilo): Promise<Album[]>;
+  create(name: string, silo: LibrarySilo): Promise<Album>;
+  rename(id: string, name: string): Promise<Album>;
+  remove(id: string): Promise<void>;
 }
 
 export interface FileRepository {
   list(silo?: LibrarySilo, trash?: boolean): Promise<MediaFile[]>;
   get(id: string): Promise<MediaFile>;
   upload(file: File, albumId?: string): Promise<MediaFile>;
+  update(id: string, patch: { name?: string; albumId?: string | null }): Promise<MediaFile>;
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile>;
   trash(id: string): Promise<MediaFile>;
   restore(id: string): Promise<MediaFile>;

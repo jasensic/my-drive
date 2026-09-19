@@ -6,21 +6,29 @@ import com.jasensic.mydrive.domain.AuthSession
 import com.jasensic.mydrive.domain.ManifestFile
 import com.jasensic.mydrive.domain.RemoteFileSource
 import com.jasensic.mydrive.domain.SyncManifest
+import com.jasensic.mydrive.domain.LibrarySilo
+import com.jasensic.mydrive.domain.parseLibrarySilo
 import com.jasensic.mydrive.domain.parseMediaKind
+import com.jasensic.mydrive.domain.wireValue
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Path
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -36,7 +44,18 @@ data class ManifestRequestDto(
     @Json(name = "last_sync_at") val lastSyncAt: String?,
     @Json(name = "have_file_ids") val haveFileIds: List<String>,
 )
-data class AlbumDto(val id: String, val name: String)
+data class AlbumDto(val id: String, val name: String, val silo: String = "photos")
+data class CreateAlbumDto(val name: String, val silo: String)
+data class FileDto(
+    val id: String,
+    val name: String,
+    val size: Long = 0,
+    val mime: String = "application/octet-stream",
+    val checksum: String = "",
+    @Json(name = "media_kind") val mediaKind: String = "other",
+    @Json(name = "album_id") val albumId: String? = null,
+    @Json(name = "content_url") val contentUrl: String = "",
+)
 data class ManifestDto(
     @Json(name = "generated_at") val generatedAt: String,
     val files: List<ManifestFileDto> = emptyList(),
@@ -82,6 +101,31 @@ interface DriveApi {
     suspend fun latestRelease(
         @Header("Authorization") authorization: String,
     ): AppReleaseDto
+
+    @POST("/v1/albums")
+    suspend fun createAlbum(
+        @Header("Authorization") authorization: String,
+        @Body body: CreateAlbumDto,
+    ): AlbumDto
+
+    @PATCH("/v1/albums/{id}")
+    suspend fun renameAlbum(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body body: NameDto,
+    ): AlbumDto
+
+    @DELETE("/v1/albums/{id}")
+    suspend fun deleteAlbum(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    )
+
+    @POST("/v1/files/{id}/trash")
+    suspend fun trashFile(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): FileDto
 }
 
 @Singleton
@@ -135,7 +179,7 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                     albumId = it.albumId,
                 )
             },
-            albums = dto.albums.map { Album(it.id, it.name) },
+            albums = dto.albums.map { Album(it.id, it.name, parseLibrarySilo(it.silo)) },
         )
     }
 
@@ -171,6 +215,67 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         } catch (ex: HttpException) {
             if (ex.code() == 404) null else if (ex.code() == 401) error("login required") else throw ex
         }
+
+    override suspend fun createAlbum(baseUrl: String, token: String, name: String, silo: LibrarySilo): Album =
+        wrapAuth {
+            val dto = api(baseUrl).createAlbum("Bearer $token", CreateAlbumDto(name, silo.wireValue()))
+            Album(dto.id, dto.name, parseLibrarySilo(dto.silo))
+        }
+
+    override suspend fun renameAlbum(baseUrl: String, token: String, id: String, name: String): Album =
+        wrapAuth {
+            val dto = api(baseUrl).renameAlbum("Bearer $token", id, NameDto(name))
+            Album(dto.id, dto.name, parseLibrarySilo(dto.silo))
+        }
+
+    override suspend fun deleteAlbum(baseUrl: String, token: String, id: String) {
+        wrapAuth { api(baseUrl).deleteAlbum("Bearer $token", id) }
+    }
+
+    override suspend fun updateFile(
+        baseUrl: String,
+        token: String,
+        id: String,
+        name: String?,
+        albumId: String?,
+        clearAlbum: Boolean,
+    ): ManifestFile = wrapAuth {
+        val json = org.json.JSONObject()
+        if (name != null) json.put("name", name)
+        when {
+            clearAlbum -> json.put("album_id", org.json.JSONObject.NULL)
+            albumId != null -> json.put("album_id", albumId)
+        }
+        val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val req = Request.Builder()
+            .url(absoluteApi(baseUrl, "/v1/files/$id"))
+            .header("Authorization", "Bearer $token")
+            .patch(body)
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) error("login required")
+            if (!resp.isSuccessful) error(resp.body?.string()?.ifBlank { "update failed: ${resp.code}" } ?: "update failed: ${resp.code}")
+            val payload = resp.body?.string() ?: error("empty body")
+            val dto = moshi.adapter(FileDto::class.java).fromJson(payload) ?: error("invalid file")
+            ManifestFile(
+                id = dto.id,
+                name = dto.name,
+                size = dto.size,
+                mime = dto.mime,
+                checksum = dto.checksum,
+                url = dto.contentUrl,
+                mediaKind = parseMediaKind(dto.mediaKind),
+                albumId = dto.albumId,
+            )
+        }
+    }
+
+    override suspend fun trashFile(baseUrl: String, token: String, id: String) {
+        wrapAuth { api(baseUrl).trashFile("Bearer $token", id) }
+    }
+
+    private fun absoluteApi(baseUrl: String, path: String): String =
+        baseUrl.trimEnd('/') + path
 
     private suspend fun <T> wrapAuth(block: suspend () -> T): T =
         try {

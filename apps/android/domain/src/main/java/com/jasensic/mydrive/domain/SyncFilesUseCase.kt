@@ -85,7 +85,8 @@ class SyncFilesUseCase(
             var downloaded = 0
             for (file in manifest.files) {
                 val path = localStore.pathFor(file.id)
-                if (!reuseLocalFile(file, path)) {
+                val reused = reuseLocalFile(file, path)
+                if (!reused) {
                     remote.downloadTo(lanUrl(base, file.url), session.token, path)
                     if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
                         !checksumMatchesPath(file.checksum, path)
@@ -93,9 +94,9 @@ class SyncFilesUseCase(
                         java.io.File(path).delete()
                         error("checksum mismatch for ${file.name}")
                     }
+                    downloaded += 1
                 }
                 localStore.commit(file, path)
-                downloaded += 1
             }
             state.saveLastSyncAt(manifest.generatedAt)
             SyncResult(server, manifest, downloaded)
@@ -133,6 +134,20 @@ class OpenLocalFileUseCase(
     }
 }
 
+class ShareLocalFilesUseCase(
+    private val sharer: MediaSharer,
+) {
+    fun execute(files: List<LocalFile>) {
+        if (files.isEmpty()) return
+        files.forEach { file ->
+            if (!java.io.File(file.path).isFile) {
+                error("File is not on this device yet. Sync first.")
+            }
+        }
+        sharer.share(files)
+    }
+}
+
 class InstallAppUpdateUseCase(
     private val remote: RemoteFileSource,
     private val state: SyncStateRepository,
@@ -150,6 +165,66 @@ class InstallAppUpdateUseCase(
             error("checksum mismatch for app update ${release.versionName}")
         }
         installer.install(path)
+    }
+}
+
+class ManageLibraryUseCase(
+    private val remote: RemoteFileSource,
+    private val local: LocalMediaStore,
+    private val state: SyncStateRepository,
+) {
+    suspend fun createAlbum(name: String, silo: LibrarySilo): Album {
+        val (server, session) = credentials()
+        val album = remote.createAlbum(server.baseUrl, session.token, name, silo)
+        local.upsertAlbum(album)
+        return album
+    }
+
+    suspend fun renameAlbum(id: String, name: String): Album {
+        val (server, session) = credentials()
+        val album = remote.renameAlbum(server.baseUrl, session.token, id, name)
+        local.upsertAlbum(album)
+        return album
+    }
+
+    suspend fun deleteAlbum(id: String) {
+        val (server, session) = credentials()
+        remote.deleteAlbum(server.baseUrl, session.token, id)
+        local.deleteAlbum(id)
+    }
+
+    suspend fun renameFile(id: String, name: String) {
+        val (server, session) = credentials()
+        remote.updateFile(server.baseUrl, session.token, id, name = name)
+        local.renameFile(id, name)
+    }
+
+    suspend fun assignAlbum(ids: List<String>, albumId: String?) {
+        val (server, session) = credentials()
+        for (id in ids) {
+            remote.updateFile(
+                server.baseUrl,
+                session.token,
+                id,
+                albumId = albumId,
+                clearAlbum = albumId == null,
+            )
+            local.assignAlbum(id, albumId)
+        }
+    }
+
+    suspend fun trashFiles(ids: List<String>) {
+        val (server, session) = credentials()
+        for (id in ids) {
+            remote.trashFile(server.baseUrl, session.token, id)
+        }
+        local.removeFiles(ids)
+    }
+
+    private suspend fun credentials(): Pair<DiscoveredServer, AuthSession> {
+        val session = state.session() ?: error("login required")
+        val server = state.lastServer() ?: error("my-drive server not found on LAN")
+        return server to session
     }
 }
 

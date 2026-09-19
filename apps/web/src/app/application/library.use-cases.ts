@@ -6,7 +6,7 @@ import {
   FILE_REPOSITORY,
   FileRepository,
 } from '../domain/ports';
-import { AssignFileAlbum, CreateAlbum, EmptyTrash, GetMedia, ListLibrary, LoadMediaBlob, PurgeMedia, RestoreMedia, TrashMedia, UploadMedia } from './use-cases.tokens';
+import { AssignFileAlbum, CreateAlbum, DeleteAlbum, EmptyTrash, GetMedia, ListLibrary, LoadMediaBlob, PurgeMedia, RenameAlbum, RenameMedia, RestoreMedia, ShareMedia, TrashMedia, UploadMedia } from './use-cases.tokens';
 
 @Injectable()
 export class ListLibraryService implements ListLibrary {
@@ -15,7 +15,7 @@ export class ListLibraryService implements ListLibrary {
     @Inject(ALBUM_REPOSITORY) private readonly albums: AlbumRepository,
   ) {}
   async execute(silo?: LibrarySilo, trash = false): Promise<{ files: MediaFile[]; albums: Album[] }> {
-    const [files, albums] = await Promise.all([this.files.list(silo, trash), this.albums.list()]);
+    const [files, albums] = await Promise.all([this.files.list(silo, trash), this.albums.list(silo)]);
     const withPreviews = await Promise.all(files.map((file) => this.withPreview(file)));
     return { files: withPreviews, albums };
   }
@@ -71,12 +71,32 @@ export class UploadMediaService implements UploadMedia {
 @Injectable()
 export class CreateAlbumService implements CreateAlbum {
   constructor(@Inject(ALBUM_REPOSITORY) private readonly albums: AlbumRepository) {}
-  execute(name: string): Promise<Album> {
+  execute(name: string, silo: LibrarySilo): Promise<Album> {
     const trimmed = name.trim();
     if (!trimmed) {
       return Promise.reject(new Error('Album name is required'));
     }
-    return this.albums.create(trimmed);
+    return this.albums.create(trimmed, silo);
+  }
+}
+
+@Injectable()
+export class RenameAlbumService implements RenameAlbum {
+  constructor(@Inject(ALBUM_REPOSITORY) private readonly albums: AlbumRepository) {}
+  execute(id: string, name: string): Promise<Album> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return Promise.reject(new Error('Album name is required'));
+    }
+    return this.albums.rename(id, trimmed);
+  }
+}
+
+@Injectable()
+export class DeleteAlbumService implements DeleteAlbum {
+  constructor(@Inject(ALBUM_REPOSITORY) private readonly albums: AlbumRepository) {}
+  execute(id: string): Promise<void> {
+    return this.albums.remove(id);
   }
 }
 
@@ -85,6 +105,31 @@ export class AssignFileAlbumService implements AssignFileAlbum {
   constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
   execute(fileId: string, albumId: string | null): Promise<MediaFile> {
     return this.files.assignAlbum(fileId, albumId);
+  }
+}
+
+@Injectable()
+export class RenameMediaService implements RenameMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  execute(fileId: string, name: string): Promise<MediaFile> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return Promise.reject(new Error('Name is required'));
+    }
+    return this.files.update(fileId, { name: trimmed });
+  }
+}
+
+@Injectable()
+export class ShareMediaService implements ShareMedia {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+  async execute(items: MediaFile[]): Promise<{ name: string; mime: string; blob: Blob }[]> {
+    const shared = [];
+    for (const file of items) {
+      const blob = await this.files.blob(file.id, false);
+      shared.push({ name: file.name, mime: file.mime || blob.type, blob });
+    }
+    return shared;
   }
 }
 

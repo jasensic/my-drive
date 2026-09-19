@@ -25,7 +25,9 @@ import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.SyncStateRepository
 import com.jasensic.mydrive.domain.ThemeMode
 import com.jasensic.mydrive.domain.ThemePreferences
+import com.jasensic.mydrive.domain.parseLibrarySilo
 import com.jasensic.mydrive.domain.parseMediaKind
+import com.jasensic.mydrive.domain.wireValue
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -51,6 +53,7 @@ data class LocalFileEntity(
 data class LocalAlbumEntity(
     @PrimaryKey val id: String,
     val name: String,
+    val silo: String = "photos",
 )
 
 @Dao
@@ -63,6 +66,18 @@ interface LocalFileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: LocalFileEntity)
+
+    @Query("UPDATE local_files SET name = :name WHERE id = :id")
+    suspend fun rename(id: String, name: String)
+
+    @Query("UPDATE local_files SET albumId = :albumId WHERE id = :id")
+    suspend fun assignAlbum(id: String, albumId: String?)
+
+    @Query("DELETE FROM local_files WHERE id IN (:ids)")
+    suspend fun deleteIds(ids: List<String>)
+
+    @Query("UPDATE local_files SET albumId = NULL WHERE albumId = :albumId")
+    suspend fun clearAlbum(albumId: String)
 }
 
 @Dao
@@ -75,9 +90,15 @@ interface LocalAlbumDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<LocalAlbumEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: LocalAlbumEntity)
+
+    @Query("DELETE FROM local_albums WHERE id = :id")
+    suspend fun delete(id: String)
 }
 
-@Database(entities = [LocalFileEntity::class, LocalAlbumEntity::class], version = 2, exportSchema = false)
+@Database(entities = [LocalFileEntity::class, LocalAlbumEntity::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun files(): LocalFileDao
     abstract fun albums(): LocalAlbumDao
@@ -115,7 +136,7 @@ class RoomLocalMediaStore @Inject constructor(
         val albumRows = albums.all()
         val albumById = albumRows.associate { it.id to it.name }
         return LocalLibrary(
-            albums = albumRows.map { Album(it.id, it.name) },
+            albums = albumRows.map { Album(it.id, it.name, parseLibrarySilo(it.silo)) },
             files = files.all().map { row ->
                 enrich(
                     LocalFile(
@@ -216,8 +237,32 @@ class RoomLocalMediaStore @Inject constructor(
     override suspend fun replaceAlbums(albums: List<Album>) {
         this.albums.clear()
         if (albums.isNotEmpty()) {
-            this.albums.upsertAll(albums.map { LocalAlbumEntity(it.id, it.name) })
+            this.albums.upsertAll(albums.map { LocalAlbumEntity(it.id, it.name, it.silo.wireValue()) })
         }
+    }
+
+    override suspend fun upsertAlbum(album: Album) {
+        albums.upsert(LocalAlbumEntity(album.id, album.name, album.silo.wireValue()))
+    }
+
+    override suspend fun deleteAlbum(id: String) {
+        files.clearAlbum(id)
+        albums.delete(id)
+    }
+
+    override suspend fun renameFile(id: String, name: String) {
+        files.rename(id, name)
+    }
+
+    override suspend fun assignAlbum(id: String, albumId: String?) {
+        files.assignAlbum(id, albumId)
+    }
+
+    override suspend fun removeFiles(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val list = ids.toList()
+        files.all().filter { it.id in ids }.forEach { java.io.File(it.path).delete() }
+        files.deleteIds(list)
     }
 }
 

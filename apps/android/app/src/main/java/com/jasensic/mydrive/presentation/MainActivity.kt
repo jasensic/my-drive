@@ -54,6 +54,20 @@ class MainActivity : ComponentActivity() {
                         onShuffle = player::toggleShuffle,
                         onRepeat = player::cycleRepeat,
                         onPauseAudio = player::pause,
+                        onBack = vm::goBack,
+                        onForward = vm::goForward,
+                        onOpenAlbum = vm::openAlbum,
+                        onOpenArtist = vm::openArtist,
+                        onToggleSelect = vm::toggleSelect,
+                        onSelectOnly = vm::selectOnly,
+                        onClearSelection = vm::clearSelection,
+                        onCreateAlbum = vm::createAlbum,
+                        onRenameAlbum = vm::renameAlbum,
+                        onDeleteAlbum = vm::deleteAlbum,
+                        onRenameSelected = vm::renameSelected,
+                        onMoveSelected = vm::moveSelected,
+                        onShareSelected = vm::shareSelected,
+                        onTrashSelected = vm::trashSelected,
                     )
                 }
             }

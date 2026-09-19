@@ -7,10 +7,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.LibraryMusic
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -33,11 +41,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.ThemeMode
+import com.jasensic.mydrive.domain.albumsInSilo
 import com.jasensic.mydrive.presentation.HubTab
 import com.jasensic.mydrive.presentation.Screen
 import com.jasensic.mydrive.presentation.UiState
+import com.jasensic.mydrive.presentation.silo
+
+private enum class HubDialog { None, Actions, Rename, Move, CreateAlbum, RenameAlbum }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +66,7 @@ fun DriveApp(
     onUpdate: () -> Unit,
     onTheme: (ThemeMode) -> Unit,
     onConnection: () -> Unit,
-    onPlay: (List<com.jasensic.mydrive.domain.LocalFile>, String) -> Unit,
+    onPlay: (List<LocalFile>, String) -> Unit,
     onOpenPhoto: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onCloseViewer: () -> Unit,
@@ -67,11 +80,27 @@ fun DriveApp(
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
     onPauseAudio: () -> Unit,
+    onBack: () -> Boolean,
+    onForward: () -> Boolean,
+    onOpenAlbum: (String?) -> Unit,
+    onOpenArtist: (String?) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onSelectOnly: (String) -> Unit,
+    onClearSelection: () -> Unit,
+    onCreateAlbum: (String) -> Unit,
+    onRenameAlbum: (String, String) -> Unit,
+    onDeleteAlbum: (String) -> Unit,
+    onRenameSelected: (String) -> Unit,
+    onMoveSelected: (String?) -> Unit,
+    onShareSelected: () -> Unit,
+    onTrashSelected: () -> Unit,
 ) {
+    BackHandler(enabled = state.canGoBack || state.selectedIds.isNotEmpty() || state.screen is Screen.Viewer || state.screen is Screen.NowPlaying) {
+        onBack()
+    }
     when (val screen = state.screen) {
         Screen.Connect -> ConnectScreen(state, onSignIn, onScanLan, onOpenLibrary)
         Screen.NowPlaying -> {
-            BackHandler(onBack = onCloseNowPlaying)
             NowPlayingScreen(
                 playback = playback,
                 onBack = onCloseNowPlaying,
@@ -84,9 +113,13 @@ fun DriveApp(
             )
         }
         is Screen.Viewer -> {
-            BackHandler(onBack = onCloseViewer)
+            val photos = if (state.albumId == null) {
+                state.library.photos
+            } else {
+                state.library.photos.filter { it.albumId == state.albumId }
+            }
             MediaViewerScreen(
-                files = state.library.photos,
+                files = photos,
                 currentId = screen.fileId,
                 onBack = onCloseViewer,
                 onPage = onViewerPage,
@@ -108,6 +141,20 @@ fun DriveApp(
             onOpenNowPlaying = onOpenNowPlaying,
             onPlayPause = onPlayPause,
             onNext = onNext,
+            onBack = onBack,
+            onForward = onForward,
+            onOpenAlbum = onOpenAlbum,
+            onOpenArtist = onOpenArtist,
+            onToggleSelect = onToggleSelect,
+            onSelectOnly = onSelectOnly,
+            onClearSelection = onClearSelection,
+            onCreateAlbum = onCreateAlbum,
+            onRenameAlbum = onRenameAlbum,
+            onDeleteAlbum = onDeleteAlbum,
+            onRenameSelected = onRenameSelected,
+            onMoveSelected = onMoveSelected,
+            onShareSelected = onShareSelected,
+            onTrashSelected = onTrashSelected,
         )
     }
 }
@@ -123,19 +170,40 @@ private fun HubScreen(
     onUpdate: () -> Unit,
     onTheme: (ThemeMode) -> Unit,
     onConnection: () -> Unit,
-    onPlay: (List<com.jasensic.mydrive.domain.LocalFile>, String) -> Unit,
+    onPlay: (List<LocalFile>, String) -> Unit,
     onOpenPhoto: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onOpenNowPlaying: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onBack: () -> Boolean,
+    onForward: () -> Boolean,
+    onOpenAlbum: (String?) -> Unit,
+    onOpenArtist: (String?) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onSelectOnly: (String) -> Unit,
+    onClearSelection: () -> Unit,
+    onCreateAlbum: (String) -> Unit,
+    onRenameAlbum: (String, String) -> Unit,
+    onDeleteAlbum: (String) -> Unit,
+    onRenameSelected: (String) -> Unit,
+    onMoveSelected: (String?) -> Unit,
+    onShareSelected: () -> Unit,
+    onTrashSelected: () -> Unit,
 ) {
     var settings by rememberSaveable { mutableStateOf(false) }
+    var dialog by rememberSaveable { mutableStateOf(HubDialog.None) }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
-    val title = when (state.tab) {
-        HubTab.MUSIC -> "Music"
-        HubTab.PHOTOS -> "Photos"
-        HubTab.FILES -> "Files"
+    val selecting = state.selectedIds.isNotEmpty()
+    val siloAlbums = albumsInSilo(state.albums, state.tab.silo())
+    val currentAlbum = siloAlbums.find { it.id == state.albumId }
+    val title = when {
+        selecting -> "${state.selectedIds.size} selected"
+        currentAlbum != null -> currentAlbum.name
+        state.artistName != null -> state.artistName
+        state.tab == HubTab.MUSIC -> "Music"
+        state.tab == HubTab.PHOTOS -> "Photos"
+        else -> "Files"
     }
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -145,20 +213,56 @@ private fun HubScreen(
                     title = {
                         Column {
                             Text(title)
-                            Text(
-                                "${state.files.size} on device · ${state.serverLabel}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            if (!selecting) {
+                                Text(
+                                    "${state.files.size} on device · ${state.serverLabel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        if (selecting) {
+                            IconButton(onClick = onClearSelection) {
+                                Icon(Icons.Outlined.Close, contentDescription = "Clear selection")
+                            }
+                        } else {
+                            IconButton(onClick = { onBack() }, enabled = state.canGoBack) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
                         }
                     },
                     actions = {
-                        IconButton(onClick = onSync, enabled = state.progress == null) {
-                            Icon(Icons.Outlined.Sync, contentDescription = "Sync")
-                        }
-                        IconButton(onClick = { settings = true }) {
-                            BadgedBox(badge = { if (state.availableUpdate != null) Badge() }) {
-                                Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                        if (selecting) {
+                            IconButton(onClick = onShareSelected) {
+                                Icon(Icons.Outlined.Share, contentDescription = "Share")
+                            }
+                            IconButton(onClick = onTrashSelected) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                            }
+                            IconButton(onClick = { dialog = HubDialog.Actions }) {
+                                Icon(Icons.Outlined.MoreVert, contentDescription = "Manage")
+                            }
+                        } else {
+                            IconButton(onClick = { onForward() }, enabled = state.canGoForward) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+                            }
+                            if (currentAlbum != null) {
+                                IconButton(onClick = { dialog = HubDialog.RenameAlbum }) {
+                                    Icon(Icons.Outlined.Edit, contentDescription = "Rename album")
+                                }
+                            }
+                            IconButton(onClick = { dialog = HubDialog.CreateAlbum }) {
+                                Icon(Icons.Outlined.Add, contentDescription = "New album")
+                            }
+                            IconButton(onClick = onSync, enabled = state.progress == null) {
+                                Icon(Icons.Outlined.Sync, contentDescription = "Sync")
+                            }
+                            IconButton(onClick = { settings = true }) {
+                                BadgedBox(badge = { if (state.availableUpdate != null) Badge() }) {
+                                    Icon(Icons.Outlined.Settings, contentDescription = "Settings")
+                                }
                             }
                         }
                     },
@@ -213,9 +317,50 @@ private fun HubScreen(
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 when (state.tab) {
-                    HubTab.MUSIC -> MusicScreen(state.library.music, onPlay, padding)
-                    HubTab.PHOTOS -> PhotosScreen(state.library.photos, onOpenPhoto, padding)
-                    HubTab.FILES -> FilesScreen(state.library.documents, onOpenFile, padding)
+                    HubTab.MUSIC -> MusicScreen(
+                        tracks = state.library.music,
+                        albums = siloAlbums,
+                        albumId = state.albumId,
+                        artistName = state.artistName,
+                        selectedIds = state.selectedIds,
+                        onPlay = onPlay,
+                        onOpenAlbum = onOpenAlbum,
+                        onOpenArtist = onOpenArtist,
+                        onToggleSelect = onToggleSelect,
+                        onLongPress = { id ->
+                            onSelectOnly(id)
+                            dialog = HubDialog.Actions
+                        },
+                        contentPadding = padding,
+                    )
+                    HubTab.PHOTOS -> PhotosScreen(
+                        files = state.library.photos,
+                        albums = siloAlbums,
+                        albumId = state.albumId,
+                        selectedIds = state.selectedIds,
+                        onOpen = onOpenPhoto,
+                        onOpenAlbum = onOpenAlbum,
+                        onToggleSelect = onToggleSelect,
+                        onLongPress = { id ->
+                            onSelectOnly(id)
+                            dialog = HubDialog.Actions
+                        },
+                        contentPadding = padding,
+                    )
+                    HubTab.FILES -> FilesScreen(
+                        files = state.library.documents,
+                        albums = siloAlbums,
+                        albumId = state.albumId,
+                        selectedIds = state.selectedIds,
+                        onOpen = onOpenFile,
+                        onOpenAlbum = onOpenAlbum,
+                        onToggleSelect = onToggleSelect,
+                        onLongPress = { id ->
+                            onSelectOnly(id)
+                            dialog = HubDialog.Actions
+                        },
+                        contentPadding = padding,
+                    )
                 }
             }
         }
@@ -232,6 +377,64 @@ private fun HubScreen(
                 settings = false
                 onConnection()
             },
+        )
+    }
+    when (dialog) {
+        HubDialog.None -> Unit
+        HubDialog.Actions -> LibraryActionSheet(
+            count = state.selectedIds.size,
+            canRename = state.selectedIds.size == 1,
+            onRename = { dialog = HubDialog.Rename },
+            onMove = { dialog = HubDialog.Move },
+            onShare = {
+                dialog = HubDialog.None
+                onShareSelected()
+            },
+            onDelete = {
+                dialog = HubDialog.None
+                onTrashSelected()
+            },
+            onDismiss = { dialog = HubDialog.None },
+        )
+        HubDialog.Rename -> TextPromptDialog(
+            title = "Rename",
+            initial = state.selectedFiles.firstOrNull()?.name.orEmpty(),
+            onConfirm = {
+                onRenameSelected(it)
+                dialog = HubDialog.None
+            },
+            onDismiss = { dialog = HubDialog.None },
+        )
+        HubDialog.Move -> MoveAlbumDialog(
+            albums = siloAlbums,
+            onMove = {
+                onMoveSelected(it)
+                dialog = HubDialog.None
+            },
+            onCreate = {
+                onCreateAlbum(it)
+                dialog = HubDialog.None
+            },
+            onDismiss = { dialog = HubDialog.None },
+        )
+        HubDialog.CreateAlbum -> TextPromptDialog(
+            title = "New album",
+            initial = "",
+            confirmLabel = "Create",
+            onConfirm = {
+                onCreateAlbum(it)
+                dialog = HubDialog.None
+            },
+            onDismiss = { dialog = HubDialog.None },
+        )
+        HubDialog.RenameAlbum -> TextPromptDialog(
+            title = "Rename album",
+            initial = currentAlbum?.name.orEmpty(),
+            onConfirm = { name ->
+                currentAlbum?.id?.let { onRenameAlbum(it, name) }
+                dialog = HubDialog.None
+            },
+            onDismiss = { dialog = HubDialog.None },
         )
     }
 }
