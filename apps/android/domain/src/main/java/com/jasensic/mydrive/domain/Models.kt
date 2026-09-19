@@ -2,9 +2,12 @@ package com.jasensic.mydrive.domain
 
 enum class MediaKind { PHOTO, VIDEO, AUDIO, OTHER }
 
+enum class LibrarySilo { MUSIC, PHOTOS, FILES }
+
 data class Album(
     val id: String,
     val name: String,
+    val silo: LibrarySilo = LibrarySilo.PHOTOS,
 )
 
 data class ManifestFile(
@@ -141,6 +144,34 @@ fun parseMediaKind(value: String?): MediaKind =
         "video" -> MediaKind.VIDEO
         "audio" -> MediaKind.AUDIO
         else -> MediaKind.OTHER
+    }
+
+fun parseLibrarySilo(value: String?): LibrarySilo =
+    when (value?.lowercase()) {
+        "music" -> LibrarySilo.MUSIC
+        "files", "other" -> LibrarySilo.FILES
+        else -> LibrarySilo.PHOTOS
+    }
+
+fun LibrarySilo.contains(kind: MediaKind): Boolean =
+    when (this) {
+        LibrarySilo.MUSIC -> kind == MediaKind.AUDIO
+        LibrarySilo.PHOTOS -> kind == MediaKind.PHOTO || kind == MediaKind.VIDEO
+        LibrarySilo.FILES -> kind == MediaKind.OTHER
+    }
+
+fun siloForKind(kind: MediaKind): LibrarySilo =
+    when (kind) {
+        MediaKind.AUDIO -> LibrarySilo.MUSIC
+        MediaKind.PHOTO, MediaKind.VIDEO -> LibrarySilo.PHOTOS
+        MediaKind.OTHER -> LibrarySilo.FILES
+    }
+
+fun LibrarySilo.wireValue(): String =
+    when (this) {
+        LibrarySilo.MUSIC -> "music"
+        LibrarySilo.PHOTOS -> "photos"
+        LibrarySilo.FILES -> "files"
     }
 
 fun parseManualServer(input: String): DiscoveredServer {

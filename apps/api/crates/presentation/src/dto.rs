@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use domain::model::{Album, Device, FileRecord, ManifestEntry, SyncManifest, SyncProfile, SyncRule, User};
 use domain::MediaKind;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -40,12 +40,25 @@ impl From<User> for UserDto {
 #[derive(Deserialize, ToSchema)]
 pub struct CreateAlbumRequest {
     pub name: String,
+    pub silo: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct RenameAlbumRequest {
+    pub name: String,
+}
+
+#[derive(Deserialize, Default, ToSchema)]
+pub struct AlbumListQuery {
+    pub silo: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct AlbumDto {
     pub id: Uuid,
     pub name: String,
+    #[schema(value_type = String)]
+    pub silo: domain::LibrarySilo,
     pub created_at: DateTime<Utc>,
 }
 
@@ -54,6 +67,7 @@ impl From<Album> for AlbumDto {
         Self {
             id: value.id.0,
             name: value.name,
+            silo: value.silo,
             created_at: value.created_at,
         }
     }
@@ -100,9 +114,19 @@ impl FileDto {
     }
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct AssignAlbumRequest {
-    pub album_id: Option<Uuid>,
+#[derive(Deserialize, ToSchema, Default)]
+pub struct UpdateFileRequest {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_patch_album")]
+    #[schema(value_type = Option<Uuid>)]
+    pub album_id: Option<Option<Uuid>>,
+}
+
+fn deserialize_patch_album<'de, D>(deserializer: D) -> Result<Option<Option<Uuid>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Some(Option::deserialize(deserializer)?))
 }
 
 #[derive(Deserialize, Default, ToSchema)]

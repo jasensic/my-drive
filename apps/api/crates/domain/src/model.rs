@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, SyncProfileId, UserId};
+use crate::library::LibrarySilo;
 use crate::media::MediaKind;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +24,7 @@ pub struct Album {
     pub id: AlbumId,
     pub owner_id: UserId,
     pub name: String,
+    pub silo: LibrarySilo,
     pub created_at: DateTime<Utc>,
 }
 

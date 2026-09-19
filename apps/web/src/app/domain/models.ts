@@ -33,6 +33,7 @@ export interface AuthSession {
 export interface Album {
   id: string;
   name: string;
+  silo: LibrarySilo;
   created_at: string;
 }
 

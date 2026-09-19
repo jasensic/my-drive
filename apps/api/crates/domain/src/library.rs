@@ -1,9 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use crate::media::MediaKind;
 use crate::model::FileRecord;
 
 pub const TRASH_RETENTION_DAYS: i64 = 30;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LibrarySilo {
     Music,
     Photos,
@@ -121,6 +124,8 @@ mod tests {
         assert!(!LibrarySilo::Photos.contains(MediaKind::Other));
         assert!(LibrarySilo::Files.contains(MediaKind::Other));
         assert_eq!(LibrarySilo::from_kind(MediaKind::Video), LibrarySilo::Photos);
+        assert_eq!(LibrarySilo::parse("photos-videos"), Some(LibrarySilo::Photos));
+        assert_eq!(LibrarySilo::Music.as_str(), "music");
     }
 
     #[test]

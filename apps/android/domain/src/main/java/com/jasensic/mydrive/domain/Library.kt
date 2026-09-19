@@ -27,11 +27,17 @@ fun recentMusic(files: List<LocalFile>, limit: Int = 12): List<LocalFile> =
         .sortedByDescending { it.modifiedAtMillis }
         .take(limit.coerceAtLeast(0))
 
-fun groupMusicByAlbum(files: List<LocalFile>): List<MusicGroup> =
-    groupMusic(files) { file ->
+fun groupMusicByAlbum(files: List<LocalFile>, albums: List<Album> = emptyList()): List<MusicGroup> {
+    val grouped = groupMusic(files) { file ->
         val id = file.albumId?.takeIf { it.isNotBlank() } ?: file.displayAlbum.lowercase()
         id to file.displayAlbum
     }
+    val byId = grouped.associateBy { it.id }
+    val empty = albums
+        .filter { it.silo == LibrarySilo.MUSIC && it.id !in byId }
+        .map { MusicGroup(it.id, it.name, emptyList(), null) }
+    return (grouped + empty).sortedBy { it.name.lowercase() }
+}
 
 fun groupMusicByArtist(files: List<LocalFile>): List<MusicGroup> =
     groupMusic(files) { file ->
@@ -41,6 +47,26 @@ fun groupMusicByArtist(files: List<LocalFile>): List<MusicGroup> =
 
 fun groupMusicByFolder(files: List<LocalFile>): List<MusicGroup> =
     groupMusicByAlbum(files)
+
+fun filesInAlbum(files: List<LocalFile>, albumId: String?): List<LocalFile> =
+    if (albumId.isNullOrBlank()) files else files.filter { it.albumId == albumId }
+
+fun albumsInSilo(albums: List<Album>, silo: LibrarySilo): List<Album> =
+    albums.filter { it.silo == silo }.sortedBy { it.name.lowercase() }
+
+fun groupFilesByAlbum(files: List<LocalFile>, albums: List<Album>, silo: LibrarySilo): List<MusicGroup> {
+    val matching = files.filter { silo.contains(it.mediaKind) }
+    val byId = matching.groupBy { it.albumId }
+    return albumsInSilo(albums, silo).map { album ->
+        val tracks = byId[album.id].orEmpty().sortedBy { it.name.lowercase() }
+        MusicGroup(
+            id = album.id,
+            name = album.name,
+            tracks = tracks,
+            artworkPath = tracks.firstNotNullOfOrNull { it.artworkPath ?: it.path.takeIf { path -> silo == LibrarySilo.PHOTOS } },
+        )
+    }
+}
 
 private fun groupMusic(
     files: List<LocalFile>,

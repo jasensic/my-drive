@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use domain::model::FileRecord;
+use domain::model::{Album, FileRecord};
 use domain::{AlbumId, FileId, LibrarySilo, MediaKind, UserId};
 use sha2::{Digest, Sha256};
 
+use super::albums::owned_album;
 use crate::{AppError, Deps};
 
 pub struct UploadCommand {
@@ -44,12 +45,13 @@ pub trait GetFile: Send + Sync {
 }
 
 #[async_trait]
-pub trait AssignFileAlbum: Send + Sync {
+pub trait UpdateFile: Send + Sync {
     async fn execute(
         &self,
         owner_id: UserId,
         id: FileId,
-        album_id: Option<AlbumId>,
+        name: Option<String>,
+        album_id: Option<Option<AlbumId>>,
     ) -> Result<FileRecord, AppError>;
 }
 
@@ -125,6 +127,9 @@ impl UploadFile for UploadFileService {
             cmd.mime
         };
         let media_kind = MediaKind::from_mime(&mime);
+        if let Some(album_id) = cmd.album_id {
+            ensure_album_accepts(&self.deps, cmd.owner_id, album_id, media_kind).await?;
+        }
         let checksum = format!("sha256:{:x}", Sha256::digest(&cmd.bytes));
         let object_key = domain::media::object_key(media_kind, id, &cmd.name);
         self.deps
@@ -209,39 +214,59 @@ impl GetFile for GetFileService {
     }
 }
 
-pub struct AssignFileAlbumService {
+pub struct UpdateFileService {
     deps: Arc<Deps>,
 }
 
-impl AssignFileAlbumService {
+impl UpdateFileService {
     pub fn new(deps: Arc<Deps>) -> Self {
         Self { deps }
     }
 }
 
 #[async_trait]
-impl AssignFileAlbum for AssignFileAlbumService {
+impl UpdateFile for UpdateFileService {
     async fn execute(
         &self,
         owner_id: UserId,
         id: FileId,
-        album_id: Option<AlbumId>,
+        name: Option<String>,
+        album_id: Option<Option<AlbumId>>,
     ) -> Result<FileRecord, AppError> {
-        let _ = owned_file(&self.deps, owner_id, id).await?;
-        if let Some(album_id) = album_id {
-            let album = self
-                .deps
-                .albums
-                .find_by_id(album_id)
-                .await?
-                .ok_or_else(|| AppError::not_found("album not found"))?;
-            if album.owner_id != owner_id {
-                return Err(AppError::not_found("album not found"));
-            }
+        let file = owned_file(&self.deps, owner_id, id).await?;
+        if file.is_trashed() {
+            return Err(AppError::validation("restore the file before editing it"));
         }
-        self.deps.files.assign_album(id, album_id).await?;
+        if let Some(name) = name {
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                return Err(AppError::validation("file name is required"));
+            }
+            self.deps.files.update_name(id, &name).await?;
+        }
+        if let Some(album_id) = album_id {
+            if let Some(album_id) = album_id {
+                ensure_album_accepts(&self.deps, owner_id, album_id, file.media_kind).await?;
+            }
+            self.deps.files.assign_album(id, album_id).await?;
+        }
         owned_file(&self.deps, owner_id, id).await
     }
+}
+
+async fn ensure_album_accepts(
+    deps: &Deps,
+    owner_id: UserId,
+    album_id: AlbumId,
+    media_kind: MediaKind,
+) -> Result<Album, AppError> {
+    let album = owned_album(deps, owner_id, album_id).await?;
+    if !album.silo.contains(media_kind) {
+        return Err(AppError::validation(
+            "album belongs to another library section",
+        ));
+    }
+    Ok(album)
 }
 
 pub struct GetFileContentService {

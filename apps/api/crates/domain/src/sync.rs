@@ -33,10 +33,10 @@ pub fn evaluate_manifest(
     have_file_ids: &HashSet<FileId>,
     now: DateTime<Utc>,
 ) -> SyncManifest {
+    let _ = have_file_ids;
     let selected = files
         .iter()
         .filter(|file| !file.is_trashed())
-        .filter(|file| !have_file_ids.contains(&file.id))
         .filter(|file| rules.iter().any(|rule| rule.matches(file, now)))
         .map(|file| ManifestEntry {
             id: file.id,
@@ -131,9 +131,10 @@ mod tests {
     }
 
     #[test]
-    fn skips_files_the_device_already_has() {
+    fn includes_files_the_device_already_has_so_album_metadata_can_sync() {
         let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
-        let photo = file(MediaKind::Photo, 1, 10);
+        let mut photo = file(MediaKind::Photo, 1, 10);
+        photo.album_id = Some(AlbumId::from_uuid(Uuid::new_v4()));
         let rules = vec![SyncRule {
             media_kind: MediaKind::Photo,
             max_age_days: None,
@@ -142,8 +143,10 @@ mod tests {
         }];
         let mut have = HashSet::new();
         have.insert(photo.id);
-        let manifest = evaluate_manifest(&[photo], &rules, &have, now);
-        assert!(manifest.files.is_empty());
+        let manifest = evaluate_manifest(&[photo.clone()], &rules, &have, now);
+        assert_eq!(manifest.files.len(), 1);
+        assert_eq!(manifest.files[0].album_id, photo.album_id);
+        assert_eq!(manifest.files[0].name, photo.name);
     }
 
     #[test]

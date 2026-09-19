@@ -42,6 +42,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/login", post(auth::login))
         .route("/v1/me", get(auth::me))
         .route("/v1/albums", get(albums::list).post(albums::create))
+        .route(
+            "/v1/albums/{id}",
+            patch(albums::rename).delete(albums::delete),
+        )
         .route("/v1/files", get(files::list).post(files::upload))
         .route(
             "/v1/files/trash",
@@ -49,7 +53,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/files/{id}",
-            get(files::get).patch(files::assign).delete(files::purge),
+            get(files::get).patch(files::update).delete(files::purge),
         )
         .route("/v1/files/{id}/trash", post(files::trash))
         .route("/v1/files/{id}/restore", post(files::restore))
