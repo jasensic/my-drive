@@ -379,6 +379,10 @@ code {
     transform 200ms ease;
 }
 
+.dropzone[role='button'] {
+  cursor: pointer;
+}
+
 .dropzone:hover,
 .dropzone.active {
   border-color: var(--md-accent);
@@ -546,12 +550,39 @@ p-select.full {
 }
 
 .rule {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(8rem, auto) minmax(10rem, 1fr) minmax(10rem, 1fr);
-  gap: var(--md-space-4);
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: var(--md-space-3);
+  min-width: 0;
   padding-top: var(--md-space-4);
   border-top: 1px solid var(--md-border);
+}
+
+.rule-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-space-3);
+}
+
+.rule-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--md-space-3);
+  align-items: end;
+}
+
+.rule-fields p-inputnumber {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.rule-fields .p-inputnumber-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
 }
 
 .check-row {
@@ -893,11 +924,6 @@ body .p-card:hover {
   .now-playing .title {
     min-width: 0;
     max-width: 7rem;
-  }
-
-  .rule {
-    grid-template-columns: 1fr;
-    gap: var(--md-space-3);
   }
 }
 

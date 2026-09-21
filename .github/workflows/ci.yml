@@ -44,12 +44,15 @@ jobs:
           java-version: "21"
       - name: Domain unit tests
         working-directory: apps/android
-        run: ./gradlew :domain:test --no-daemon
+        run: ./gradlew buildSrc:test :domain:test --no-daemon
 
   android-apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -79,6 +82,8 @@ jobs:
             > keystore.properties
       - name: Assemble release APK
         working-directory: apps/android
+        env:
+          ANDROID_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: ./gradlew :app:assembleRelease --no-daemon
       - uses: actions/upload-artifact@v4
         with:

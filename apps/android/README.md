@@ -49,6 +49,17 @@ The portal **App updates** page publishes that APK. After connect, the phone ins
 .\apps\android\scripts\dump-update-logs.ps1
 ```
 
+## Versioning
+
+`versionName` comes from the highest semver git tag reachable from `HEAD` (`1.0.0` or `v1.0.0`):
+
+- No tag: `0.0.1`, `0.0.2`, … (commit count on the branch).
+- Tag `1.0.0` on a commit: that APK is `1.0.0`. Each later commit is `1.0.1`, `1.0.2`, …
+- Official `versionName` (no suffix) only on `main` / `master` or a `v*` tag. A PR build is `1.0.1-PR.42` (the PR number). Other branches get `-PR`.
+- `versionCode` is `major * 1000000 + minor * 10000 + patch` so a new tag still raises the integer phones compare.
+
+CI clones the full history and tags so the APK matches local `./gradlew :app:assembleRelease`. Override with `-PversionName=1.2.3 -PversionCode=1002003` or `-PprNumber=42` if needed.
+
 ## Build
 
 Requires JDK 17 and Android SDK (compileSdk 35).

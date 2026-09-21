@@ -8,6 +8,16 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val androidVersion = AndroidGitVersion.resolve(
+    startDir = rootProject.projectDir,
+    overrideName = (findProperty("versionName") as String?)?.takeIf { it.isNotBlank() },
+    overrideCode = (findProperty("versionCode") as String?)?.toIntOrNull(),
+    prNumberProperty = (findProperty("prNumber") as String?)?.takeIf { it.isNotBlank() },
+)
+logger.lifecycle(
+    "Android versionName=${androidVersion.versionName} versionCode=${androidVersion.versionCode}",
+)
+
 android {
     namespace = "com.jasensic.mydrive"
     compileSdk = 35
@@ -15,8 +25,8 @@ android {
         applicationId = "com.jasensic.mydrive"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.5.0"
+        versionCode = androidVersion.versionCode
+        versionName = androidVersion.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     val keystoreFile = rootProject.file("keystore.properties")
