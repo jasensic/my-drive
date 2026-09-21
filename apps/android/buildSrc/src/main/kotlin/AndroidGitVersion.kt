@@ -18,20 +18,68 @@ data class AndroidGitVersion(
             startDir: File,
             overrideName: String? = null,
             overrideCode: Int? = null,
+            prNumberProperty: String? = null,
+            githubRef: String? = System.getenv("GITHUB_REF"),
+            githubEventName: String? = System.getenv("GITHUB_EVENT_NAME"),
         ): AndroidGitVersion {
+            val prNumber = detectPrNumber(property = prNumberProperty)
             if (!overrideName.isNullOrBlank() && overrideCode != null) {
                 return AndroidGitVersion(versionCode = overrideCode, versionName = overrideName)
             }
             val repoRoot = generateSequence(startDir.absoluteFile) { it.parentFile }
                 .firstOrNull { dir -> File(dir, ".git").exists() }
-                ?: return fallback()
-            return fromGit(repoRoot)
+                ?: return fromParts(
+                    tag = null,
+                    commitCount = 1,
+                    commitsAfterTag = 0,
+                    prNumber = prNumber,
+                    official = isOfficialRef(
+                        currentBranch = null,
+                        githubRef = githubRef,
+                        githubEventName = githubEventName,
+                        prNumber = prNumber,
+                    ),
+                )
+            return fromGit(repoRoot, prNumber, githubRef, githubEventName)
+        }
+
+        internal fun detectPrNumber(
+            property: String? = null,
+            envPrNumber: String? = System.getenv("ANDROID_PR_NUMBER"),
+            githubEventName: String? = System.getenv("GITHUB_EVENT_NAME"),
+            githubRef: String? = System.getenv("GITHUB_REF"),
+        ): Int? {
+            property?.toIntOrNull()?.let { return it }
+            envPrNumber?.toIntOrNull()?.let { return it }
+            if (githubEventName != "pull_request") return null
+            return Regex("""refs/pull/(\d+)""").find(githubRef.orEmpty())
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
+        }
+
+        internal fun isOfficialRef(
+            currentBranch: String?,
+            githubRef: String?,
+            githubEventName: String?,
+            prNumber: Int?,
+        ): Boolean {
+            if (prNumber != null || githubEventName == "pull_request") return false
+            if (githubRef.orEmpty().startsWith("refs/tags/")) return true
+            val branch = when {
+                githubRef.orEmpty().startsWith("refs/heads/") ->
+                    githubRef!!.removePrefix("refs/heads/")
+                else -> currentBranch
+            }
+            return branch == "main" || branch == "master"
         }
 
         internal fun fromParts(
             tag: TaggedSemver?,
             commitCount: Int,
             commitsAfterTag: Int,
+            prNumber: Int? = null,
+            official: Boolean = prNumber == null,
         ): AndroidGitVersion {
             val count = commitCount.coerceAtLeast(1)
             val (major, minor, patch) = if (tag == null) {
@@ -39,7 +87,12 @@ data class AndroidGitVersion(
             } else {
                 Triple(tag.major, tag.minor, tag.patch + commitsAfterTag.coerceAtLeast(0))
             }
-            val versionName = "$major.$minor.$patch"
+            val suffix = when {
+                prNumber != null -> "-PR.$prNumber"
+                !official -> "-PR"
+                else -> ""
+            }
+            val versionName = "$major.$minor.$patch$suffix"
             val encoded = major * 1_000_000 + minor * 10_000 + patch
             return AndroidGitVersion(
                 versionCode = maxOf(encoded, count),
@@ -61,7 +114,12 @@ data class AndroidGitVersion(
             tags.mapNotNull { parseSemver(it) }
                 .maxWithOrNull(compareBy({ it.major }, { it.minor }, { it.patch }))
 
-        private fun fromGit(repoRoot: File): AndroidGitVersion {
+        private fun fromGit(
+            repoRoot: File,
+            prNumber: Int?,
+            githubRef: String?,
+            githubEventName: String?,
+        ): AndroidGitVersion {
             val commitCount = git(repoRoot, "rev-list", "--count", "HEAD")
                 ?.toIntOrNull()
                 ?: 1
@@ -76,10 +134,20 @@ data class AndroidGitVersion(
             } else {
                 git(repoRoot, "rev-list", "--count", "${tag.ref}..HEAD")?.toIntOrNull() ?: 0
             }
-            return fromParts(tag, commitCount, distance)
+            val branch = git(repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
+            return fromParts(
+                tag,
+                commitCount,
+                distance,
+                prNumber = prNumber,
+                official = isOfficialRef(
+                    currentBranch = branch,
+                    githubRef = githubRef,
+                    githubEventName = githubEventName,
+                    prNumber = prNumber,
+                ),
+            )
         }
-
-        private fun fallback() = fromParts(tag = null, commitCount = 1, commitsAfterTag = 0)
 
         private fun git(repoRoot: File, vararg args: String): String? {
             return try {

@@ -63,7 +63,7 @@ import { extractError } from './login.page';
                 @for (rule of rules(); track rule.media_kind) {
                   <div class="rule">
                     <div class="rule-head">
-                      <strong class="rule-kind">{{ rule.media_kind }}</strong>
+                      <strong class="rule-kind">{{ kindLabel(rule.media_kind) }}</strong>
                       <label class="check-row">
                         <p-checkbox
                           [ngModel]="rule.include_all"
@@ -84,10 +84,10 @@ import { extractError } from './login.page';
                           placeholder="No limit"
                         />
                       </label>
-                      <label class="field">Max size (bytes)
+                      <label class="field">Max size (MB)
                         <p-inputnumber
-                          [ngModel]="rule.max_size_bytes"
-                          (ngModelChange)="patchRule(rule.media_kind, { max_size_bytes: $event })"
+                          [ngModel]="bytesToMb(rule.max_size_bytes)"
+                          (ngModelChange)="patchMaxSizeMb(rule.media_kind, $event)"
                           [min]="0"
                           [useGrouping]="false"
                           [showButtons]="true"
@@ -157,6 +157,30 @@ export class DevicesPage {
     }
   }
 
+  kindLabel(kind: MediaKind) {
+    switch (kind) {
+      case 'photo':
+        return 'Photos';
+      case 'video':
+        return 'Videos';
+      case 'audio':
+        return 'Audio';
+      default:
+        return 'Files';
+    }
+  }
+
+  bytesToMb(bytes: number | null) {
+    if (bytes == null) {
+      return null;
+    }
+    return bytes / MB;
+  }
+
+  patchMaxSizeMb(kind: MediaKind, mb: number | null) {
+    this.patchRule(kind, { max_size_bytes: mb == null ? null : Math.round(mb * MB) });
+  }
+
   patchRule(kind: MediaKind, patch: Partial<SyncRule>) {
     this.rules.update((current) =>
       current.map((rule) => (rule.media_kind === kind ? { ...rule, ...patch } : rule)),
@@ -180,15 +204,17 @@ export class DevicesPage {
   }
 }
 
+const MB = 1024 * 1024;
+
 function ensureKinds(rules: SyncRule[]): SyncRule[] {
-  const kinds: MediaKind[] = ['photo', 'video', 'audio'];
+  const kinds: MediaKind[] = ['photo', 'video', 'audio', 'other'];
   return kinds.map(
     (kind) =>
       rules.find((r) => r.media_kind === kind) ?? {
         media_kind: kind,
         max_age_days: kind === 'photo' ? 365 : null,
-        max_size_bytes: kind === 'video' ? 10 * 1024 * 1024 : null,
-        include_all: kind === 'audio',
+        max_size_bytes: kind === 'video' ? 10 * MB : null,
+        include_all: kind === 'audio' || kind === 'other',
       },
   );
 }

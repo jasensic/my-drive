@@ -12,6 +12,7 @@ val androidVersion = AndroidGitVersion.resolve(
     startDir = rootProject.projectDir,
     overrideName = (findProperty("versionName") as String?)?.takeIf { it.isNotBlank() },
     overrideCode = (findProperty("versionCode") as String?)?.toIntOrNull(),
+    prNumberProperty = (findProperty("prNumber") as String?)?.takeIf { it.isNotBlank() },
 )
 logger.lifecycle(
     "Android versionName=${androidVersion.versionName} versionCode=${androidVersion.versionCode}",
