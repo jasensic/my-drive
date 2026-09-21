@@ -3,8 +3,11 @@ package com.jasensic.mydrive.presentation.ui
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,17 +17,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,36 +63,70 @@ import coil.compose.AsyncImage
 import coil.decode.VideoFrameDecoder
 import coil.request.ImageRequest
 import coil.request.videoFrameMillis
+import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MediaKind
+import com.jasensic.mydrive.domain.filesInAlbum
 import com.jasensic.mydrive.domain.groupVisualMediaByDay
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PhotosScreen(
     files: List<LocalFile>,
+    albums: List<Album>,
+    albumId: String?,
+    selectedIds: Set<String>,
     onOpen: (String) -> Unit,
+    onOpenAlbum: (String?) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onLongPress: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
-    if (files.isEmpty()) {
+    val visible = remember(files, albumId) { filesInAlbum(files, albumId) }
+    val selecting = selectedIds.isNotEmpty()
+    if (files.isEmpty() && albums.isEmpty()) {
         EmptyLibrary(
             title = "No photos or videos",
-            body = "Synced pictures and clips from the LAN server will appear here, grouped by day.",
+            body = "Synced pictures and clips from the LAN server will appear here. Create albums to keep them in sync with the portal.",
             icon = Icons.Outlined.PhotoLibrary,
             modifier = Modifier.padding(contentPadding),
         )
         return
     }
     val zone = remember { ZoneId.systemDefault().id }
-    val groups = remember(files, zone) { groupVisualMediaByDay(files, zone) }
+    val groups = remember(visible, zone) { groupVisualMediaByDay(visible, zone) }
     val today = remember { LocalDate.now(ZoneId.systemDefault()).toEpochDay() }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(118.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
+        if (albums.isNotEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "albums") {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item {
+                        FilterChip(
+                            selected = albumId == null,
+                            onClick = { onOpenAlbum(null) },
+                            label = { Text("All") },
+                        )
+                    }
+                    items(albums, key = { it.id }) { album ->
+                        FilterChip(
+                            selected = albumId == album.id,
+                            onClick = { onOpenAlbum(album.id) },
+                            label = { Text(album.name) },
+                        )
+                    }
+                }
+            }
+        }
         groups.forEach { group ->
             item(span = { GridItemSpan(maxLineSpan) }, key = "h-${group.epochDay}") {
                 Text(
@@ -94,11 +136,21 @@ fun PhotosScreen(
                 )
             }
             items(group.files, key = { it.id }) { file ->
+                val selected = file.id in selectedIds
                 Box(
                     Modifier
                         .padding(2.dp)
                         .fillMaxWidth()
-                        .clickable { onOpen(file.id) },
+                        .combinedClickable(
+                            onClick = {
+                                if (selecting) onToggleSelect(file.id) else onOpen(file.id)
+                            },
+                            onLongClick = { onLongPress(file.id) },
+                        )
+                        .then(
+                            if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                            else Modifier
+                        ),
                 ) {
                     AsyncImage(
                         model = thumbnailModel(file),
@@ -119,6 +171,16 @@ fun PhotosScreen(
                                 .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                                 .padding(4.dp)
                                 .size(18.dp),
+                        )
+                    }
+                    if (selected) {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            contentDescription = "Selected",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(6.dp),
                         )
                     }
                 }

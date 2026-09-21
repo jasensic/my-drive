@@ -99,6 +99,7 @@ describe('ListLibraryService', () => {
       ],
       get: async () => Promise.reject(new Error('unused')),
       upload: async () => Promise.reject(new Error('unused')),
+      update: async () => Promise.reject(new Error('unused')),
       assignAlbum: async () => Promise.reject(new Error('unused')),
       trash: async () => Promise.reject(new Error('unused')),
       restore: async () => Promise.reject(new Error('unused')),
@@ -109,7 +110,9 @@ describe('ListLibraryService', () => {
     };
     const albums: AlbumRepository = {
       list: async () => [],
-      create: async (name) => ({ id: 'a', name, created_at: '' }),
+      create: async (name, silo) => ({ id: 'a', name, silo, created_at: '' }),
+      rename: async (id, name) => ({ id, name, silo: 'photos', created_at: '' }),
+      remove: async () => undefined,
     };
     try {
       const result = await new ListLibraryService(files, albums).execute();

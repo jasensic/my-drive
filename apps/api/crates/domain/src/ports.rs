@@ -35,6 +35,8 @@ pub trait AlbumRepository: Send + Sync {
     async fn insert(&self, album: &Album) -> Result<(), DomainError>;
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Album>, DomainError>;
     async fn find_by_id(&self, id: AlbumId) -> Result<Option<Album>, DomainError>;
+    async fn update_name(&self, id: AlbumId, name: &str) -> Result<(), DomainError>;
+    async fn delete(&self, id: AlbumId) -> Result<(), DomainError>;
 }
 
 #[async_trait::async_trait]
@@ -44,6 +46,7 @@ pub trait FileRepository: Send + Sync {
     async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError>;
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError>;
+    async fn update_name(&self, id: FileId, name: &str) -> Result<(), DomainError>;
     async fn set_deleted_at(
         &self,
         id: FileId,

@@ -74,11 +74,18 @@ export class HttpAuthRepository implements AuthRepository {
 @Injectable()
 export class HttpAlbumRepository implements AlbumRepository {
   constructor(private readonly http: HttpClient) {}
-  list(): Promise<Album[]> {
-    return firstValueFrom(this.http.get<Album[]>('/v1/albums'));
+  list(silo?: LibrarySilo): Promise<Album[]> {
+    const params = silo ? `?silo=${silo}` : '';
+    return firstValueFrom(this.http.get<Album[]>(`/v1/albums${params}`));
   }
-  create(name: string): Promise<Album> {
-    return firstValueFrom(this.http.post<Album>('/v1/albums', { name }));
+  create(name: string, silo: LibrarySilo): Promise<Album> {
+    return firstValueFrom(this.http.post<Album>('/v1/albums', { name, silo }));
+  }
+  rename(id: string, name: string): Promise<Album> {
+    return firstValueFrom(this.http.patch<Album>(`/v1/albums/${id}`, { name }));
+  }
+  async remove(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/albums/${id}`));
   }
 }
 
@@ -102,7 +109,17 @@ export class HttpFileRepository implements FileRepository {
     return firstValueFrom(this.http.post<MediaFile>('/v1/files', body));
   }
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile> {
-    return firstValueFrom(this.http.patch<MediaFile>(`/v1/files/${id}`, { album_id: albumId }));
+    return this.update(id, { albumId });
+  }
+  update(id: string, patch: { name?: string; albumId?: string | null }): Promise<MediaFile> {
+    const body: { name?: string; album_id?: string | null } = {};
+    if (patch.name !== undefined) {
+      body.name = patch.name;
+    }
+    if (patch.albumId !== undefined) {
+      body.album_id = patch.albumId;
+    }
+    return firstValueFrom(this.http.patch<MediaFile>(`/v1/files/${id}`, body));
   }
   trash(id: string): Promise<MediaFile> {
     return firstValueFrom(this.http.post<MediaFile>(`/v1/files/${id}/trash`, {}));

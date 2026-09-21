@@ -18,6 +18,9 @@ import { ThemeModeService } from './theme.service';
     <p-toast />
     <div class="frame" [class.playing]="playback.current()">
     <p-menubar [model]="items">
+      <ng-template #start>
+        <img class="brand" src="favicon.svg" width="28" height="28" alt="my-drive" />
+      </ng-template>
       <ng-template #end>
         <div class="end">
           <p-button
@@ -39,6 +42,7 @@ import { ThemeModeService } from './theme.service';
     .end { display: flex; align-items: center; gap: 0.5rem; }
     .user { margin-right: 0.25rem; }
     .frame.playing { padding-bottom: 4.5rem; }
+    .brand { display: block; margin-right: 0.35rem; }
   `,
 })
 export class ShellComponent {

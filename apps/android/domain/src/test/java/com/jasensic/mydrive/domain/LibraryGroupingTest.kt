@@ -36,7 +36,7 @@ class LibraryGroupingTest {
         MediaKind.AUDIO,
         modified = epoch("2026-09-01"),
     )
-    private val pdf = file("d1", "notes.pdf", MediaKind.OTHER, modified = epoch("2026-09-18"))
+    private val pdf = file("d1", "notes.pdf", MediaKind.OTHER, albumId = "d-1", modified = epoch("2026-09-18"))
 
     @Test
     fun classifiesByMediaKind() {
@@ -88,6 +88,24 @@ class LibraryGroupingTest {
     fun folderGroupingReusesAlbumMetadata() {
         val folders = groupMusicByFolder(listOf(trackA, trackC))
         assertEquals(setOf("Debut", UNKNOWN_ALBUM), folders.map { it.name }.toSet())
+    }
+
+    @Test
+    fun typedAlbumsAppearEvenWhenEmpty() {
+        val albums = listOf(Album("al-2", "Empty jazz", LibrarySilo.MUSIC))
+        val groups = groupMusicByAlbum(listOf(trackA), albums)
+        assertEquals(listOf("Debut", "Empty jazz"), groups.map { it.name })
+    }
+
+    @Test
+    fun groupsFilesBySiloAlbum() {
+        val albums = listOf(
+            Album("d-1", "Work", LibrarySilo.FILES),
+            Album("p-1", "Trip", LibrarySilo.PHOTOS),
+        )
+        val docs = groupFilesByAlbum(listOf(pdf), albums, LibrarySilo.FILES)
+        assertEquals(listOf("Work"), docs.map { it.name })
+        assertEquals(listOf("d1"), docs.single().tracks.map { it.id })
     }
 }
 

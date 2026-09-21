@@ -159,6 +159,16 @@ mod tests {
         ) -> Result<Option<domain::model::Album>, DomainError> {
             Ok(None)
         }
+        async fn update_name(
+            &self,
+            _id: domain::AlbumId,
+            _name: &str,
+        ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn delete(&self, _id: domain::AlbumId) -> Result<(), DomainError> {
+            Ok(())
+        }
     }
     #[async_trait]
     impl FileRepository for Mem {
@@ -194,6 +204,9 @@ mod tests {
             _id: FileId,
             _album_id: Option<domain::AlbumId>,
         ) -> Result<(), DomainError> {
+            Ok(())
+        }
+        async fn update_name(&self, _id: FileId, _name: &str) -> Result<(), DomainError> {
             Ok(())
         }
         async fn set_deleted_at(
@@ -423,6 +436,7 @@ mod tests {
             media_kind: MediaKind::Photo,
             created_at: now - chrono::Duration::days(3),
             uploaded_at: now - chrono::Duration::days(3),
+            deleted_at: None,
         };
         FileRepository::insert(mem.as_ref(), &photo).await.unwrap();
 

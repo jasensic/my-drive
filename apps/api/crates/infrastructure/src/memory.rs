@@ -100,6 +100,32 @@ impl AlbumRepository for MemoryStore {
             .find(|a| a.id == id)
             .cloned())
     }
+
+    async fn update_name(&self, id: AlbumId, name: &str) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let album = inner
+            .albums
+            .iter_mut()
+            .find(|a| a.id == id)
+            .ok_or_else(|| DomainError::not_found("album not found"))?;
+        album.name = name.to_string();
+        Ok(())
+    }
+
+    async fn delete(&self, id: AlbumId) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let before = inner.albums.len();
+        inner.albums.retain(|a| a.id != id);
+        if inner.albums.len() == before {
+            return Err(DomainError::not_found("album not found"));
+        }
+        for file in inner.files.iter_mut() {
+            if file.album_id == Some(id) {
+                file.album_id = None;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -152,6 +178,17 @@ impl FileRepository for MemoryStore {
             .find(|f| f.id == id)
             .ok_or_else(|| DomainError::not_found("file not found"))?;
         file.album_id = album_id;
+        Ok(())
+    }
+
+    async fn update_name(&self, id: FileId, name: &str) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let file = inner
+            .files
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or_else(|| DomainError::not_found("file not found"))?;
+        file.name = name.to_string();
         Ok(())
     }
 

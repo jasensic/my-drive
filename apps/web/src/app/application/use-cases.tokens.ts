@@ -40,11 +40,27 @@ export interface UploadMedia {
 }
 
 export interface CreateAlbum {
-  execute(name: string): Promise<Album>;
+  execute(name: string, silo: LibrarySilo): Promise<Album>;
+}
+
+export interface RenameAlbum {
+  execute(id: string, name: string): Promise<Album>;
+}
+
+export interface DeleteAlbum {
+  execute(id: string): Promise<void>;
 }
 
 export interface AssignFileAlbum {
   execute(fileId: string, albumId: string | null): Promise<MediaFile>;
+}
+
+export interface RenameMedia {
+  execute(fileId: string, name: string): Promise<MediaFile>;
+}
+
+export interface ShareMedia {
+  execute(files: MediaFile[]): Promise<{ name: string; mime: string; blob: Blob }[]>;
 }
 
 export interface TrashMedia {
@@ -155,7 +171,11 @@ export const LIST_LIBRARY = new InjectionToken<ListLibrary>('LIST_LIBRARY');
 export const GET_MEDIA = new InjectionToken<GetMedia>('GET_MEDIA');
 export const UPLOAD_MEDIA = new InjectionToken<UploadMedia>('UPLOAD_MEDIA');
 export const CREATE_ALBUM = new InjectionToken<CreateAlbum>('CREATE_ALBUM');
+export const RENAME_ALBUM = new InjectionToken<RenameAlbum>('RENAME_ALBUM');
+export const DELETE_ALBUM = new InjectionToken<DeleteAlbum>('DELETE_ALBUM');
 export const ASSIGN_FILE_ALBUM = new InjectionToken<AssignFileAlbum>('ASSIGN_FILE_ALBUM');
+export const RENAME_MEDIA = new InjectionToken<RenameMedia>('RENAME_MEDIA');
+export const SHARE_MEDIA = new InjectionToken<ShareMedia>('SHARE_MEDIA');
 export const TRASH_MEDIA = new InjectionToken<TrashMedia>('TRASH_MEDIA');
 export const RESTORE_MEDIA = new InjectionToken<RestoreMedia>('RESTORE_MEDIA');
 export const PURGE_MEDIA = new InjectionToken<PurgeMedia>('PURGE_MEDIA');

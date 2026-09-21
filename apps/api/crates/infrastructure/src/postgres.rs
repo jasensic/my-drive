@@ -6,7 +6,7 @@ use domain::ports::{
     SyncProfileRepository, UserRepository,
 };
 use domain::{
-    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, MediaKind, SyncProfileId, UserId,
+    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, LibrarySilo, MediaKind, SyncProfileId, UserId,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -90,48 +90,57 @@ impl UserRepository for PgRepos {
 #[async_trait]
 impl AlbumRepository for PgRepos {
     async fn insert(&self, album: &Album) -> Result<(), DomainError> {
-        sqlx::query("INSERT INTO albums (id, owner_id, name, created_at) VALUES ($1, $2, $3, $4)")
-            .bind(album.id.0)
-            .bind(album.owner_id.0)
-            .bind(&album.name)
-            .bind(album.created_at)
+        sqlx::query(
+            "INSERT INTO albums (id, owner_id, name, silo, created_at) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(album.id.0)
+        .bind(album.owner_id.0)
+        .bind(&album.name)
+        .bind(album.silo.as_str())
+        .bind(album.created_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Album>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, owner_id, name, silo, created_at FROM albums WHERE owner_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(owner_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(rows.into_iter().map(row_to_album).collect())
+    }
+
+    async fn find_by_id(&self, id: AlbumId) -> Result<Option<Album>, DomainError> {
+        let row = sqlx::query("SELECT id, owner_id, name, silo, created_at FROM albums WHERE id = $1")
+            .bind(id.0)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(row.map(row_to_album))
+    }
+
+    async fn update_name(&self, id: AlbumId, name: &str) -> Result<(), DomainError> {
+        sqlx::query("UPDATE albums SET name = $2 WHERE id = $1")
+            .bind(id.0)
+            .bind(name)
             .execute(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
         Ok(())
     }
 
-    async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Album>, DomainError> {
-        let rows = sqlx::query(
-            "SELECT id, owner_id, name, created_at FROM albums WHERE owner_id = $1 ORDER BY created_at DESC",
-        )
-        .bind(owner_id.0)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| DomainError::infra(e.to_string()))?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Album {
-                id: AlbumId::from_uuid(r.get("id")),
-                owner_id: UserId::from_uuid(r.get("owner_id")),
-                name: r.get("name"),
-                created_at: r.get("created_at"),
-            })
-            .collect())
-    }
-
-    async fn find_by_id(&self, id: AlbumId) -> Result<Option<Album>, DomainError> {
-        let row = sqlx::query("SELECT id, owner_id, name, created_at FROM albums WHERE id = $1")
+    async fn delete(&self, id: AlbumId) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM albums WHERE id = $1")
             .bind(id.0)
-            .fetch_optional(&self.pool)
+            .execute(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
-        Ok(row.map(|r| Album {
-            id: AlbumId::from_uuid(r.get("id")),
-            owner_id: UserId::from_uuid(r.get("owner_id")),
-            name: r.get("name"),
-            created_at: r.get("created_at"),
-        }))
+        Ok(())
     }
 }
 
@@ -207,6 +216,16 @@ impl FileRepository for PgRepos {
         Ok(())
     }
 
+    async fn update_name(&self, id: FileId, name: &str) -> Result<(), DomainError> {
+        sqlx::query("UPDATE files SET name = $2 WHERE id = $1")
+            .bind(id.0)
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
     async fn set_deleted_at(
         &self,
         id: FileId,
@@ -228,6 +247,17 @@ impl FileRepository for PgRepos {
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
         Ok(())
+    }
+}
+
+fn row_to_album(r: sqlx::postgres::PgRow) -> Album {
+    let silo: String = r.get("silo");
+    Album {
+        id: AlbumId::from_uuid(r.get("id")),
+        owner_id: UserId::from_uuid(r.get("owner_id")),
+        name: r.get("name"),
+        silo: LibrarySilo::parse(&silo).unwrap_or(LibrarySilo::Photos),
+        created_at: r.get("created_at"),
     }
 }
 

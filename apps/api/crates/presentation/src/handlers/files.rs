@@ -8,7 +8,7 @@ use bytes::Bytes;
 use domain::{AlbumId, FileId, LibrarySilo};
 use uuid::Uuid;
 
-use crate::dto::{AssignAlbumRequest, EmptyTrashResponse, FileDto, FileListQuery};
+use crate::dto::{EmptyTrashResponse, FileDto, FileListQuery, UpdateFileRequest};
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
 use crate::state::AppState;
@@ -158,20 +158,21 @@ pub async fn get(
     Ok(Json(FileDto::from_record(file)))
 }
 
-#[utoipa::path(patch, path = "/v1/files/{id}", params(("id" = Uuid, Path)), request_body = AssignAlbumRequest, responses((status = 200, body = FileDto)), security(("bearer" = [])))]
-pub async fn assign(
+#[utoipa::path(patch, path = "/v1/files/{id}", params(("id" = Uuid, Path)), request_body = UpdateFileRequest, responses((status = 200, body = FileDto)), security(("bearer" = [])))]
+pub async fn update(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
-    Json(body): Json<AssignAlbumRequest>,
+    Json(body): Json<UpdateFileRequest>,
 ) -> Result<Json<FileDto>, ApiError> {
     let file = state
         .services
-        .assign_file_album
+        .update_file
         .execute(
             user.user_id,
             FileId::from_uuid(id),
-            body.album_id.map(AlbumId::from_uuid),
+            body.name,
+            body.album_id.map(|album_id| album_id.map(AlbumId::from_uuid)),
         )
         .await?;
     Ok(Json(FileDto::from_record(file)))

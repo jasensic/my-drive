@@ -21,6 +21,18 @@ interface RemoteFileSource {
     ): SyncManifest
     suspend fun downloadTo(url: String, token: String, destinationPath: String)
     suspend fun latestAppRelease(baseUrl: String, token: String): AppRelease?
+    suspend fun createAlbum(baseUrl: String, token: String, name: String, silo: LibrarySilo): Album
+    suspend fun renameAlbum(baseUrl: String, token: String, id: String, name: String): Album
+    suspend fun deleteAlbum(baseUrl: String, token: String, id: String)
+    suspend fun updateFile(
+        baseUrl: String,
+        token: String,
+        id: String,
+        name: String? = null,
+        albumId: String? = null,
+        clearAlbum: Boolean = false,
+    ): ManifestFile
+    suspend fun trashFile(baseUrl: String, token: String, id: String)
 }
 
 interface LocalMediaStore {
@@ -29,6 +41,11 @@ interface LocalMediaStore {
     suspend fun knownIds(): Set<String>
     suspend fun library(): LocalLibrary
     suspend fun replaceAlbums(albums: List<Album>)
+    suspend fun upsertAlbum(album: Album)
+    suspend fun deleteAlbum(id: String)
+    suspend fun renameFile(id: String, name: String)
+    suspend fun assignAlbum(id: String, albumId: String?)
+    suspend fun removeFiles(ids: Collection<String>)
 }
 
 interface SyncStateRepository {
@@ -66,6 +83,10 @@ interface AudioPlayer {
 
 interface ExternalFileOpener {
     fun open(file: LocalFile)
+}
+
+interface MediaSharer {
+    fun share(files: List<LocalFile>)
 }
 
 interface ThemePreferences {

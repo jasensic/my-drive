@@ -1,8 +1,12 @@
-import { Component, Inject, computed, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Component, HostListener, Inject, ViewChild, computed, signal } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { MenuItem } from 'primeng/api';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
+import { Checkbox } from 'primeng/checkbox';
+import { ContextMenu } from 'primeng/contextmenu';
+import { Dialog } from 'primeng/dialog';
 import { InputText } from 'primeng/inputtext';
 import { Select } from 'primeng/select';
 import { Tag } from 'primeng/tag';
@@ -11,20 +15,28 @@ import { fileMatchesSilo, filesInAlbum } from '../application/library.use-cases'
 import {
   ASSIGN_FILE_ALBUM,
   CREATE_ALBUM,
+  DELETE_ALBUM,
   EMPTY_TRASH,
   LIST_LIBRARY,
   PURGE_MEDIA,
+  RENAME_ALBUM,
+  RENAME_MEDIA,
   RESTORE_MEDIA,
+  SHARE_MEDIA,
   TRASH_MEDIA,
   UPLOAD_MEDIA,
 } from '../application/use-cases.tokens';
 import type {
   AssignFileAlbum,
   CreateAlbum,
+  DeleteAlbum,
   EmptyTrash,
   ListLibrary,
   PurgeMedia,
+  RenameAlbum,
+  RenameMedia,
   RestoreMedia,
+  ShareMedia,
   TrashMedia,
   UploadMedia,
 } from '../application/use-cases.tokens';
@@ -62,8 +74,21 @@ const SILO_COPY: Record<
 
 @Component({
   selector: 'app-library-page',
-  imports: [FormsModule, RouterLink, Button, Card, Select, Tag, Toolbar, InputText, MusicSearchPanel],
+  imports: [
+    FormsModule,
+    RouterLink,
+    Button,
+    Card,
+    Checkbox,
+    ContextMenu,
+    Dialog,
+    Select,
+    Tag,
+    Toolbar,
+    InputText,
+  ],
   template: `
+    <p-contextmenu #cm [model]="menuItems()" />
     <p-toolbar>
       <ng-template #start>
         <div class="heading">
@@ -83,7 +108,10 @@ const SILO_COPY: Record<
           [attr.accept]="copy().accept || null"
           (change)="onFiles(picker.files); picker.value = ''"
         />
-        @if (!trashMode()) {
+        @if (selectedCount()) {
+          <p-button [label]="selectedCount() + ' selected'" icon="pi pi-times" [outlined]="true" (onClick)="clearSelection()" />
+          <p-button label="Manage" icon="pi pi-ellipsis-h" (onClick)="openMenuForSelection($event)" />
+        } @else if (!trashMode()) {
           <p-button label="Upload" icon="pi pi-upload" (onClick)="picker.click()" />
         }
         <p-button
@@ -114,7 +142,7 @@ const SILO_COPY: Record<
     @if (!trashMode() && silo() === 'photos') {
       <div class="filters">
         <p-select
-          [options]="albumOptions()"
+          [options]="albumFilterOptions()"
           [ngModel]="selectedAlbum()"
           (ngModelChange)="selectedAlbum.set($event)"
           optionLabel="label"
@@ -122,8 +150,12 @@ const SILO_COPY: Record<
           placeholder="All albums"
           [showClear]="true"
         />
-        <input pInputText placeholder="New album" [(ngModel)]="newAlbum" />
+        <input pInputText placeholder="New album" [(ngModel)]="newAlbum" (keydown.enter)="createAlbum()" />
         <p-button label="Create album" (onClick)="createAlbum()" [disabled]="!newAlbum.trim()" />
+        @if (selectedAlbum()) {
+          <p-button label="Rename album" [text]="true" icon="pi pi-pencil" (onClick)="openRenameAlbum()" />
+          <p-button label="Delete album" [text]="true" severity="danger" icon="pi pi-trash" (onClick)="deleteSelectedAlbum()" />
+        }
       </div>
     }
 
@@ -153,8 +185,19 @@ const SILO_COPY: Record<
 
     <div class="grid">
       @for (file of visible(); track file.id) {
-        <p-card>
+        <p-card
+          [class.selected]="isSelected(file.id)"
+          (click)="onCardClick($event, file)"
+          (contextmenu)="onContextMenu($event, file)"
+        >
           <div class="thumb">
+            <p-checkbox
+              class="pick"
+              [binary]="true"
+              [ngModel]="isSelected(file.id)"
+              (onChange)="toggle(file.id); $event.originalEvent?.stopPropagation()"
+              (click)="$event.stopPropagation()"
+            />
             @if (file.preview_url) {
               <img [src]="file.preview_url" [alt]="file.name" />
             } @else if (file.media_kind === 'video') {
@@ -166,20 +209,20 @@ const SILO_COPY: Record<
             }
           </div>
           <div class="meta">
-            <a [routerLink]="['/player', file.id]">{{ file.name }}</a>
+            <a [routerLink]="['/player', file.id]" (click)="$event.stopPropagation()">{{ file.name }}</a>
             <p-tag [value]="kindLabel(file.media_kind)" />
           </div>
           <p class="size">{{ formatSize(file.size) }}</p>
           @if (trashMode()) {
             <p class="size">Deletes {{ file.purge_at ? formatDate(file.purge_at) : 'in 30 days' }}</p>
             <div class="actions">
-              <p-button label="Restore" icon="pi pi-replay" [text]="true" (onClick)="restore(file)" />
+              <p-button label="Restore" icon="pi pi-replay" [text]="true" (onClick)="restore(file); $event.stopPropagation()" />
               <p-button
                 label="Delete forever"
                 icon="pi pi-times"
                 severity="danger"
                 [text]="true"
-                (onClick)="purge(file)"
+                (onClick)="purge(file); $event.stopPropagation()"
               />
             </div>
           } @else {
@@ -209,6 +252,46 @@ const SILO_COPY: Record<
         </p-card>
       }
     </div>
+
+    <p-dialog
+      header="Rename"
+      [(visible)]="renameOpen"
+      [modal]="true"
+      [style]="{ width: 'min(28rem, 100vw)' }"
+      [breakpoints]="{ '640px': '100vw' }"
+    >
+      <input pInputText class="full" [(ngModel)]="renameValue" (keydown.enter)="confirmRename()" />
+      <ng-template #footer>
+        <p-button label="Cancel" [text]="true" (onClick)="renameOpen = false" />
+        <p-button label="Save" (onClick)="confirmRename()" [disabled]="!renameValue.trim()" />
+      </ng-template>
+    </p-dialog>
+
+    <p-dialog
+      header="Move to album"
+      [(visible)]="moveOpen"
+      [modal]="true"
+      [style]="{ width: 'min(28rem, 100vw)' }"
+      [breakpoints]="{ '640px': '100vw' }"
+    >
+      <p-select
+        class="full"
+        [options]="moveAlbumOptions()"
+        [(ngModel)]="moveAlbumId"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="No album"
+        [showClear]="true"
+      />
+      <div class="inline-create">
+        <input pInputText placeholder="Or create album" [(ngModel)]="moveNewAlbum" />
+        <p-button label="Create" [outlined]="true" (onClick)="createAlbumFromMove()" [disabled]="!moveNewAlbum.trim()" />
+      </div>
+      <ng-template #footer>
+        <p-button label="Cancel" [text]="true" (onClick)="moveOpen = false" />
+        <p-button label="Move" (onClick)="confirmMove()" />
+      </ng-template>
+    </p-dialog>
   `,
   styles: `
     .heading { display: flex; gap: 0.75rem; align-items: flex-start; max-width: 42rem; }
@@ -230,36 +313,59 @@ const SILO_COPY: Record<
     }
     .dropzone.active { border-color: var(--p-primary-color); color: var(--p-primary-color); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; padding: 1rem; }
-    .thumb { height: 140px; display: grid; place-items: center; overflow: hidden; background: var(--p-surface-100); }
+    .thumb { height: 140px; display: grid; place-items: center; overflow: hidden; background: var(--p-surface-100); position: relative; }
     .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; }
+    .pick { position: absolute; top: 0.5rem; left: 0.5rem; z-index: 1; }
     .meta { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
     .size, .empty, .error, .ok { padding: 0 1rem; color: var(--p-text-muted-color); }
     .error { color: var(--p-red-500); }
     .ok { color: var(--p-green-600); }
     .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
+    :host ::ng-deep .selected.p-card { outline: 2px solid var(--p-primary-color); }
+    .full { width: 100%; }
+    .inline-create { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
   `,
 })
 export class LibraryPage {
+  @ViewChild('cm') contextMenu?: ContextMenu;
+
   files = signal<MediaFile[]>([]);
   albums = signal<Album[]>([]);
   selectedAlbum = signal<string | null>(null);
+  selectedIds = signal<Set<string>>(new Set());
   trashMode = signal(false);
   dragOver = signal(false);
+  menuItems = signal<MenuItem[]>([]);
   newAlbum = '';
   error = signal<string | null>(null);
   ok = signal<string | null>(null);
   silo = signal<LibrarySilo>('photos');
+  renameOpen = false;
+  renameValue = '';
+  renameAlbumId: string | null = null;
+  moveOpen = false;
+  moveAlbumId: string | null = null;
+  moveNewAlbum = '';
 
   copy = computed(() => SILO_COPY[this.silo()]);
   albumOptions = computed(() => this.albums().map((a) => ({ label: a.name, value: a.id })));
-  visible = computed(() => filesInAlbum(this.files(), this.silo() === 'photos' ? this.selectedAlbum() : null));
+  albumFilterOptions = computed(() => [{ label: 'All albums', value: null }, ...this.albumOptions()]);
+  moveAlbumOptions = computed(() => this.albumOptions());
+  visible = computed(() => filesInAlbum(this.files(), this.selectedAlbum()));
+  selectedCount = computed(() => this.selectedIds().size);
+  selectedFiles = computed(() => this.files().filter((file) => this.selectedIds().has(file.id)));
 
   constructor(
     route: ActivatedRoute,
+    private readonly router: Router,
     @Inject(LIST_LIBRARY) private readonly listLibrary: ListLibrary,
     @Inject(UPLOAD_MEDIA) private readonly uploadMedia: UploadMedia,
     @Inject(CREATE_ALBUM) private readonly createAlbumUseCase: CreateAlbum,
+    @Inject(RENAME_ALBUM) private readonly renameAlbumUseCase: RenameAlbum,
+    @Inject(DELETE_ALBUM) private readonly deleteAlbumUseCase: DeleteAlbum,
     @Inject(ASSIGN_FILE_ALBUM) private readonly assignAlbum: AssignFileAlbum,
+    @Inject(RENAME_MEDIA) private readonly renameMedia: RenameMedia,
+    @Inject(SHARE_MEDIA) private readonly shareMedia: ShareMedia,
     @Inject(TRASH_MEDIA) private readonly trashMedia: TrashMedia,
     @Inject(RESTORE_MEDIA) private readonly restoreMedia: RestoreMedia,
     @Inject(PURGE_MEDIA) private readonly purgeMedia: PurgeMedia,
@@ -271,11 +377,88 @@ export class LibraryPage {
     void this.reload();
   }
 
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    if (this.selectedCount()) {
+      this.clearSelection();
+    }
+  }
+
+  isSelected(id: string) {
+    return this.selectedIds().has(id);
+  }
+
+  toggle(id: string) {
+    const next = new Set(this.selectedIds());
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    this.selectedIds.set(next);
+  }
+
+  clearSelection() {
+    this.selectedIds.set(new Set());
+  }
+
+  onCardClick(event: MouseEvent, file: MediaFile) {
+    if ((event.target as HTMLElement | null)?.closest('a, button, .p-checkbox, input')) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || this.selectedCount()) {
+      event.preventDefault();
+      this.toggle(file.id);
+      return;
+    }
+    void this.router.navigate(['/player', file.id]);
+  }
+
+  onContextMenu(event: MouseEvent, file: MediaFile) {
+    event.preventDefault();
+    if (!this.isSelected(file.id)) {
+      this.selectedIds.set(new Set([file.id]));
+    }
+    this.menuItems.set(this.buildMenuItems());
+    this.contextMenu?.show(event);
+  }
+
+  openMenuForSelection(event: Event) {
+    this.menuItems.set(this.buildMenuItems());
+    this.contextMenu?.show(event);
+  }
+
+  private buildMenuItems(): MenuItem[] {
+    const count = this.selectedCount();
+    const trash = this.trashMode();
+    if (!count) {
+      return [];
+    }
+    if (trash) {
+      return [
+        { label: 'Restore', icon: 'pi pi-replay', command: () => void this.bulkRestore() },
+        { label: 'Delete forever', icon: 'pi pi-times', command: () => void this.bulkPurge() },
+      ];
+    }
+    const items: MenuItem[] = [];
+    if (count === 1) {
+      items.push({ label: 'Rename', icon: 'pi pi-pencil', command: () => this.openRenameFile() });
+    }
+    items.push(
+      { label: 'Move / album', icon: 'pi pi-folder', command: () => this.openMove() },
+      { label: 'Share', icon: 'pi pi-share-alt', command: () => void this.shareSelected() },
+      { label: 'Delete', icon: 'pi pi-trash', command: () => void this.bulkTrash() },
+    );
+    return items;
+  }
+
   async reload() {
     try {
       const data = await this.listLibrary.execute(this.silo(), this.trashMode());
       this.files.set(data.files);
       this.albums.set(data.albums);
+      const ids = new Set(data.files.map((file) => file.id));
+      this.selectedIds.set(new Set([...this.selectedIds()].filter((id) => ids.has(id))));
     } catch (err) {
       this.error.set(extractError(err));
     }
@@ -303,6 +486,7 @@ export class LibraryPage {
     this.trashMode.update((value) => !value);
     this.error.set(null);
     this.ok.set(null);
+    this.clearSelection();
     void this.reload();
   }
 
@@ -349,27 +533,164 @@ export class LibraryPage {
 
   async createAlbum() {
     try {
-      await this.createAlbumUseCase.execute(this.newAlbum);
+      const album = await this.createAlbumUseCase.execute(this.newAlbum, this.silo());
       this.newAlbum = '';
+      this.selectedAlbum.set(album.id);
       await this.reload();
     } catch (err) {
       this.error.set(extractError(err));
     }
   }
 
-  async assign(file: MediaFile, albumId: string | null) {
+  openRenameAlbum() {
+    const album = this.albums().find((item) => item.id === this.selectedAlbum());
+    if (!album) {
+      return;
+    }
+    this.renameAlbumId = album.id;
+    this.renameValue = album.name;
+    this.renameOpen = true;
+  }
+
+  openRenameFile() {
+    const file = this.selectedFiles()[0];
+    if (!file) {
+      return;
+    }
+    this.renameAlbumId = null;
+    this.renameValue = file.name;
+    this.renameOpen = true;
+  }
+
+  async confirmRename() {
+    const name = this.renameValue.trim();
+    if (!name) {
+      return;
+    }
     try {
-      await this.assignAlbum.execute(file.id, albumId);
+      if (this.renameAlbumId) {
+        await this.renameAlbumUseCase.execute(this.renameAlbumId, name);
+      } else {
+        const file = this.selectedFiles()[0];
+        if (file) {
+          await this.renameMedia.execute(file.id, name);
+        }
+      }
+      this.renameOpen = false;
       await this.reload();
     } catch (err) {
       this.error.set(extractError(err));
     }
   }
 
-  async trash(file: MediaFile) {
+  async deleteSelectedAlbum() {
+    const album = this.albums().find((item) => item.id === this.selectedAlbum());
+    if (!album || !confirm(`Delete album “${album.name}”? Files stay in the library.`)) {
+      return;
+    }
     try {
-      await this.trashMedia.execute(file.id);
-      this.ok.set(`Moved ${file.name} to this silo’s trash.`);
+      await this.deleteAlbumUseCase.execute(album.id);
+      this.selectedAlbum.set(null);
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  openMove() {
+    const current = this.selectedFiles()[0]?.album_id ?? this.selectedAlbum();
+    this.moveAlbumId = current;
+    this.moveNewAlbum = '';
+    this.moveOpen = true;
+  }
+
+  async createAlbumFromMove() {
+    try {
+      const album = await this.createAlbumUseCase.execute(this.moveNewAlbum, this.silo());
+      this.moveNewAlbum = '';
+      this.moveAlbumId = album.id;
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async confirmMove() {
+    try {
+      for (const file of this.selectedFiles()) {
+        await this.assignAlbum.execute(file.id, this.moveAlbumId);
+      }
+      this.moveOpen = false;
+      this.ok.set(`Updated ${this.selectedCount()} item${this.selectedCount() === 1 ? '' : 's'}.`);
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async shareSelected() {
+    try {
+      const payloads = await this.shareMedia.execute(this.selectedFiles());
+      const nav = navigator as Navigator & {
+        share?: (data: ShareData) => Promise<void>;
+        canShare?: (data: ShareData) => boolean;
+      };
+      const files = payloads.map(
+        (item) => new File([item.blob], item.name, { type: item.mime || item.blob.type || 'application/octet-stream' }),
+      );
+      const data: ShareData = files.length === 1 ? { files, title: files[0].name } : { files };
+      if (nav.share && (!nav.canShare || nav.canShare(data))) {
+        await nav.share(data);
+        return;
+      }
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+      this.ok.set(`Prepared ${files.length} file${files.length === 1 ? '' : 's'} to share.`);
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async bulkTrash() {
+    try {
+      for (const file of this.selectedFiles()) {
+        await this.trashMedia.execute(file.id);
+      }
+      this.ok.set(`Moved ${this.selectedCount()} item${this.selectedCount() === 1 ? '' : 's'} to trash.`);
+      this.clearSelection();
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async bulkRestore() {
+    try {
+      for (const file of this.selectedFiles()) {
+        await this.restoreMedia.execute(file.id);
+      }
+      this.clearSelection();
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async bulkPurge() {
+    if (!confirm('Permanently delete the selected items? This cannot be undone.')) {
+      return;
+    }
+    try {
+      for (const file of this.selectedFiles()) {
+        await this.purgeMedia.execute(file.id);
+      }
+      this.clearSelection();
       await this.reload();
     } catch (err) {
       this.error.set(extractError(err));

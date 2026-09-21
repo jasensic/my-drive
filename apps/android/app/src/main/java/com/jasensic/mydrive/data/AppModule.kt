@@ -12,9 +12,12 @@ import com.jasensic.mydrive.domain.InstallAppUpdateUseCase
 import com.jasensic.mydrive.domain.ListLocalLibraryUseCase
 import com.jasensic.mydrive.domain.LoadAppStateUseCase
 import com.jasensic.mydrive.domain.LocalMediaStore
+import com.jasensic.mydrive.domain.ManageLibraryUseCase
+import com.jasensic.mydrive.domain.MediaSharer
 import com.jasensic.mydrive.domain.OpenLocalFileUseCase
 import com.jasensic.mydrive.domain.RemoteFileSource
 import com.jasensic.mydrive.domain.ServerDiscovery
+import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
 import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncStateRepository
 import com.jasensic.mydrive.domain.ThemePreferences
@@ -36,6 +39,7 @@ abstract class PortBindings {
     @Binds abstract fun installer(impl: AndroidAppUpdateInstaller): AppUpdateInstaller
     @Binds abstract fun audioPlayer(impl: ExoPlayerAudioPlayer): AudioPlayer
     @Binds abstract fun fileOpener(impl: AndroidExternalFileOpener): ExternalFileOpener
+    @Binds abstract fun mediaSharer(impl: AndroidMediaSharer): MediaSharer
     @Binds abstract fun themePrefs(impl: DataStoreThemePreferences): ThemePreferences
 }
 
@@ -95,4 +99,14 @@ object AppProvides {
 
     @Provides
     fun openLocalFileUseCase(opener: ExternalFileOpener) = OpenLocalFileUseCase(opener)
+
+    @Provides
+    fun shareLocalFilesUseCase(sharer: MediaSharer) = ShareLocalFilesUseCase(sharer)
+
+    @Provides
+    fun manageLibraryUseCase(
+        remote: RemoteFileSource,
+        local: LocalMediaStore,
+        state: SyncStateRepository,
+    ) = ManageLibraryUseCase(remote, local, state)
 }

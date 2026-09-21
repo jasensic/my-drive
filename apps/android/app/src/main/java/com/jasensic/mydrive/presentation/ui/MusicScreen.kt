@@ -1,6 +1,8 @@
 package com.jasensic.mydrive.presentation.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,37 +19,51 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MusicGroup
 import com.jasensic.mydrive.domain.groupMusicByAlbum
 import com.jasensic.mydrive.domain.groupMusicByArtist
 import com.jasensic.mydrive.domain.recentMusic
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MusicScreen(
     tracks: List<LocalFile>,
+    albums: List<Album>,
+    albumId: String?,
+    artistName: String?,
+    selectedIds: Set<String>,
     onPlay: (List<LocalFile>, String) -> Unit,
+    onOpenAlbum: (String?) -> Unit,
+    onOpenArtist: (String?) -> Unit,
+    onToggleSelect: (String) -> Unit,
+    onLongPress: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
-    var selected by remember { mutableStateOf<MusicGroup?>(null) }
-    val albums = remember(tracks) { groupMusicByAlbum(tracks) }
+    val groupedAlbums = remember(tracks, albums) { groupMusicByAlbum(tracks, albums) }
     val artists = remember(tracks) { groupMusicByArtist(tracks) }
     val recent = remember(tracks) { recentMusic(tracks) }
-    if (tracks.isEmpty()) {
+    val selecting = selectedIds.isNotEmpty()
+    val detail = when {
+        albumId != null -> groupedAlbums.find { it.id == albumId } ?: MusicGroup(albumId, albums.find { it.id == albumId }?.name ?: "Album", emptyList(), null)
+        artistName != null -> artists.find { it.name == artistName }
+        else -> null
+    }
+    if (tracks.isEmpty() && albums.isEmpty()) {
         EmptyLibrary(
             title = "No music yet",
             body = "Sync from the server to fill this library with albums and tracks stored on your LAN.",
@@ -56,11 +72,12 @@ fun MusicScreen(
         )
         return
     }
-    val detail = selected
     if (detail != null) {
         Column(Modifier.fillMaxSize().padding(contentPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { selected = null }) {
+                IconButton(onClick = {
+                    if (albumId != null) onOpenAlbum(null) else onOpenArtist(null)
+                }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Column(Modifier.weight(1f)) {
@@ -70,7 +87,11 @@ fun MusicScreen(
             }
             TrackList(
                 tracks = detail.tracks,
-                onPlay = { onPlay(detail.tracks, it.id) },
+                selectedIds = selectedIds,
+                onPlay = { track ->
+                    if (selecting) onToggleSelect(track.id) else onPlay(detail.tracks, track.id)
+                },
+                onLongPress = onLongPress,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -92,17 +113,24 @@ fun MusicScreen(
                 }, onClick = { group -> onPlay(tracks, group.id) })
             }
         }
-        if (albums.isNotEmpty()) {
+        if (groupedAlbums.isNotEmpty()) {
             item { SectionLabel("Albums") }
-            item { MusicCarousel(albums, onClick = { selected = it }) }
+            item { MusicCarousel(groupedAlbums, onClick = { onOpenAlbum(it.id) }) }
         }
         if (artists.isNotEmpty()) {
             item { SectionLabel("Artists") }
-            item { MusicCarousel(artists, onClick = { selected = it }) }
+            item { MusicCarousel(artists, onClick = { onOpenArtist(it.name) }) }
         }
         item { SectionLabel("Tracks") }
         items(tracks, key = { it.id }) { track ->
-            TrackRow(track, onClick = { onPlay(tracks, track.id) })
+            TrackRow(
+                track,
+                selected = track.id in selectedIds,
+                onClick = {
+                    if (selecting) onToggleSelect(track.id) else onPlay(tracks, track.id)
+                },
+                onLongClick = { onLongPress(track.id) },
+            )
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
@@ -139,7 +167,11 @@ private fun MusicCarousel(groups: List<MusicGroup>, onClick: (MusicGroup) -> Uni
                 Spacer(Modifier.height(8.dp))
                 Text(group.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    if (group.tracks.size == 1) group.tracks.first().displayArtist else "${group.tracks.size} tracks",
+                    when {
+                        group.tracks.isEmpty() -> "Empty album"
+                        group.tracks.size == 1 -> group.tracks.first().displayArtist
+                        else -> "${group.tracks.size} tracks"
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -151,21 +183,39 @@ private fun MusicCarousel(groups: List<MusicGroup>, onClick: (MusicGroup) -> Uni
 }
 
 @Composable
-private fun TrackList(tracks: List<LocalFile>, onPlay: (LocalFile) -> Unit, modifier: Modifier = Modifier) {
+private fun TrackList(
+    tracks: List<LocalFile>,
+    selectedIds: Set<String>,
+    onPlay: (LocalFile) -> Unit,
+    onLongPress: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     LazyColumn(modifier) {
         items(tracks, key = { it.id }) { track ->
-            TrackRow(track, onClick = { onPlay(track) })
+            TrackRow(
+                track,
+                selected = track.id in selectedIds,
+                onClick = { onPlay(track) },
+                onLongClick = { onLongPress(track.id) },
+            )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TrackRow(track: LocalFile, onClick: () -> Unit) {
+fun TrackRow(
+    track: LocalFile,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .alpha(if (selected) 1f else 1f),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -186,10 +236,14 @@ fun TrackRow(track: LocalFile, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text(
-            formatDuration(track.durationMs),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (selected) {
+            Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+        } else {
+            Text(
+                formatDuration(track.durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

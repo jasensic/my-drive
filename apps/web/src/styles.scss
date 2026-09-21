@@ -1,10 +1,20 @@
 @import 'primeicons/primeicons.css';
 
 html,
-body {
+body,
+app-root {
   margin: 0;
-  min-height: 100%;
+  min-height: 100dvh;
+  height: 100%;
   font-family: Inter, system-ui, sans-serif;
   background: var(--p-surface-ground, var(--p-content-background));
   color: var(--p-text-color);
+}
+
+body {
+  overflow: auto;
+}
+
+.p-dialog {
+  max-height: 100dvh;
 }

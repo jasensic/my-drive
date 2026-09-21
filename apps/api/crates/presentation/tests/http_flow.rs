@@ -272,5 +272,156 @@ async fn setup_upload_and_manifest_flow() {
     assert_eq!(missing.status(), 404);
 }
 
+#[tokio::test]
+async fn typed_albums_rename_and_file_updates() {
+    let (base, client) = spawn_app().await;
+    let setup: Value = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"admin","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = setup["token"].as_str().unwrap();
+
+    let photos: Value = client
+        .post(format!("{base}/v1/albums"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"Trip","silo":"photos"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(photos["silo"], "photos");
+    let album_id = photos["id"].as_str().unwrap();
+
+    let music: Value = client
+        .post(format!("{base}/v1/albums"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"Jazz","silo":"music"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(music["silo"], "music");
+
+    let listed: Value = client
+        .get(format!("{base}/v1/albums?silo=photos"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    assert_eq!(listed[0]["name"], "Trip");
+
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(b"\xFF\xD8\xFF fakejpeg")
+            .file_name("photo.jpg")
+            .mime_str("image/jpeg")
+            .unwrap(),
+    );
+    let uploaded: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let file_id = uploaded["id"].as_str().unwrap();
+
+    let renamed: Value = client
+        .patch(format!("{base}/v1/files/{file_id}"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"holiday.jpg","album_id": album_id}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(renamed["name"], "holiday.jpg");
+    assert_eq!(renamed["album_id"], album_id);
+
+    let wrong = client
+        .patch(format!("{base}/v1/files/{file_id}"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"album_id": music["id"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), 400);
+
+    let album_renamed: Value = client
+        .patch(format!("{base}/v1/albums/{album_id}"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"Summer"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(album_renamed["name"], "Summer");
+
+    let device: Value = client
+        .post(format!("{base}/v1/devices"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"Phone A"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let manifest: Value = client
+        .post(format!("{base}/v1/sync/manifest"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "device_id": device["id"],
+            "have_file_ids": [file_id]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(manifest["files"].as_array().unwrap().len(), 1);
+    assert_eq!(manifest["files"][0]["name"], "holiday.jpg");
+    assert_eq!(manifest["files"][0]["album_id"], album_id);
+    assert_eq!(manifest["albums"].as_array().unwrap().len(), 2);
+
+    let deleted = client
+        .delete(format!("{base}/v1/albums/{album_id}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+    let file: Value = client
+        .get(format!("{base}/v1/files/{file_id}"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(file["album_id"].is_null());
+}
+
 #[allow(dead_code)]
 fn _keep_addr_type(_: SocketAddr) {}

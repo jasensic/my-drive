@@ -44,10 +44,18 @@ import { ThemeModeService } from './theme.service';
     </div>
   `,
   styles: `
-    .auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1rem; position: relative; }
+    .auth-wrap {
+      min-height: 100dvh;
+      display: grid;
+      align-content: start;
+      justify-items: center;
+      padding: 2rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+      position: relative;
+    }
     .theme { position: absolute; top: 1rem; right: 1rem; }
     .field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
     .error { color: var(--p-red-500); }
+    :host ::ng-deep .p-card { width: min(24rem, 100%); }
   `,
 })
 export class LoginPage {
