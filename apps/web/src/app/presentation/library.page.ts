@@ -30,6 +30,8 @@ import type {
 } from '../application/use-cases.tokens';
 import { Album, LibrarySilo, MediaFile } from '../domain/models';
 import { extractError } from './login.page';
+import { MusicPlaybackService } from './music-playback.service';
+import { MusicSearchPanel } from './music-search.panel';
 
 const SILO_COPY: Record<
   LibrarySilo,
@@ -37,7 +39,7 @@ const SILO_COPY: Record<
 > = {
   music: {
     title: 'Music',
-    hint: 'Drop audio files here, or choose them from your computer.',
+    hint: 'Search with musicdl, or drop audio files here.',
     accept: 'audio/*',
     empty: 'No songs in this library yet.',
     icon: 'pi pi-volume-up',
@@ -60,7 +62,7 @@ const SILO_COPY: Record<
 
 @Component({
   selector: 'app-library-page',
-  imports: [FormsModule, RouterLink, Button, Card, Select, Tag, Toolbar, InputText],
+  imports: [FormsModule, RouterLink, Button, Card, Select, Tag, Toolbar, InputText, MusicSearchPanel],
   template: `
     <p-toolbar>
       <ng-template #start>
@@ -102,6 +104,12 @@ const SILO_COPY: Record<
         }
       </ng-template>
     </p-toolbar>
+
+    @if (!trashMode() && silo() === 'music') {
+      <div class="search-panel">
+        <app-music-search (imported)="onMusicImported($event)" />
+      </div>
+    }
 
     @if (!trashMode() && silo() === 'photos') {
       <div class="filters">
@@ -187,6 +195,14 @@ const SILO_COPY: Record<
               />
             }
             <div class="actions">
+              @if (silo() === 'music') {
+                <p-button
+                  [label]="isCurrent(file) && playback.playing() ? 'Pause' : 'Play'"
+                  [icon]="isCurrent(file) && playback.playing() ? 'pi pi-pause' : 'pi pi-play'"
+                  [text]="true"
+                  (onClick)="play(file)"
+                />
+              }
               <p-button label="Move to trash" icon="pi pi-trash" [text]="true" (onClick)="trash(file)" />
             </div>
           }
@@ -198,6 +214,7 @@ const SILO_COPY: Record<
     .heading { display: flex; gap: 0.75rem; align-items: flex-start; max-width: 42rem; }
     .heading i { font-size: 1.4rem; margin-top: 0.15rem; }
     .heading p { margin: 0.15rem 0 0; color: var(--p-text-muted-color); font-size: 0.9rem; font-weight: 400; }
+    .search-panel { padding: 1rem 1rem 0; }
     .filters { display: flex; gap: 0.75rem; padding: 1rem; flex-wrap: wrap; align-items: center; }
     .dropzone {
       margin: 1rem;
@@ -247,6 +264,7 @@ export class LibraryPage {
     @Inject(RESTORE_MEDIA) private readonly restoreMedia: RestoreMedia,
     @Inject(PURGE_MEDIA) private readonly purgeMedia: PurgeMedia,
     @Inject(EMPTY_TRASH) private readonly emptyTrashUseCase: EmptyTrash,
+    @Inject(MusicPlaybackService) readonly playback: MusicPlaybackService,
   ) {
     const silo = (route.snapshot.data['silo'] as LibrarySilo | undefined) ?? 'photos';
     this.silo.set(silo);
@@ -261,6 +279,24 @@ export class LibraryPage {
     } catch (err) {
       this.error.set(extractError(err));
     }
+  }
+
+  isCurrent(file: MediaFile): boolean {
+    return this.playback.current()?.id === file.id;
+  }
+
+  play(file: MediaFile) {
+    if (this.isCurrent(file)) {
+      this.playback.toggle();
+      return;
+    }
+    void this.playback.playQueue(this.visible(), file.id);
+  }
+
+  onMusicImported(name: string) {
+    this.error.set(null);
+    this.ok.set(`Saved ${name} to the music library.`);
+    void this.reload();
   }
 
   toggleTrash() {

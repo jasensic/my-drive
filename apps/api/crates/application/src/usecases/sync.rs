@@ -299,6 +299,21 @@ mod tests {
         }
     }
 
+    struct NoMusic;
+    #[async_trait]
+    impl MusicDownloader for NoMusic {
+        async fn search(&self, _keyword: &str) -> Result<domain::music::MusicSearch, DomainError> {
+            Err(DomainError::infra("unused"))
+        }
+        async fn download(
+            &self,
+            _search_id: &str,
+            _track_id: &str,
+        ) -> Result<domain::music::DownloadedAudio, DomainError> {
+            Err(DomainError::infra("unused"))
+        }
+    }
+
     #[tokio::test]
     async fn manifest_applies_default_household_rules() {
         let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
@@ -362,6 +377,7 @@ mod tests {
             clock: Arc::new(FakeClock(now)),
             thumbnailer: Arc::new(NoopThumbs),
             apk_inspector: Arc::new(NoopApk),
+            music: Arc::new(NoMusic),
         });
         let svc = BuildSyncManifestService::new(deps);
         let manifest = svc
@@ -423,6 +439,7 @@ mod tests {
             clock: Arc::new(FakeClock(now)),
             thumbnailer: Arc::new(NoopThumbs),
             apk_inspector: Arc::new(NoopApk),
+            music: Arc::new(NoMusic),
         });
         let svc = BuildSyncManifestService::new(deps);
         let manifest = svc

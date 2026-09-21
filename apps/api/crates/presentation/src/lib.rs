@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{albums, app, auth, devices, files, health, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
@@ -43,6 +43,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me", get(auth::me))
         .route("/v1/albums", get(albums::list).post(albums::create))
         .route("/v1/files", get(files::list).post(files::upload))
+        .route("/v1/music/search", post(music::search))
+        .route("/v1/music/import", post(music::import))
         .route(
             "/v1/files/trash",
             get(files::list_trash).delete(files::empty_trash),

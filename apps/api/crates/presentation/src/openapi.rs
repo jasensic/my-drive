@@ -1,7 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::dto::*;
-use crate::handlers::{albums, app, auth, devices, files, health, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -24,6 +24,8 @@ use crate::handlers::{albums, app, auth, devices, files, health, sync};
         files::purge,
         files::content,
         files::thumbnail,
+        music::search,
+        music::import,
         devices::list,
         devices::register,
         devices::get_profile,
@@ -59,6 +61,10 @@ use crate::handlers::{albums, app, auth, devices, files, health, sync};
         ManifestResponse,
         AppReleaseDto,
         ApkIdentityDto,
+        MusicSearchRequest,
+        MusicTrackDto,
+        MusicSearchResponse,
+        ImportMusicRequest,
         crate::error::ErrorBody,
     )),
     tags(

@@ -4,8 +4,9 @@ pub mod usecases;
 use std::sync::Arc;
 
 use domain::ports::{
-    AlbumRepository, ApkInspector, AppReleaseRepository, Clock, DeviceRepository, FileRepository, ObjectStore,
-    PasswordHasher, SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
+    AlbumRepository, ApkInspector, AppReleaseRepository, Clock, DeviceRepository, FileRepository,
+    MusicDownloader, ObjectStore, PasswordHasher, SyncProfileRepository, Thumbnailer, TokenService,
+    UserRepository,
 };
 
 pub use error::AppError;
@@ -25,6 +26,7 @@ pub struct Deps {
     pub clock: Arc<dyn Clock>,
     pub thumbnailer: Arc<dyn Thumbnailer>,
     pub apk_inspector: Arc<dyn ApkInspector>,
+    pub music: Arc<dyn MusicDownloader>,
 }
 
 /// Composition helper used by the presentation binary. Handlers still depend on the
@@ -60,6 +62,8 @@ pub struct Services {
     pub inspect_apk: Arc<dyn InspectApk>,
     pub update_app_release: Arc<dyn UpdateAppRelease>,
     pub delete_app_release: Arc<dyn DeleteAppRelease>,
+    pub search_music: Arc<dyn SearchMusic>,
+    pub import_music: Arc<dyn ImportMusic>,
 }
 
 impl Services {
@@ -94,7 +98,12 @@ impl Services {
             get_app_release_apk: Arc::new(GetAppReleaseApkService::new(deps.clone())),
             inspect_apk: Arc::new(InspectApkService::new(deps.clone())),
             update_app_release: Arc::new(UpdateAppReleaseService::new(deps.clone())),
-            delete_app_release: Arc::new(DeleteAppReleaseService::new(deps)),
+            delete_app_release: Arc::new(DeleteAppReleaseService::new(deps.clone())),
+            search_music: Arc::new(SearchMusicService::new(deps.music.clone())),
+            import_music: Arc::new(ImportMusicService::new(
+                deps.music.clone(),
+                Arc::new(UploadFileService::new(deps)),
+            )),
         }
     }
 }

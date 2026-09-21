@@ -24,6 +24,21 @@ import {
   PublishAppReleaseService,
   UpdateAppReleaseService,
 } from './application/app-releases.use-cases';
+import { DATA_PROVIDERS, authInterceptor } from './data/http.adapters';
+import { MUSIC_DATA_PROVIDERS } from './data/music.adapters';
+import { CLOUD_IMPORT_DATA_PROVIDERS } from './data/cloud-import.adapters';
+import {
+  ConnectSpotifyService,
+  DisconnectSpotifyService,
+  FinishSpotifyLoginService,
+  GetCloudImportAvailabilityService,
+  GetSpotifyStatusService,
+  ImportGoogleDriveService,
+  ImportGooglePhotosService,
+  ListSpotifyPlaylistTracksService,
+  ListSpotifyPlaylistsService,
+} from './application/cloud-import.use-cases';
+import { ImportMusicTrackService, SearchMusicService } from './application/music.use-cases';
 import {
   AssignFileAlbumService,
   CreateAlbumService,
@@ -39,12 +54,23 @@ import {
 import {
   ASSIGN_FILE_ALBUM,
   CHECK_SETUP,
+  CONNECT_SPOTIFY,
   CREATE_ALBUM,
+  DISCONNECT_SPOTIFY,
   EMPTY_TRASH,
+  FINISH_SPOTIFY_LOGIN,
+  GET_CLOUD_IMPORT_AVAILABILITY,
   GET_MEDIA,
+  GET_SPOTIFY_STATUS,
+  IMPORT_GOOGLE_DRIVE,
+  IMPORT_GOOGLE_PHOTOS,
   LIST_APP_RELEASES,
   LIST_DEVICES,
   LIST_LIBRARY,
+  LIST_SPOTIFY_PLAYLISTS,
+  LIST_SPOTIFY_PLAYLIST_TRACKS,
+  SEARCH_MUSIC,
+  IMPORT_MUSIC_TRACK,
   LOAD_MEDIA_BLOB,
   LOAD_SYNC_PROFILE,
   LOGIN,
@@ -61,8 +87,8 @@ import {
   DELETE_APP_RELEASE,
   UPLOAD_MEDIA,
 } from './application/use-cases.tokens';
-import { DATA_PROVIDERS, authInterceptor } from './data/http.adapters';
 import { PRIMENG_LICENSE } from '../primeng-license';
+import { MusicPlaybackService } from './presentation/music-playback.service';
 import { ThemeModeService } from './presentation/theme.service';
 
 export const appConfig: ApplicationConfig = {
@@ -76,7 +102,10 @@ export const appConfig: ApplicationConfig = {
     }),
     MessageService,
     ThemeModeService,
+    MusicPlaybackService,
     ...DATA_PROVIDERS,
+    ...CLOUD_IMPORT_DATA_PROVIDERS,
+    ...MUSIC_DATA_PROVIDERS,
     { provide: CHECK_SETUP, useClass: CheckSetupService },
     { provide: SETUP_ADMIN, useClass: SetupAdminService },
     { provide: LOGIN, useClass: LoginService },
@@ -100,5 +129,16 @@ export const appConfig: ApplicationConfig = {
     { provide: PUBLISH_APP_RELEASE, useClass: PublishAppReleaseService },
     { provide: UPDATE_APP_RELEASE, useClass: UpdateAppReleaseService },
     { provide: DELETE_APP_RELEASE, useClass: DeleteAppReleaseService },
+    { provide: GET_CLOUD_IMPORT_AVAILABILITY, useClass: GetCloudImportAvailabilityService },
+    { provide: IMPORT_GOOGLE_PHOTOS, useClass: ImportGooglePhotosService },
+    { provide: IMPORT_GOOGLE_DRIVE, useClass: ImportGoogleDriveService },
+    { provide: GET_SPOTIFY_STATUS, useClass: GetSpotifyStatusService },
+    { provide: CONNECT_SPOTIFY, useClass: ConnectSpotifyService },
+    { provide: FINISH_SPOTIFY_LOGIN, useClass: FinishSpotifyLoginService },
+    { provide: DISCONNECT_SPOTIFY, useClass: DisconnectSpotifyService },
+    { provide: LIST_SPOTIFY_PLAYLISTS, useClass: ListSpotifyPlaylistsService },
+    { provide: LIST_SPOTIFY_PLAYLIST_TRACKS, useClass: ListSpotifyPlaylistTracksService },
+    { provide: SEARCH_MUSIC, useClass: SearchMusicService },
+    { provide: IMPORT_MUSIC_TRACK, useClass: ImportMusicTrackService },
   ],
 };

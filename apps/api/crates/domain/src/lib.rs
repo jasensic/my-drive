@@ -4,6 +4,7 @@ pub mod ids;
 pub mod library;
 pub mod media;
 pub mod model;
+pub mod music;
 pub mod ports;
 pub mod sync;
 

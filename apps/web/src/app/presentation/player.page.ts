@@ -5,6 +5,7 @@ import { Card } from 'primeng/card';
 import { GET_MEDIA, LOAD_MEDIA_BLOB } from '../application/use-cases.tokens';
 import type { GetMedia, LoadMediaBlob } from '../application/use-cases.tokens';
 import { MediaFile, siloForKind } from '../domain/models';
+import { MusicPlaybackService } from './music-playback.service';
 
 @Component({
   selector: 'app-player-page',
@@ -13,13 +14,13 @@ import { MediaFile, siloForKind } from '../domain/models';
     <p-button label="Back" icon="pi pi-arrow-left" [routerLink]="backLink()" [text]="true" />
     @if (file(); as current) {
       <p-card [header]="current.name">
-        @if (mediaSrc(); as src) {
+        @if (current.media_kind === 'audio') {
+          <p>This track keeps playing while you browse the rest of my-drive.</p>
+        } @else if (mediaSrc(); as src) {
           @if (current.media_kind === 'photo') {
             <img class="media" [src]="src" [alt]="current.name" />
           } @else if (current.media_kind === 'video') {
             <video class="media" [src]="src" controls></video>
-          } @else if (current.media_kind === 'audio') {
-            <audio [src]="src" controls></audio>
           } @else {
             <a [href]="src">Download</a>
           }
@@ -39,6 +40,7 @@ export class PlayerPage implements OnInit {
   constructor(
     @Inject(GET_MEDIA) private readonly getMedia: GetMedia,
     @Inject(LOAD_MEDIA_BLOB) private readonly loadMedia: LoadMediaBlob,
+    @Inject(MusicPlaybackService) private readonly playback: MusicPlaybackService,
     private readonly route: ActivatedRoute,
   ) {}
 
@@ -55,6 +57,10 @@ export class PlayerPage implements OnInit {
     try {
       const current = await this.getMedia.execute(id);
       this.file.set(current);
+      if (current.media_kind === 'audio') {
+        await this.playback.playFile(current);
+        return;
+      }
       try {
         this.mediaSrc.set(await this.loadMedia.execute(current.id, false));
       } catch {

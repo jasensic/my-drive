@@ -5,6 +5,7 @@ pub mod hasher;
 pub mod jwt;
 pub mod mdns;
 pub mod memory;
+pub mod musicdl;
 pub mod postgres;
 pub mod s3;
 pub mod thumbnail;
@@ -21,6 +22,7 @@ use crate::postgres::PgRepos;
 use crate::s3::S3Store;
 use crate::thumbnail::ImageThumbnailer;
 use crate::apk::ZipApkInspector;
+use crate::musicdl::HttpMusicDownloader;
 
 pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::DomainError> {
     let hasher = Arc::new(Argon2Hasher::new());
@@ -28,6 +30,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
     let clock = Arc::new(SystemClock);
     let thumbnailer = Arc::new(ImageThumbnailer);
     let apk_inspector = Arc::new(ZipApkInspector);
+    let music = Arc::new(HttpMusicDownloader::new(&settings.musicdl_url)?);
 
     if settings.memory_backend {
         let store = MemoryStore::new();
@@ -44,6 +47,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             clock,
             thumbnailer,
             apk_inspector,
+            music,
         }));
     }
 
@@ -63,5 +67,6 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         clock,
         thumbnailer,
         apk_inspector,
+        music,
     }))
 }

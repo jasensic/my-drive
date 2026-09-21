@@ -31,6 +31,7 @@ Servicios:
 | --- | --- |
 | Portal web | http://localhost |
 | API | http://localhost/v1 (también http://localhost:8080/v1 en compose de desarrollo) |
+| musicdl-export | http://127.0.0.1:8090 (solo localhost; el portal habla con la API) |
 | Salud API | http://localhost:8080/health |
 | OpenAPI | http://localhost:8080/api-docs |
 | MinIO consola | http://localhost:9001 |
@@ -57,12 +58,13 @@ Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en e
 
 1. Setup inicial e inicio de sesión (JWT)
 2. Subida de fotos, vídeos y música a MinIO (prefijos `images/`, `videos/`, `music/`, `other/`; miniaturas en `images/thumbs/`) con metadatos en PostgreSQL
-3. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
-4. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
-5. Manifiesto JSON de archivos faltantes y descarga paralela en Android
-6. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
-7. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
-8. Publicación de APKs en el portal y actualización de Android al reconectar
+3. Búsqueda y descarga de canciones desde **Music** con la imagen `musicdl-export` (clientes por defecto de musicdl: Migu, NetEase, QQ, Kuwo y Qianqian). El audio queda en la biblioteca.
+4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
+5. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
+6. Manifiesto JSON de archivos faltantes y descarga paralela en Android
+7. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
+8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
+9. Publicación de APKs en el portal y actualización de Android al reconectar
 
 ## Desarrollo sin Docker (API)
 

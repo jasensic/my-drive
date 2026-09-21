@@ -1,4 +1,12 @@
 import { InjectionToken } from '@angular/core';
+import {
+  CloudImportAvailability,
+  CloudImportBatchResult,
+  SpotifyConnectionStatus,
+  SpotifyPlaylist,
+  SpotifyTrack,
+} from '../domain/cloud-import.models';
+import { MusicSearchResult } from '../domain/music.models';
 import { Album, AppRelease, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from '../domain/models';
 
 export interface CheckSetup {
@@ -95,6 +103,50 @@ export interface DeleteAppRelease {
   execute(id: string): Promise<void>;
 }
 
+export interface GetCloudImportAvailability {
+  execute(): CloudImportAvailability;
+}
+
+export interface ImportGooglePhotos {
+  execute(albumId?: string): Promise<CloudImportBatchResult>;
+}
+
+export interface ImportGoogleDrive {
+  execute(albumId?: string): Promise<CloudImportBatchResult>;
+}
+
+export interface GetSpotifyStatus {
+  execute(): SpotifyConnectionStatus;
+}
+
+export interface ConnectSpotify {
+  execute(): Promise<void>;
+}
+
+export interface FinishSpotifyLogin {
+  execute(code: string, state: string): Promise<void>;
+}
+
+export interface DisconnectSpotify {
+  execute(): void;
+}
+
+export interface ListSpotifyPlaylists {
+  execute(): Promise<SpotifyPlaylist[]>;
+}
+
+export interface ListSpotifyPlaylistTracks {
+  execute(playlistId: string): Promise<SpotifyTrack[]>;
+}
+
+export interface SearchMusic {
+  execute(keyword: string): Promise<MusicSearchResult>;
+}
+
+export interface ImportMusicTrack {
+  execute(searchId: string, trackId: string): Promise<MediaFile>;
+}
+
 export const CHECK_SETUP = new InjectionToken<CheckSetup>('CHECK_SETUP');
 export const SETUP_ADMIN = new InjectionToken<SetupAdmin>('SETUP_ADMIN');
 export const LOGIN = new InjectionToken<Login>('LOGIN');
@@ -118,3 +170,18 @@ export const PUBLISH_APP_RELEASE = new InjectionToken<PublishAppRelease>('PUBLIS
 export const INSPECT_APK = new InjectionToken<InspectApk>('INSPECT_APK');
 export const UPDATE_APP_RELEASE = new InjectionToken<UpdateAppRelease>('UPDATE_APP_RELEASE');
 export const DELETE_APP_RELEASE = new InjectionToken<DeleteAppRelease>('DELETE_APP_RELEASE');
+export const GET_CLOUD_IMPORT_AVAILABILITY = new InjectionToken<GetCloudImportAvailability>(
+  'GET_CLOUD_IMPORT_AVAILABILITY',
+);
+export const IMPORT_GOOGLE_PHOTOS = new InjectionToken<ImportGooglePhotos>('IMPORT_GOOGLE_PHOTOS');
+export const IMPORT_GOOGLE_DRIVE = new InjectionToken<ImportGoogleDrive>('IMPORT_GOOGLE_DRIVE');
+export const GET_SPOTIFY_STATUS = new InjectionToken<GetSpotifyStatus>('GET_SPOTIFY_STATUS');
+export const CONNECT_SPOTIFY = new InjectionToken<ConnectSpotify>('CONNECT_SPOTIFY');
+export const FINISH_SPOTIFY_LOGIN = new InjectionToken<FinishSpotifyLogin>('FINISH_SPOTIFY_LOGIN');
+export const DISCONNECT_SPOTIFY = new InjectionToken<DisconnectSpotify>('DISCONNECT_SPOTIFY');
+export const LIST_SPOTIFY_PLAYLISTS = new InjectionToken<ListSpotifyPlaylists>('LIST_SPOTIFY_PLAYLISTS');
+export const LIST_SPOTIFY_PLAYLIST_TRACKS = new InjectionToken<ListSpotifyPlaylistTracks>(
+  'LIST_SPOTIFY_PLAYLIST_TRACKS',
+);
+export const SEARCH_MUSIC = new InjectionToken<SearchMusic>('SEARCH_MUSIC');
+export const IMPORT_MUSIC_TRACK = new InjectionToken<ImportMusicTrack>('IMPORT_MUSIC_TRACK');

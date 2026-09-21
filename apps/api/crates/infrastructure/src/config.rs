@@ -15,6 +15,7 @@ pub struct Settings {
     pub mdns_enable: bool,
     pub mdns_service_name: String,
     pub memory_backend: bool,
+    pub musicdl_url: String,
 }
 
 impl Settings {
@@ -38,6 +39,7 @@ impl Settings {
             mdns_enable: env_or("MDNS_ENABLE", "true") != "false",
             mdns_service_name: env_or("MDNS_SERVICE_NAME", "my-drive"),
             memory_backend,
+            musicdl_url: env_or("MUSICDL_URL", "http://127.0.0.1:8090"),
         })
     }
 }

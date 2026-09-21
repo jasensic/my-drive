@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use crate::apk::ApkIdentity;
 use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, UserId};
 use crate::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
+use crate::music::{DownloadedAudio, MusicSearch};
 use crate::DomainError;
 
 #[async_trait::async_trait]
@@ -95,4 +96,12 @@ pub trait ObjectStore: Send + Sync {
 
 pub trait Thumbnailer: Send + Sync {
     fn jpeg_thumbnail(&self, bytes: &[u8], mime: &str) -> Option<Vec<u8>>;
+}
+
+/// Search and download via the musicdl-export sidecar. Search results stay on that
+/// service; callers only pass `search_id` + `track_id` back to download.
+#[async_trait::async_trait]
+pub trait MusicDownloader: Send + Sync {
+    async fn search(&self, keyword: &str) -> Result<MusicSearch, DomainError>;
+    async fn download(&self, search_id: &str, track_id: &str) -> Result<DownloadedAudio, DomainError>;
 }

@@ -295,3 +295,32 @@ impl AppReleaseDto {
 pub struct HealthResponse {
     pub status: String,
 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct MusicSearchRequest {
+    pub keyword: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MusicTrackDto {
+    pub id: String,
+    pub source: String,
+    pub song_name: String,
+    pub singers: String,
+    pub album: String,
+    pub duration: String,
+    pub file_size: String,
+    pub ext: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MusicSearchResponse {
+    pub search_id: String,
+    pub tracks: Vec<MusicTrackDto>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ImportMusicRequest {
+    pub search_id: String,
+    pub track_id: String,
+}
