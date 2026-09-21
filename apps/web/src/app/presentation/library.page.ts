@@ -1,6 +1,7 @@
 import { Component, HostListener, Inject, ViewChild, computed, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { MenuItem } from 'primeng/api';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
@@ -10,7 +11,6 @@ import { Dialog } from 'primeng/dialog';
 import { InputText } from 'primeng/inputtext';
 import { Select } from 'primeng/select';
 import { Tag } from 'primeng/tag';
-import { Toolbar } from 'primeng/toolbar';
 import { fileMatchesSilo, filesInAlbum } from '../application/library.use-cases';
 import {
   ASSIGN_FILE_ALBUM,
@@ -54,21 +54,21 @@ const SILO_COPY: Record<
     hint: 'Search with musicdl, or drop audio files here.',
     accept: 'audio/*',
     empty: 'No songs in this library yet.',
-    icon: 'pi pi-volume-up',
+    icon: 'music',
   },
   photos: {
     title: 'Photos & videos',
     hint: 'Drop photos and videos here. They stay in this gallery, separate from music and documents.',
     accept: 'image/*,video/*',
     empty: 'No photos or videos yet.',
-    icon: 'pi pi-images',
+    icon: 'images',
   },
   files: {
     title: 'Files',
     hint: 'Documents and other files live here, apart from music and the photo gallery.',
     accept: '',
     empty: 'No documents in this silo yet.',
-    icon: 'pi pi-folder',
+    icon: 'folder',
   },
 };
 
@@ -84,23 +84,29 @@ const SILO_COPY: Record<
     Dialog,
     Select,
     Tag,
-    Toolbar,
     InputText,
     MusicSearchPanel,
+    LucideDynamicIcon,
   ],
   template: `
-    <p-contextmenu #cm [model]="menuItems()" />
-    <p-toolbar>
-      <ng-template #start>
-        <div class="heading">
-          <i [class]="copy().icon"></i>
-          <div>
-            <strong>{{ copy().title }}</strong>
-            <p>{{ trashMode() ? 'Trash for this silo only. Items are removed after 30 days.' : copy().hint }}</p>
-          </div>
-        </div>
+    <p-contextmenu #cm [model]="menuItems()">
+      <ng-template #item let-item>
+        <a class="md-menu-item" tabindex="-1">
+          <svg [lucideIcon]="item.lucide" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+        </a>
       </ng-template>
-      <ng-template #end>
+    </p-contextmenu>
+    <section class="page">
+    <header class="page-head">
+      <div class="page-intro">
+        <h1 class="page-title">
+          <svg [lucideIcon]="copy().icon" [size]="22" aria-hidden="true" />
+          {{ copy().title }}
+        </h1>
+        <p class="page-lead">{{ trashMode() ? 'Trash for this silo only. Items are removed after 30 days.' : copy().hint }}</p>
+      </div>
+      <div class="page-actions">
         <input
           #picker
           type="file"
@@ -110,34 +116,42 @@ const SILO_COPY: Record<
           (change)="onFiles(picker.files); picker.value = ''"
         />
         @if (selectedCount()) {
-          <p-button [label]="selectedCount() + ' selected'" icon="pi pi-times" [outlined]="true" (onClick)="clearSelection()" />
-          <p-button label="Manage" icon="pi pi-ellipsis-h" (onClick)="openMenuForSelection($event)" />
+          <p-button [label]="selectedCount() + ' selected'" [outlined]="true" (onClick)="clearSelection()">
+            <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
+          </p-button>
+          <p-button label="Manage" (onClick)="openMenuForSelection($event)">
+            <ng-template #icon><svg lucideIcon="ellipsis" aria-hidden="true" /></ng-template>
+          </p-button>
         } @else if (!trashMode()) {
-          <p-button label="Upload" icon="pi pi-upload" (onClick)="picker.click()" />
+          <p-button label="Upload" (onClick)="picker.click()">
+            <ng-template #icon><svg lucideIcon="upload" aria-hidden="true" /></ng-template>
+          </p-button>
         }
         <p-button
           [label]="trashMode() ? 'Back to library' : 'Trash'"
-          [icon]="trashMode() ? 'pi pi-arrow-left' : 'pi pi-trash'"
           [outlined]="true"
           (onClick)="toggleTrash()"
-        />
+        >
+          <ng-template #icon>
+            <svg [lucideIcon]="trashMode() ? 'arrow-left' : 'trash-2'" aria-hidden="true" />
+          </ng-template>
+        </p-button>
         @if (trashMode()) {
           <p-button
             label="Empty trash"
-            icon="pi pi-times"
             severity="danger"
             [outlined]="true"
             [disabled]="!files().length"
             (onClick)="emptyTrash()"
-          />
+          >
+            <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
+          </p-button>
         }
-      </ng-template>
-    </p-toolbar>
+      </div>
+    </header>
 
     @if (!trashMode() && silo() === 'music') {
-      <div class="search-panel">
-        <app-music-search (imported)="onMusicImported($event)" />
-      </div>
+      <app-music-search (imported)="onMusicImported($event)" />
     }
 
     @if (!trashMode() && silo() === 'photos') {
@@ -154,17 +168,21 @@ const SILO_COPY: Record<
         <input pInputText placeholder="New album" [(ngModel)]="newAlbum" (keydown.enter)="createAlbum()" />
         <p-button label="Create album" (onClick)="createAlbum()" [disabled]="!newAlbum.trim()" />
         @if (selectedAlbum()) {
-          <p-button label="Rename album" [text]="true" icon="pi pi-pencil" (onClick)="openRenameAlbum()" />
-          <p-button label="Delete album" [text]="true" severity="danger" icon="pi pi-trash" (onClick)="deleteSelectedAlbum()" />
+          <p-button label="Rename album" [text]="true" (onClick)="openRenameAlbum()">
+            <ng-template #icon><svg lucideIcon="pencil" aria-hidden="true" /></ng-template>
+          </p-button>
+          <p-button label="Delete album" [text]="true" severity="danger" (onClick)="deleteSelectedAlbum()">
+            <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
+          </p-button>
         }
       </div>
     }
 
     @if (error()) {
-      <p class="error">{{ error() }}</p>
+      <p class="banner error">{{ error() }}</p>
     }
     @if (ok()) {
-      <p class="ok">{{ ok() }}</p>
+      <p class="banner ok">{{ ok() }}</p>
     }
 
     @if (!trashMode()) {
@@ -175,20 +193,25 @@ const SILO_COPY: Record<
         (dragleave)="onDragLeave($event)"
         (drop)="onDrop($event)"
       >
-        <i class="pi pi-cloud-upload"></i>
+        <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
         <span>Drag and drop to upload into {{ copy().title.toLowerCase() }}</span>
       </div>
     }
 
-    @if (!visible().length) {
-      <p class="empty">{{ trashMode() ? 'This silo trash is empty.' : copy().empty }}</p>
+    @if (!visible().length && !error()) {
+      <div class="empty-state">
+        <svg [lucideIcon]="trashMode() ? 'trash-2' : copy().icon" [size]="28" aria-hidden="true" />
+        <p>{{ trashMode() ? 'This silo trash is empty.' : copy().empty }}</p>
+      </div>
     }
 
-    <div class="grid">
+    <div class="media-grid">
       @for (file of visible(); track file.id) {
         <p-card
+          tabindex="0"
           [class.selected]="isSelected(file.id)"
           (click)="onCardClick($event, file)"
+          (keydown)="onCardKey($event, file)"
           (contextmenu)="onContextMenu($event, file)"
         >
           <div class="thumb">
@@ -204,27 +227,30 @@ const SILO_COPY: Record<
             } @else if (file.media_kind === 'video') {
               <video [src]="file.content_url" muted></video>
             } @else if (file.media_kind === 'audio') {
-              <i class="pi pi-volume-up"></i>
+              <svg lucideIcon="music" [size]="28" aria-hidden="true" />
             } @else {
-              <i class="pi pi-file"></i>
+              <svg lucideIcon="file" [size]="28" aria-hidden="true" />
             }
           </div>
           <div class="meta">
             <a [routerLink]="['/player', file.id]" (click)="$event.stopPropagation()">{{ file.name }}</a>
             <p-tag [value]="kindLabel(file.media_kind)" />
           </div>
-          <p class="size">{{ formatSize(file.size) }}</p>
+          <p class="caption">{{ formatSize(file.size) }}</p>
           @if (trashMode()) {
-            <p class="size">Deletes {{ file.purge_at ? formatDate(file.purge_at) : 'in 30 days' }}</p>
+            <p class="caption">Deletes {{ file.purge_at ? formatDate(file.purge_at) : 'in 30 days' }}</p>
             <div class="actions">
-              <p-button label="Restore" icon="pi pi-replay" [text]="true" (onClick)="restore(file); $event.stopPropagation()" />
+              <p-button label="Restore" [text]="true" (onClick)="restore(file); $event.stopPropagation()">
+                <ng-template #icon><svg lucideIcon="rotate-ccw" aria-hidden="true" /></ng-template>
+              </p-button>
               <p-button
                 label="Delete forever"
-                icon="pi pi-times"
                 severity="danger"
                 [text]="true"
                 (onClick)="purge(file); $event.stopPropagation()"
-              />
+              >
+                <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
+              </p-button>
             </div>
           } @else {
             @if (silo() === 'photos') {
@@ -242,12 +268,17 @@ const SILO_COPY: Record<
               @if (silo() === 'music') {
                 <p-button
                   [label]="isCurrent(file) && playback.playing() ? 'Pause' : 'Play'"
-                  [icon]="isCurrent(file) && playback.playing() ? 'pi pi-pause' : 'pi pi-play'"
                   [text]="true"
                   (onClick)="play(file)"
-                />
+                >
+                  <ng-template #icon>
+                    <svg [lucideIcon]="isCurrent(file) && playback.playing() ? 'pause' : 'play'" aria-hidden="true" />
+                  </ng-template>
+                </p-button>
               }
-              <p-button label="Move to trash" icon="pi pi-trash" [text]="true" (onClick)="trash(file)" />
+              <p-button label="Move to trash" [text]="true" (onClick)="trash(file)">
+                <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
+              </p-button>
             </div>
           }
         </p-card>
@@ -293,38 +324,7 @@ const SILO_COPY: Record<
         <p-button label="Move" (onClick)="confirmMove()" />
       </ng-template>
     </p-dialog>
-  `,
-  styles: `
-    .heading { display: flex; gap: 0.75rem; align-items: flex-start; max-width: 42rem; }
-    .heading i { font-size: 1.4rem; margin-top: 0.15rem; }
-    .heading p { margin: 0.15rem 0 0; color: var(--p-text-muted-color); font-size: 0.9rem; font-weight: 400; }
-    .search-panel { padding: 1rem 1rem 0; }
-    .filters { display: flex; gap: 0.75rem; padding: 1rem; flex-wrap: wrap; align-items: center; }
-    .dropzone {
-      margin: 1rem;
-      border: 1px dashed var(--p-content-border-color);
-      border-radius: 12px;
-      padding: 1.25rem;
-      display: flex;
-      gap: 0.75rem;
-      align-items: center;
-      justify-content: center;
-      color: var(--p-text-muted-color);
-      background: var(--p-content-background);
-    }
-    .dropzone.active { border-color: var(--p-primary-color); color: var(--p-primary-color); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; padding: 1rem; }
-    .thumb { height: 140px; display: grid; place-items: center; overflow: hidden; background: var(--p-surface-100); position: relative; }
-    .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; }
-    .pick { position: absolute; top: 0.5rem; left: 0.5rem; z-index: 1; }
-    .meta { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
-    .size, .empty, .error, .ok { padding: 0 1rem; color: var(--p-text-muted-color); }
-    .error { color: var(--p-red-500); }
-    .ok { color: var(--p-green-600); }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
-    :host ::ng-deep .selected.p-card { outline: 2px solid var(--p-primary-color); }
-    .full { width: 100%; }
-    .inline-create { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+    </section>
   `,
 })
 export class LibraryPage {
@@ -403,8 +403,18 @@ export class LibraryPage {
     this.selectedIds.set(new Set());
   }
 
-  onCardClick(event: MouseEvent, file: MediaFile) {
-    if ((event.target as HTMLElement | null)?.closest('a, button, .p-checkbox, input')) {
+  onCardKey(event: KeyboardEvent, file: MediaFile) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.onCardClick(event, file);
+    }
+  }
+
+  onCardClick(event: MouseEvent | KeyboardEvent, file: MediaFile) {
+    if ((event.target as HTMLElement | null)?.closest('a, button, .p-checkbox, input, p-select, .p-select')) {
       return;
     }
     if (event.ctrlKey || event.metaKey || this.selectedCount()) {
@@ -437,18 +447,18 @@ export class LibraryPage {
     }
     if (trash) {
       return [
-        { label: 'Restore', icon: 'pi pi-replay', command: () => void this.bulkRestore() },
-        { label: 'Delete forever', icon: 'pi pi-times', command: () => void this.bulkPurge() },
+        { label: 'Restore', lucide: 'rotate-ccw', command: () => void this.bulkRestore() },
+        { label: 'Delete forever', lucide: 'x', command: () => void this.bulkPurge() },
       ];
     }
     const items: MenuItem[] = [];
     if (count === 1) {
-      items.push({ label: 'Rename', icon: 'pi pi-pencil', command: () => this.openRenameFile() });
+      items.push({ label: 'Rename', lucide: 'pencil', command: () => this.openRenameFile() });
     }
     items.push(
-      { label: 'Move / album', icon: 'pi pi-folder', command: () => this.openMove() },
-      { label: 'Share', icon: 'pi pi-share-alt', command: () => void this.shareSelected() },
-      { label: 'Delete', icon: 'pi pi-trash', command: () => void this.bulkTrash() },
+      { label: 'Move / album', lucide: 'folder', command: () => this.openMove() },
+      { label: 'Share', lucide: 'share-2', command: () => void this.shareSelected() },
+      { label: 'Delete', lucide: 'trash-2', command: () => void this.bulkTrash() },
     );
     return items;
   }

@@ -3,7 +3,9 @@ import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
-import Aura from '@primeuix/themes/aura';
+import { provideLucideConfig } from '@lucide/angular';
+import { lucideIconsProvider } from './presentation/icons';
+import { portalPreset } from './presentation/theme.preset';
 import { routes } from './app.routes';
 import {
   CheckSetupService,
@@ -105,9 +107,11 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideHttpClient(withInterceptors([authInterceptor])),
     providePrimeNG({
-      theme: { preset: Aura, options: { darkModeSelector: '.app-dark' } },
+      theme: { preset: portalPreset, options: { darkModeSelector: '.app-dark' } },
       license: PRIMENG_LICENSE,
     }),
+    provideLucideConfig({ size: 16, strokeWidth: 1.75, color: 'currentColor' }),
+    lucideIconsProvider,
     MessageService,
     ThemeModeService,
     MusicPlaybackService,

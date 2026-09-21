@@ -3,8 +3,8 @@
   "short_name": "my-drive",
   "description": "On-premise multimedia library",
   "display": "standalone",
-  "background_color": "#0f766e",
-  "theme_color": "#0f766e",
+  "background_color": "#F4F1EC",
+  "theme_color": "#587864",
   "icons": [
     {
       "src": "favicon.svg",
