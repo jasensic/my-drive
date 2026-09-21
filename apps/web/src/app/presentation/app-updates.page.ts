@@ -1,8 +1,8 @@
 import { Component, Inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
-import { Toolbar } from 'primeng/toolbar';
 import {
   DELETE_APP_RELEASE,
   INSPECT_APK,
@@ -22,80 +22,99 @@ import { extractError } from './login.page';
 
 @Component({
   selector: 'app-updates-page',
-  imports: [FormsModule, Button, Card, Toolbar],
+  imports: [FormsModule, Button, Card, LucideDynamicIcon],
   template: `
-    <p-toolbar>
-      <ng-template #start><strong>Android app updates</strong></ng-template>
-    </p-toolbar>
+    <section class="page">
+      <header class="page-head">
+        <div class="page-intro">
+          <h1 class="page-title">
+            <svg lucideIcon="package" [size]="22" aria-hidden="true" />
+            Android app updates
+          </h1>
+          <p class="page-lead">
+            Attach an APK. The portal reads <code>versionCode</code> and <code>versionName</code> from the
+            file (the same values Android installs). Phones update when that code is higher than the app
+            they already have.
+          </p>
+        </div>
+      </header>
 
-    <p class="hint">
-      Attach an APK. The portal reads <code>versionCode</code> and <code>versionName</code> from the
-      file (the same values Android installs). Phones update when that code is higher than the app
-      they already have.
-    </p>
-
-    @if (error()) {
-      <p class="error">{{ error() }}</p>
-    }
-    @if (ok()) {
-      <p class="ok">{{ ok() }}</p>
-    }
-
-    <p-card header="Publish APK">
-      <div class="field">
-        <label>Changelog</label>
-        <textarea [(ngModel)]="changelog" rows="3"></textarea>
-      </div>
-      <div class="field">
-        <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
-          (change)="onFile(picker.files); picker.value = ''" />
-        <p-button label="Choose APK" icon="pi pi-android" (onClick)="picker.click()" />
-        <span>{{ apk?.name || 'No file selected' }}</span>
-      </div>
-      @if (inspecting()) {
-        <p>Reading version from APK…</p>
-      } @else if (identity()) {
-        <p class="meta">Detected v{{ identity()!.version_name }} (versionCode {{ identity()!.version_code }})</p>
+      @if (error()) {
+        <p class="banner error">{{ error() }}</p>
       }
-      <p-button label="Publish" icon="pi pi-upload" (onClick)="publish()" [disabled]="!canPublish()" />
-    </p-card>
+      @if (ok()) {
+        <p class="banner ok">{{ ok() }}</p>
+      }
 
-    <div class="list">
-      @for (release of releases(); track release.id) {
-        <p-card [header]="'v' + release.version_name" [subheader]="'versionCode ' + release.version_code">
+      <p-card header="Publish APK">
+        <div class="stack-form">
           <div class="field">
-            <label>Changelog</label>
-            <textarea
-              [ngModel]="drafts()[release.id] ?? release.changelog"
-              (ngModelChange)="setDraft(release.id, $event)"
-              rows="3"
-            ></textarea>
+            <label for="changelog">Changelog</label>
+            <textarea id="changelog" [(ngModel)]="changelog" rows="3"></textarea>
           </div>
-          <p class="meta">{{ formatSize(release.size) }} · {{ release.published_at }}</p>
-          <div class="actions">
-            <p-button label="Save" icon="pi pi-save" [text]="true" (onClick)="save(release)" />
-            <input
-              #replace
-              type="file"
-              accept=".apk,application/vnd.android.package-archive"
-              hidden
-              (change)="replaceApk(release, replace.files); replace.value = ''"
-            />
-            <p-button label="Replace APK" icon="pi pi-upload" [text]="true" (onClick)="replace.click()" />
-            <p-button label="Delete" icon="pi pi-trash" severity="danger" [text]="true" (onClick)="remove(release)" />
+          <div class="page-actions">
+            <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
+              (change)="onFile(picker.files); picker.value = ''" />
+            <p-button label="Choose APK" (onClick)="picker.click()">
+              <ng-template #icon><svg lucideIcon="smartphone" aria-hidden="true" /></ng-template>
+            </p-button>
+            <span class="caption">{{ apk?.name || 'No file selected' }}</span>
           </div>
-        </p-card>
+          @if (inspecting()) {
+            <p class="caption">Reading version from APK…</p>
+          } @else if (identity()) {
+            <p class="caption">Detected v{{ identity()!.version_name }} (versionCode {{ identity()!.version_code }})</p>
+          }
+          <p-button label="Publish" (onClick)="publish()" [disabled]="!canPublish()">
+            <ng-template #icon><svg lucideIcon="upload" aria-hidden="true" /></ng-template>
+          </p-button>
+        </div>
+      </p-card>
+
+      @if (!releases().length && !error()) {
+        <div class="empty-state">
+          <svg lucideIcon="package" [size]="28" aria-hidden="true" />
+          <p>No app releases published yet.</p>
+        </div>
       }
-    </div>
-  `,
-  styles: `
-    .hint, .error, .ok, .list, p-card { margin: 1rem; }
-    .hint { color: var(--p-text-muted-color); }
-    .error { color: var(--p-red-500); }
-    .ok { color: var(--p-green-600); }
-    .field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.75rem; }
-    .meta { color: var(--p-text-muted-color); font-size: 0.9rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+
+      <div class="card-list">
+        @for (release of releases(); track release.id) {
+          <p-card [header]="'v' + release.version_name" [subheader]="'versionCode ' + release.version_code">
+            <div class="stack-form">
+              <div class="field">
+                <label [attr.for]="'changelog-' + release.id">Changelog</label>
+                <textarea
+                  [id]="'changelog-' + release.id"
+                  [ngModel]="drafts()[release.id] ?? release.changelog"
+                  (ngModelChange)="setDraft(release.id, $event)"
+                  rows="3"
+                ></textarea>
+              </div>
+              <p class="caption">{{ formatSize(release.size) }} · {{ release.published_at }}</p>
+              <div class="actions">
+                <p-button label="Save" [text]="true" (onClick)="save(release)">
+                  <ng-template #icon><svg lucideIcon="save" aria-hidden="true" /></ng-template>
+                </p-button>
+                <input
+                  #replace
+                  type="file"
+                  accept=".apk,application/vnd.android.package-archive"
+                  hidden
+                  (change)="replaceApk(release, replace.files); replace.value = ''"
+                />
+                <p-button label="Replace APK" [text]="true" (onClick)="replace.click()">
+                  <ng-template #icon><svg lucideIcon="upload" aria-hidden="true" /></ng-template>
+                </p-button>
+                <p-button label="Delete" severity="danger" [text]="true" (onClick)="remove(release)">
+                  <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
+                </p-button>
+              </div>
+            </div>
+          </p-card>
+        }
+      </div>
+    </section>
   `,
 })
 export class AppUpdatesPage {

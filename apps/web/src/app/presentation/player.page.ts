@@ -1,5 +1,6 @@
 import { Component, Inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { GET_MEDIA, LOAD_MEDIA_BLOB } from '../application/use-cases.tokens';
@@ -9,37 +10,42 @@ import { MusicPlaybackService } from './music-playback.service';
 
 @Component({
   selector: 'app-player-page',
-  imports: [RouterLink, Button, Card],
+  imports: [RouterLink, Button, Card, LucideDynamicIcon],
   template: `
-    <p-button label="Back" icon="pi pi-arrow-left" [routerLink]="backLink()" [text]="true" />
-    @if (file(); as current) {
-      <p-card [header]="current.name">
-        @if (current.media_kind === 'audio') {
-          @if (mediaSrc(); as src) {
-            <img class="media cover" [src]="src" [alt]="current.name" />
+    <section class="page">
+      <p-button label="Back" [routerLink]="backLink()" [text]="true">
+        <ng-template #icon><svg lucideIcon="arrow-left" aria-hidden="true" /></ng-template>
+      </p-button>
+      @if (file(); as current) {
+        <p-card [header]="current.name">
+          @if (current.media_kind === 'audio') {
+            @if (mediaSrc(); as src) {
+              <img class="player-media player-cover" [src]="src" [alt]="current.name" />
+            }
+            <p>This track keeps playing while you browse the rest of my-drive.</p>
+          } @else if (mediaSrc(); as src) {
+            @if (current.media_kind === 'photo') {
+              <img class="player-media" [src]="src" [alt]="current.name" />
+            } @else if (current.media_kind === 'video') {
+              <video class="player-media" [src]="src" controls></video>
+            } @else {
+              <a [href]="src">Download</a>
+            }
           }
-          <p>This track keeps playing while you browse the rest of my-drive.</p>
-        } @else if (mediaSrc(); as src) {
-          @if (current.media_kind === 'photo') {
-            <img class="media" [src]="src" [alt]="current.name" />
-          } @else if (current.media_kind === 'video') {
-            <video class="media" [src]="src" controls></video>
-          } @else {
-            <a [href]="src">Download</a>
-          }
-        }
-      </p-card>
-    }
-  `,
-  styles: `
-    .media { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; }
-    .cover { width: min(20rem, 100%); aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
-    :host { display: block; padding: 1rem; }
+        </p-card>
+      } @else if (missing()) {
+        <div class="empty-state">
+          <svg lucideIcon="file" [size]="28" aria-hidden="true" />
+          <p>This file could not be opened.</p>
+        </div>
+      }
+    </section>
   `,
 })
 export class PlayerPage implements OnInit {
   file = signal<MediaFile | null>(null);
   mediaSrc = signal<string | null>(null);
+  missing = signal(false);
 
   constructor(
     @Inject(GET_MEDIA) private readonly getMedia: GetMedia,
@@ -56,6 +62,7 @@ export class PlayerPage implements OnInit {
   async ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) {
+      this.missing.set(true);
       return;
     }
     try {
@@ -77,6 +84,7 @@ export class PlayerPage implements OnInit {
       }
     } catch {
       this.file.set(null);
+      this.missing.set(true);
     }
   }
 }

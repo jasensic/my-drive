@@ -1,6 +1,7 @@
 import { Component, Inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
@@ -11,51 +12,44 @@ import { ThemeModeService } from './theme.service';
 
 @Component({
   selector: 'app-login-page',
-  imports: [FormsModule, Button, Card, InputText, Password],
+  imports: [FormsModule, Button, Card, InputText, Password, LucideDynamicIcon],
   template: `
-    <div class="auth-wrap">
-      <div class="theme">
-        <p-button
-          [icon]="theme.mode() === 'dark' ? 'pi pi-sun' : 'pi pi-moon'"
-          [rounded]="true"
-          [text]="true"
+    <div class="auth-screen">
+      <div class="auth-theme">
+        <button
+          type="button"
+          class="icon-btn"
           [attr.aria-label]="theme.mode() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
-          (onClick)="theme.toggle()"
-        />
+          (click)="theme.toggle()"
+        >
+          <svg [lucideIcon]="theme.mode() === 'dark' ? 'sun' : 'moon'" aria-hidden="true" />
+        </button>
+      </div>
+      <div class="auth-brand">
+        <img src="favicon.svg" width="36" height="36" alt="" />
+        <span>my-drive</span>
       </div>
       <p-card [header]="setupRequired() ? 'Create admin' : 'Sign in to my-drive'">
-        <div class="field">
-          <label for="user">Username</label>
-          <input id="user" pInputText [(ngModel)]="username" autocomplete="username" />
-        </div>
-        <div class="field">
-          <label for="pass">Password</label>
-          <p-password inputId="pass" [(ngModel)]="password" [feedback]="false" [toggleMask]="true" />
-        </div>
-        @if (error()) {
-          <p class="error">{{ error() }}</p>
-        }
-        <p-button
-          [label]="setupRequired() ? 'Complete setup' : 'Login'"
-          [loading]="busy()"
-          (onClick)="submit()"
-        />
+        <form class="stack-form" (ngSubmit)="submit()">
+          <div class="field">
+            <label for="user">Username</label>
+            <input id="user" pInputText [(ngModel)]="username" name="username" autocomplete="username" />
+          </div>
+          <div class="field">
+            <label for="pass">Password</label>
+            <p-password inputId="pass" [(ngModel)]="password" name="password" [feedback]="false" [toggleMask]="true" />
+          </div>
+          @if (error()) {
+            <p class="banner error">{{ error() }}</p>
+          }
+          <p-button
+            type="submit"
+            [label]="setupRequired() ? 'Complete setup' : 'Login'"
+            [loading]="busy()"
+          />
+        </form>
       </p-card>
     </div>
-  `,
-  styles: `
-    .auth-wrap {
-      min-height: 100dvh;
-      display: grid;
-      align-content: start;
-      justify-items: center;
-      padding: 2rem 1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
-      position: relative;
-    }
-    .theme { position: absolute; top: 1rem; right: 1rem; }
-    .field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
-    .error { color: var(--p-red-500); }
-    :host ::ng-deep .p-card { width: min(24rem, 100%); }
   `,
 })
 export class LoginPage {
@@ -76,6 +70,9 @@ export class LoginPage {
   }
 
   async submit() {
+    if (this.busy()) {
+      return;
+    }
     this.busy.set(true);
     this.error.set(null);
     try {

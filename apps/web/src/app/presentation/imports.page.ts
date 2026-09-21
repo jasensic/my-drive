@@ -1,10 +1,10 @@
 import { Component, Inject, signal } from '@angular/core';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { Tabs, TabList, Tab, TabPanels, TabPanel } from 'primeng/tabs';
-import { Toolbar } from 'primeng/toolbar';
 import {
   formatTrackDuration,
   spotifyEmbedUrl,
@@ -35,28 +35,27 @@ import { extractError } from './login.page';
 
 @Component({
   selector: 'app-imports-page',
-  imports: [FormsModule, Button, Card, Toolbar, Tabs, TabList, Tab, TabPanels, TabPanel],
+  imports: [FormsModule, Button, Card, Tabs, TabList, Tab, TabPanels, TabPanel, LucideDynamicIcon],
   template: `
-    <p-toolbar>
-      <ng-template #start>
-        <div class="heading">
-          <i class="pi pi-cloud-download"></i>
-          <div>
-            <strong>Cloud imports</strong>
-            <p>
-              Bring your own Google Photos and Drive files into my-drive, or browse Spotify playlists
-              with official playback. Full Spotify tracks are never downloaded.
-            </p>
-          </div>
-        </div>
-      </ng-template>
-    </p-toolbar>
+    <section class="page">
+    <header class="page-head">
+      <div class="page-intro">
+        <h1 class="page-title">
+          <svg lucideIcon="cloud-download" [size]="22" aria-hidden="true" />
+          Cloud imports
+        </h1>
+        <p class="page-lead">
+          Bring your own Google Photos and Drive files into my-drive, or browse Spotify playlists
+          with official playback. Full Spotify tracks are never downloaded.
+        </p>
+      </div>
+    </header>
 
     @if (error()) {
-      <p class="error">{{ error() }}</p>
+      <p class="banner error">{{ error() }}</p>
     }
     @if (ok()) {
-      <p class="ok">{{ ok() }}</p>
+      <p class="banner ok">{{ ok() }}</p>
     }
 
     <p-tabs value="0">
@@ -80,10 +79,11 @@ import { extractError } from './login.page';
               </p>
               <p-button
                 label="Pick photos"
-                icon="pi pi-images"
                 [loading]="busy()"
                 (onClick)="importPhotos()"
-              />
+              >
+                <ng-template #icon><svg lucideIcon="images" aria-hidden="true" /></ng-template>
+              </p-button>
             }
           </p-card>
         </p-tabpanel>
@@ -103,10 +103,11 @@ import { extractError } from './login.page';
               </p>
               <p-button
                 label="Pick Drive files"
-                icon="pi pi-folder-open"
                 [loading]="busy()"
                 (onClick)="importDrive()"
-              />
+              >
+                <ng-template #icon><svg lucideIcon="folder-open" aria-hidden="true" /></ng-template>
+              </p-button>
             }
           </p-card>
         </p-tabpanel>
@@ -124,26 +125,33 @@ import { extractError } from './login.page';
                 Connect your Spotify account to list playlists and play tracks via Spotify’s official
                 embed or 30-second preview URLs. my-drive never saves full audio from Spotify.
               </p>
-              <p-button label="Connect Spotify" icon="pi pi-link" (onClick)="connectSpotify()" />
+              <p-button label="Connect Spotify" (onClick)="connectSpotify()">
+                <ng-template #icon><svg lucideIcon="link" aria-hidden="true" /></ng-template>
+              </p-button>
             } @else {
               <div class="spotify-actions">
                 <p-button
                   label="Refresh playlists"
-                  icon="pi pi-refresh"
                   [text]="true"
                   (onClick)="loadPlaylists()"
-                />
+                >
+                  <ng-template #icon><svg lucideIcon="refresh-cw" aria-hidden="true" /></ng-template>
+                </p-button>
                 <p-button
                   label="Disconnect"
-                  icon="pi pi-sign-out"
                   [text]="true"
                   severity="secondary"
                   (onClick)="disconnectSpotify()"
-                />
+                >
+                  <ng-template #icon><svg lucideIcon="log-out" aria-hidden="true" /></ng-template>
+                </p-button>
               </div>
 
               @if (!playlists().length) {
-                <p class="empty">No playlists found.</p>
+                <div class="empty-state">
+                  <svg lucideIcon="list-music" [size]="28" aria-hidden="true" />
+                  <p>No playlists found.</p>
+                </div>
               }
 
               <div class="playlist-grid">
@@ -152,7 +160,7 @@ import { extractError } from './login.page';
                     @if (playlist.imageUrl) {
                       <img [src]="playlist.imageUrl" [alt]="playlist.name" />
                     } @else {
-                      <i class="pi pi-list"></i>
+                      <svg lucideIcon="list-music" [size]="28" aria-hidden="true" />
                     }
                     <span>{{ playlist.name }}</span>
                     <small>{{ playlist.trackCount }} tracks</small>
@@ -161,9 +169,12 @@ import { extractError } from './login.page';
               </div>
 
               @if (activePlaylist(); as pl) {
-                <h3>{{ pl.name }}</h3>
+                <h3 class="section-title">{{ pl.name }}</h3>
                 @if (!tracks().length) {
-                  <p class="empty">This playlist has no playable tracks.</p>
+                  <div class="empty-state">
+                    <svg lucideIcon="music" [size]="28" aria-hidden="true" />
+                    <p>This playlist has no playable tracks.</p>
+                  </div>
                 }
                 <div class="tracks">
                   @for (track of tracks(); track track.id) {
@@ -175,10 +186,11 @@ import { extractError } from './login.page';
                       <div class="track-actions">
                         <p-button
                           label="Play"
-                          icon="pi pi-play"
                           [text]="true"
                           (onClick)="playTrack(track)"
-                        />
+                        >
+                          <ng-template #icon><svg lucideIcon="play" aria-hidden="true" /></ng-template>
+                        </p-button>
                         @if (track.previewUrl) {
                           <audio [src]="track.previewUrl" controls preload="none"></audio>
                         }
@@ -203,55 +215,7 @@ import { extractError } from './login.page';
         </p-tabpanel>
       </p-tabpanels>
     </p-tabs>
-  `,
-  styles: `
-    .heading { display: flex; gap: 0.75rem; align-items: flex-start; max-width: 48rem; }
-    .heading i { font-size: 1.4rem; margin-top: 0.15rem; }
-    .heading p { margin: 0.15rem 0 0; color: var(--p-text-muted-color); font-size: 0.9rem; font-weight: 400; }
-    .error, .ok, .hint, .empty, p-card, p-tabs { margin: 1rem; }
-    .error { color: var(--p-red-500); }
-    .ok { color: var(--p-green-600); }
-    .hint { color: var(--p-text-muted-color); }
-    .spotify-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
-    .playlist-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-    .playlist {
-      border: 1px solid var(--p-content-border-color);
-      background: var(--p-content-background);
-      border-radius: 10px;
-      padding: 0.75rem;
-      text-align: left;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 0.35rem;
-      color: inherit;
-    }
-    .playlist img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; }
-    .playlist small { color: var(--p-text-muted-color); }
-    .tracks { display: flex; flex-direction: column; gap: 0.75rem; }
-    .track {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      flex-wrap: wrap;
-      align-items: center;
-      border-bottom: 1px solid var(--p-content-border-color);
-      padding-bottom: 0.75rem;
-    }
-    .track p { margin: 0.2rem 0 0; color: var(--p-text-muted-color); font-size: 0.9rem; }
-    .track-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-    .embed iframe {
-      width: 100%;
-      min-height: 152px;
-      border: 0;
-      border-radius: 12px;
-      margin-top: 1rem;
-    }
+    </section>
   `,
 })
 export class ImportsPage {

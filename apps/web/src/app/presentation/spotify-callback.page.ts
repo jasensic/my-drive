@@ -1,5 +1,6 @@
 import { Component, Inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Card } from 'primeng/card';
 import { FINISH_SPOTIFY_LOGIN } from '../application/use-cases.tokens';
 import type { FinishSpotifyLogin } from '../application/use-cases.tokens';
@@ -7,22 +8,23 @@ import { extractError } from './login.page';
 
 @Component({
   selector: 'app-spotify-callback-page',
-  imports: [Card, RouterLink],
+  imports: [Card, RouterLink, LucideDynamicIcon],
   template: `
-    <div class="wrap">
+    <div class="callback-wrap">
       <p-card header="Spotify">
         @if (error()) {
-          <p class="error">{{ error() }}</p>
-          <a routerLink="/imports">Back to imports</a>
+          <div class="stack-form">
+            <p class="banner error">{{ error() }}</p>
+            <a routerLink="/imports">
+              <svg lucideIcon="arrow-left" [size]="16" aria-hidden="true" />
+              Back to imports
+            </a>
+          </div>
         } @else {
           <p>{{ message() }}</p>
         }
       </p-card>
     </div>
-  `,
-  styles: `
-    .wrap { min-height: 50vh; display: grid; place-items: center; padding: 1rem; }
-    .error { color: var(--p-red-500); }
   `,
 })
 export class SpotifyCallbackPage implements OnInit {

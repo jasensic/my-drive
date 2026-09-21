@@ -1,5 +1,6 @@
 import { Component, Inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
@@ -11,14 +12,14 @@ import { extractError } from './login.page';
 
 @Component({
   selector: 'app-music-search',
-  imports: [FormsModule, Button, Card, InputText],
+  imports: [FormsModule, Button, Card, InputText, LucideDynamicIcon],
   template: `
     <p-card header="Search songs">
       <p class="hint">
         Searches Migu, NetEase, QQ, Kuwo, and Qianqian, keeps the sources that answer within a few
         seconds, and skips files under 1 MB. Download saves the audio into this library.
       </p>
-      <form class="search" (ngSubmit)="search()">
+      <form class="search-form" (ngSubmit)="search()">
         <input
           pInputText
           name="keyword"
@@ -29,31 +30,35 @@ import { extractError } from './login.page';
         <p-button
           type="submit"
           label="Search"
-          icon="pi pi-search"
           [loading]="searching()"
           [disabled]="!keyword.trim()"
-        />
+        >
+          <ng-template #icon><svg lucideIcon="search" aria-hidden="true" /></ng-template>
+        </p-button>
       </form>
 
       @if (error()) {
-        <p class="error">{{ error() }}</p>
+        <p class="banner error">{{ error() }}</p>
       }
 
       @if (searched() && !tracks().length && !searching()) {
-        <p class="empty">No songs found.</p>
+        <div class="empty-state">
+          <svg lucideIcon="search" [size]="28" aria-hidden="true" />
+          <p>No songs found.</p>
+        </div>
       }
 
       @if (tracks().length) {
-        <ul class="results">
+        <ul class="search-results">
           @for (track of tracks(); track track.id) {
             <li>
               @if (track.cover_url) {
-                <img class="cover" [src]="track.cover_url" [alt]="track.album || track.song_name" />
+                <img class="search-cover" [src]="track.cover_url" [alt]="track.album || track.song_name" />
               }
               <div>
                 <strong>{{ track.song_name || 'Untitled' }}</strong>
                 <span>{{ track.singers || 'Unknown artist' }}</span>
-                <span class="meta">
+                <span class="caption">
                   {{ musicSourceLabel(track.source) }}
                   @if (track.album) {
                     · {{ track.album }}
@@ -71,29 +76,18 @@ import { extractError } from './login.page';
               </div>
               <p-button
                 label="Download"
-                icon="pi pi-download"
                 [outlined]="true"
                 [loading]="importingId() === track.id"
                 [disabled]="importingId() !== null && importingId() !== track.id"
                 (onClick)="download(track)"
-              />
+              >
+                <ng-template #icon><svg lucideIcon="download" aria-hidden="true" /></ng-template>
+              </p-button>
             </li>
           }
         </ul>
       }
     </p-card>
-  `,
-  styles: `
-    .hint, .empty, .error { margin: 0 0 0.75rem; color: var(--p-text-muted-color); }
-    .error { color: var(--p-red-500); }
-    .search { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
-    .search input { min-width: 16rem; flex: 1; }
-    .results { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
-    .results li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
-    .cover { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: 6px; flex: none; }
-    .results li > div { flex: 1; min-width: 0; }
-    .results strong, .results span { display: block; }
-    .meta { color: var(--p-text-muted-color); font-size: 0.85rem; }
   `,
 })
 export class MusicSearchPanel {

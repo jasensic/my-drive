@@ -1,11 +1,11 @@
 import { Component, Inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { Checkbox } from 'primeng/checkbox';
 import { InputNumber } from 'primeng/inputnumber';
 import { InputText } from 'primeng/inputtext';
-import { Toolbar } from 'primeng/toolbar';
 import {
   LIST_DEVICES,
   LOAD_SYNC_PROFILE,
@@ -23,55 +23,65 @@ import { extractError } from './login.page';
 
 @Component({
   selector: 'app-devices-page',
-  imports: [FormsModule, Button, Card, Checkbox, InputNumber, InputText, Toolbar],
+  imports: [FormsModule, Button, Card, Checkbox, InputNumber, InputText, LucideDynamicIcon],
   template: `
-    <p-toolbar>
-      <ng-template #start><strong>Devices &amp; sync profiles</strong></ng-template>
-      <ng-template #end>
-        <input pInputText placeholder="Phone A" [(ngModel)]="newName" />
-        <p-button label="Register device" (onClick)="register()" />
-      </ng-template>
-    </p-toolbar>
+    <section class="page">
+      <header class="page-head">
+        <div class="page-intro">
+          <h1 class="page-title">
+            <svg lucideIcon="monitor-smartphone" [size]="22" aria-hidden="true" />
+            Devices &amp; sync profiles
+          </h1>
+        </div>
+        <div class="page-actions">
+          <input pInputText placeholder="Phone A" [(ngModel)]="newName" />
+          <p-button label="Register device" (onClick)="register()" />
+        </div>
+      </header>
 
-    @if (error()) {
-      <p class="error">{{ error() }}</p>
-    }
+      @if (error()) {
+        <p class="banner error">{{ error() }}</p>
+      }
 
-    <div class="list">
-      @for (device of devices(); track device.id) {
-        <p-card [header]="device.name" [subheader]="device.last_sync_at ? 'Last sync ' + device.last_sync_at : 'Never synced'">
-          <p-button label="Edit rules" (onClick)="edit(device)" />
+      @if (!devices().length && !error()) {
+        <div class="empty-state">
+          <svg lucideIcon="monitor-smartphone" [size]="28" aria-hidden="true" />
+          <p>No devices registered yet.</p>
+        </div>
+      }
+
+      <div class="card-list">
+        @for (device of devices(); track device.id) {
+          <p-card [header]="device.name" [subheader]="device.last_sync_at ? 'Last sync ' + device.last_sync_at : 'Never synced'">
+            <p-button label="Edit rules" (onClick)="edit(device)" />
+          </p-card>
+        }
+      </div>
+
+      @if (editing(); as profile) {
+        <p-card header="Sync rules">
+          <div class="stack-form">
+            <div class="field">
+              <label for="profile-name">Profile name</label>
+              <input id="profile-name" pInputText [(ngModel)]="profileName" />
+            </div>
+            @for (rule of rules(); track rule.media_kind) {
+              <div class="rule">
+                <strong class="rule-kind">{{ rule.media_kind }}</strong>
+                <label class="check-row"><p-checkbox [(ngModel)]="rule.include_all" [binary]="true" /> Include all</label>
+                <label class="field">Max age (days)
+                  <p-inputnumber [(ngModel)]="rule.max_age_days" [min]="0" [showButtons]="true" />
+                </label>
+                <label class="field">Max size (bytes)
+                  <p-inputnumber [(ngModel)]="rule.max_size_bytes" [min]="0" [showButtons]="true" />
+                </label>
+              </div>
+            }
+            <p-button label="Save profile" (onClick)="save(profile.device_id)" />
+          </div>
         </p-card>
       }
-    </div>
-
-    @if (editing(); as profile) {
-      <p-card header="Sync rules">
-        <div class="field">
-          <label>Profile name</label>
-          <input pInputText [(ngModel)]="profileName" />
-        </div>
-        @for (rule of rules(); track rule.media_kind; let i = $index) {
-          <div class="rule">
-            <strong>{{ rule.media_kind }}</strong>
-            <label><p-checkbox [(ngModel)]="rule.include_all" [binary]="true" /> Include all</label>
-            <label>Max age (days)
-              <p-inputnumber [(ngModel)]="rule.max_age_days" [min]="0" [showButtons]="true" />
-            </label>
-            <label>Max size (bytes)
-              <p-inputnumber [(ngModel)]="rule.max_size_bytes" [min]="0" [showButtons]="true" />
-            </label>
-          </div>
-        }
-        <p-button label="Save profile" (onClick)="save(profile.device_id)" />
-      </p-card>
-    }
-  `,
-  styles: `
-    .list, p-card { margin: 1rem; }
-    .field, .rule { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
-    .error { color: var(--p-red-500); padding: 0 1rem; }
-    p-toolbar input { margin-right: 0.5rem; }
+    </section>
   `,
 })
 export class DevicesPage {
