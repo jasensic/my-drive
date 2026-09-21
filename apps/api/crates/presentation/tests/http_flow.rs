@@ -23,6 +23,7 @@ async fn spawn_app() -> (String, reqwest::Client) {
         mdns_enable: false,
         mdns_service_name: "my-drive".into(),
         memory_backend: true,
+        musicdl_url: "http://127.0.0.1:8090".into(),
     };
     let deps = build_deps(&settings).await.unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
