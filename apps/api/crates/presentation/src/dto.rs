@@ -335,6 +335,7 @@ pub struct MusicTrackDto {
     pub duration: String,
     pub file_size: String,
     pub ext: String,
+    pub cover_url: String,
 }
 
 #[derive(Serialize, ToSchema)]

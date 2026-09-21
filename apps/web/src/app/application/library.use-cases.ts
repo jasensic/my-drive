@@ -21,7 +21,7 @@ export class ListLibraryService implements ListLibrary {
   }
 
   private async withPreview(file: MediaFile): Promise<MediaFile> {
-    if (file.media_kind !== 'photo') {
+    if (file.media_kind !== 'photo' && file.media_kind !== 'audio') {
       return file;
     }
     const load = async (thumbnail: boolean) => {
@@ -32,11 +32,14 @@ export class ListLibraryService implements ListLibrary {
       return URL.createObjectURL(blob);
     };
     try {
-      try {
-        return { ...file, preview_url: await load(true) };
-      } catch {
-        return { ...file, preview_url: await load(false) };
+      return { ...file, preview_url: await load(true) };
+    } catch {
+      if (file.media_kind !== 'photo') {
+        return file;
       }
+    }
+    try {
+      return { ...file, preview_url: await load(false) };
     } catch {
       return file;
     }

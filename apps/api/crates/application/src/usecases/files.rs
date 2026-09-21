@@ -277,6 +277,20 @@ impl GetFileContentService {
     pub fn new(deps: Arc<Deps>) -> Self {
         Self { deps }
     }
+
+    async fn cover_from_audio(&self, file: &FileRecord) -> Result<Bytes, AppError> {
+        let audio = self.deps.objects.get(&file.object_key).await?;
+        let Some(thumb) = self.deps.thumbnailer.jpeg_thumbnail(&audio, &file.mime) else {
+            return Err(AppError::not_found("thumbnail not available"));
+        };
+        let key = domain::media::thumbnail_object_key(file.id);
+        self.deps
+            .objects
+            .put(&key, Bytes::from(thumb.clone()), "image/jpeg")
+            .await?;
+        self.deps.files.set_thumbnail_key(file.id, &key).await?;
+        Ok(Bytes::from(thumb))
+    }
 }
 
 #[async_trait]
@@ -291,10 +305,13 @@ impl GetFileContent for GetFileContentService {
     ) -> Result<FileContent, AppError> {
         let file = owned_file(&self.deps, owner_id, id).await?;
         if thumbnail {
-            let key = file
-                .thumbnail_key
-                .ok_or_else(|| AppError::not_found("thumbnail not available"))?;
-            let data = self.deps.objects.get(&key).await?;
+            let data = if let Some(key) = file.thumbnail_key.clone() {
+                self.deps.objects.get(&key).await?
+            } else if file.media_kind == MediaKind::Audio {
+                self.cover_from_audio(&file).await?
+            } else {
+                return Err(AppError::not_found("thumbnail not available"));
+            };
             let len = data.len() as u64;
             return Ok(FileContent {
                 mime: "image/jpeg".into(),

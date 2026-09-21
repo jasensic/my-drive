@@ -192,6 +192,17 @@ impl FileRepository for MemoryStore {
         Ok(())
     }
 
+    async fn set_thumbnail_key(&self, id: FileId, thumbnail_key: &str) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let file = inner
+            .files
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or_else(|| DomainError::not_found("file not found"))?;
+        file.thumbnail_key = Some(thumbnail_key.to_string());
+        Ok(())
+    }
+
     async fn set_deleted_at(
         &self,
         id: FileId,

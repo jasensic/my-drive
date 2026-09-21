@@ -33,6 +33,7 @@ DEFAULT_SOURCES = [
 ]
 MAX_SEARCHES = 8
 MAX_KEYWORD = 200
+MIN_TRACK_BYTES = 1024 * 1024
 WORK_DIR = os.environ.get("MUSICDL_WORK_DIR", "/downloads")
 
 MIME_BY_EXT = {
@@ -74,6 +75,24 @@ def text(value) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def http_url(value) -> str:
+    url = text(value).strip()
+    if url.startswith("https://") or url.startswith("http://"):
+        return url
+    return ""
+
+
+def is_full_track(item) -> bool:
+    raw = getattr(item, "file_size_bytes", None)
+    try:
+        size = int(raw)
+    except (TypeError, ValueError):
+        return True
+    if size <= 0:
+        return True
+    return size >= MIN_TRACK_BYTES
 
 
 def safe_filename(song, ext: str) -> str:
@@ -134,9 +153,13 @@ class Catalog:
         grouped = self._search_sources(keyword)
         songs: dict[str, object] = {}
         tracks = []
+        skipped = 0
         for per_source in grouped.values():
             for song in per_source or []:
                 for item in flatten(song):
+                    if not is_full_track(item):
+                        skipped += 1
+                        continue
                     track_id = str(len(songs))
                     songs[track_id] = item
                     ext = text(item.ext).lstrip(".").lower()
@@ -150,11 +173,13 @@ class Catalog:
                             "duration": text(item.duration),
                             "file_size": text(item.file_size),
                             "ext": ext,
+                            "cover_url": http_url(getattr(item, "cover_url", "")),
                         }
                     )
         elapsed = time.monotonic() - started
         print(
             f"[musicdl-export] search {keyword!r}: {len(tracks)} tracks "
+            f"({skipped} under 1MB skipped) "
             f"from {', '.join(grouped) or 'no source'} in {elapsed:.1f}s"
         )
         if not tracks:

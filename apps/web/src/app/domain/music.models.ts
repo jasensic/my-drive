@@ -7,6 +7,7 @@ export interface MusicTrack {
   duration: string;
   file_size: string;
   ext: string;
+  cover_url?: string;
 }
 
 export interface MusicSearchResult {

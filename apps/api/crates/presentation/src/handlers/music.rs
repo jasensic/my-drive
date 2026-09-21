@@ -33,6 +33,7 @@ pub async fn search(
                 duration: track.duration,
                 file_size: track.file_size,
                 ext: track.ext,
+                cover_url: track.cover_url,
             })
             .collect(),
     }))

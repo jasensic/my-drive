@@ -96,6 +96,19 @@ describe('ListLibraryService', () => {
           content_url: '/v1/files/2/content',
           thumbnail_url: null,
         },
+        {
+          id: '3',
+          album_id: null,
+          name: 'song.flac',
+          size: 2,
+          mime: 'audio/flac',
+          checksum: 'z',
+          media_kind: 'audio',
+          created_at: '',
+          uploaded_at: '',
+          content_url: '/v1/files/3/content',
+          thumbnail_url: null,
+        },
       ],
       get: async () => Promise.reject(new Error('unused')),
       upload: async () => Promise.reject(new Error('unused')),
@@ -118,6 +131,7 @@ describe('ListLibraryService', () => {
       const result = await new ListLibraryService(files, albums).execute();
       expect(result.files[0].preview_url).toBe('blob:preview');
       expect(result.files[1].preview_url).toBeUndefined();
+      expect(result.files[2].preview_url).toBe('blob:preview');
     } finally {
       URL.createObjectURL = original;
     }

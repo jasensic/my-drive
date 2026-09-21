@@ -56,6 +56,7 @@ impl MusicDownloader for HttpMusicDownloader {
                     duration: track.duration,
                     file_size: track.file_size,
                     ext: track.ext,
+                    cover_url: public_cover(&track.cover_url),
                 })
                 .collect(),
         })
@@ -115,6 +116,8 @@ struct TrackPayload {
     duration: String,
     file_size: String,
     ext: String,
+    #[serde(default)]
+    cover_url: String,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +158,15 @@ async fn error_from_response(response: reqwest::Response) -> DomainError {
         404 => DomainError::not_found(message),
         400 => DomainError::validation(message),
         _ => DomainError::validation(message),
+    }
+}
+
+fn public_cover(raw: &str) -> String {
+    let url = raw.trim();
+    if url.starts_with("https://") || url.starts_with("http://") {
+        url.to_string()
+    } else {
+        String::new()
     }
 }
 

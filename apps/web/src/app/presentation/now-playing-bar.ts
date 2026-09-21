@@ -9,6 +9,9 @@ import { formatPlaybackTime, MusicPlaybackService } from './music-playback.servi
   template: `
     @if (playback.current(); as track) {
       <div class="bar">
+        @if (track.preview_url) {
+          <img class="cover" [src]="track.preview_url" [alt]="track.name" />
+        }
         <div class="transport">
           <p-button icon="pi pi-step-backward" [text]="true" (onClick)="playback.previous()" />
           <p-button
@@ -48,6 +51,7 @@ import { formatPlaybackTime, MusicPlaybackService } from './music-playback.servi
       border-top: 1px solid var(--p-content-border-color);
       box-shadow: 0 -8px 24px rgb(0 0 0 / 12%);
     }
+    .cover { width: 2.5rem; height: 2.5rem; object-fit: cover; border-radius: 4px; flex: none; }
     .transport { display: flex; align-items: center; gap: 0.15rem; }
     .title {
       min-width: 8rem;

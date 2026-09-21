@@ -16,7 +16,7 @@ import { extractError } from './login.page';
     <p-card header="Search songs">
       <p class="hint">
         Searches Migu, NetEase, QQ, Kuwo, and Qianqian, keeps the sources that answer within a few
-        seconds, then saves the audio file into this library.
+        seconds, and skips files under 1 MB. Download saves the audio into this library.
       </p>
       <form class="search" (ngSubmit)="search()">
         <input
@@ -47,6 +47,9 @@ import { extractError } from './login.page';
         <ul class="results">
           @for (track of tracks(); track track.id) {
             <li>
+              @if (track.cover_url) {
+                <img class="cover" [src]="track.cover_url" [alt]="track.album || track.song_name" />
+              }
               <div>
                 <strong>{{ track.song_name || 'Untitled' }}</strong>
                 <span>{{ track.singers || 'Unknown artist' }}</span>
@@ -87,6 +90,8 @@ import { extractError } from './login.page';
     .search input { min-width: 16rem; flex: 1; }
     .results { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
     .results li { display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+    .cover { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: 6px; flex: none; }
+    .results li > div { flex: 1; min-width: 0; }
     .results strong, .results span { display: block; }
     .meta { color: var(--p-text-muted-color); font-size: 0.85rem; }
   `,

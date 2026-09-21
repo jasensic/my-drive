@@ -47,6 +47,7 @@ pub trait FileRepository: Send + Sync {
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError>;
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError>;
     async fn update_name(&self, id: FileId, name: &str) -> Result<(), DomainError>;
+    async fn set_thumbnail_key(&self, id: FileId, thumbnail_key: &str) -> Result<(), DomainError>;
     async fn set_deleted_at(
         &self,
         id: FileId,

@@ -226,6 +226,16 @@ impl FileRepository for PgRepos {
         Ok(())
     }
 
+    async fn set_thumbnail_key(&self, id: FileId, thumbnail_key: &str) -> Result<(), DomainError> {
+        sqlx::query("UPDATE files SET thumbnail_key = $2 WHERE id = $1")
+            .bind(id.0)
+            .bind(thumbnail_key)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
     async fn set_deleted_at(
         &self,
         id: FileId,

@@ -15,6 +15,9 @@ import { MusicPlaybackService } from './music-playback.service';
     @if (file(); as current) {
       <p-card [header]="current.name">
         @if (current.media_kind === 'audio') {
+          @if (mediaSrc(); as src) {
+            <img class="media cover" [src]="src" [alt]="current.name" />
+          }
           <p>This track keeps playing while you browse the rest of my-drive.</p>
         } @else if (mediaSrc(); as src) {
           @if (current.media_kind === 'photo') {
@@ -30,6 +33,7 @@ import { MusicPlaybackService } from './music-playback.service';
   `,
   styles: `
     .media { max-width: 100%; max-height: 70vh; display: block; margin: 0 auto; }
+    .cover { width: min(20rem, 100%); aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
     :host { display: block; padding: 1rem; }
   `,
 })
@@ -59,6 +63,11 @@ export class PlayerPage implements OnInit {
       this.file.set(current);
       if (current.media_kind === 'audio') {
         await this.playback.playFile(current);
+        try {
+          this.mediaSrc.set(await this.loadMedia.execute(current.id, true));
+        } catch {
+          this.mediaSrc.set(null);
+        }
         return;
       }
       try {

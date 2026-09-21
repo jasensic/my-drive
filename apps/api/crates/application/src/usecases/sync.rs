@@ -209,6 +209,9 @@ mod tests {
         async fn update_name(&self, _id: FileId, _name: &str) -> Result<(), DomainError> {
             Ok(())
         }
+        async fn set_thumbnail_key(&self, _id: FileId, _thumbnail_key: &str) -> Result<(), DomainError> {
+            Ok(())
+        }
         async fn set_deleted_at(
             &self,
             _id: FileId,

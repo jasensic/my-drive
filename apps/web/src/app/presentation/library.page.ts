@@ -86,6 +86,7 @@ const SILO_COPY: Record<
     Tag,
     Toolbar,
     InputText,
+    MusicSearchPanel,
   ],
   template: `
     <p-contextmenu #cm [model]="menuItems()" />
@@ -526,6 +527,25 @@ export class LibraryPage {
       if (rejected) {
         this.error.set(`${rejected} file${rejected === 1 ? '' : 's'} belong in another section.`);
       }
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async assign(file: MediaFile, albumId: string | null) {
+    try {
+      await this.assignAlbum.execute(file.id, albumId);
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async trash(file: MediaFile) {
+    try {
+      await this.trashMedia.execute(file.id);
+      this.ok.set(`Moved ${file.name} to trash.`);
+      await this.reload();
     } catch (err) {
       this.error.set(extractError(err));
     }

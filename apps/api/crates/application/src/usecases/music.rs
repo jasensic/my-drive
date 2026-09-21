@@ -132,6 +132,7 @@ mod tests {
                     duration: "1:00".into(),
                     file_size: "1MB".into(),
                     ext: "mp3".into(),
+                    cover_url: String::new(),
                 }],
             })
         }

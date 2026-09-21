@@ -152,6 +152,7 @@ describe('ImportGooglePhotosService', () => {
       list: async () => [],
       get: async () => Promise.reject(new Error('unused')),
       upload: async () => Promise.reject(new Error('should not upload')),
+      update: async () => Promise.reject(new Error('unused')),
       assignAlbum: async () => Promise.reject(new Error('unused')),
       trash: async () => Promise.reject(new Error('unused')),
       restore: async () => Promise.reject(new Error('unused')),
@@ -196,6 +197,7 @@ describe('ImportGooglePhotosService', () => {
           thumbnail_url: null,
         };
       },
+      update: async () => Promise.reject(new Error('unused')),
       assignAlbum: async () => Promise.reject(new Error('unused')),
       trash: async () => Promise.reject(new Error('unused')),
       restore: async () => Promise.reject(new Error('unused')),
