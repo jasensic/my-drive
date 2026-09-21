@@ -196,7 +196,7 @@ code {
   gap: var(--md-space-2);
 }
 
-.menu-btn {
+.icon-btn.menu-btn {
   display: none;
 }
 
@@ -820,6 +820,16 @@ body .p-button:not(:disabled):hover {
   transform: translateY(-1px);
 }
 
+body .p-button:focus-visible,
+.nav-link:focus-visible,
+.ghost-btn:focus-visible,
+.icon-btn:focus-visible,
+.playlist:focus-visible,
+.media-grid p-card:focus-visible {
+  outline: 2px solid var(--md-accent-strong);
+  outline-offset: 2px;
+}
+
 body .p-card {
   border: 1px solid var(--md-border);
   box-shadow: var(--md-shadow);
@@ -840,7 +850,7 @@ body .p-card:hover {
 }
 
 @media (max-width: 767px) {
-  .menu-btn {
+  .icon-btn.menu-btn {
     display: inline-flex;
   }
 
