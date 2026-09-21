@@ -11,4 +11,5 @@ globs: apps/android/**/*
 - mDNS service type: `_mydrive._tcp`.
 - After LAN login the client downloads the sync manifest, stores files under `filesDir/media`, and browses them offline.
 - In-app updates: `GET /v1/app/releases/latest` vs `BuildConfig.VERSION_CODE`, then install the APK from the backoffice catalog.
+- App version comes from git: last semver tag on the branch (`1.0.0` / `v1.0.0`) plus patch per commit after it; no tags → `0.0.N` from commit count. `versionCode` is that commit count. Do not hardcode `versionName` / `versionCode` in `app/build.gradle.kts`.
 - Compile the APK with `./gradlew :app:assembleRelease` (CI job `android-apk`).

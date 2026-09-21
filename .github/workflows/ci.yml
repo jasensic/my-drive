@@ -44,12 +44,15 @@ jobs:
           java-version: "21"
       - name: Domain unit tests
         working-directory: apps/android
-        run: ./gradlew :domain:test --no-daemon
+        run: ./gradlew buildSrc:test :domain:test --no-daemon
 
   android-apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

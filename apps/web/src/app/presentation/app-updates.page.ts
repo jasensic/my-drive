@@ -52,13 +52,22 @@ import { extractError } from './login.page';
             <label for="changelog">Changelog</label>
             <textarea id="changelog" [(ngModel)]="changelog" rows="3"></textarea>
           </div>
-          <div class="page-actions">
-            <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
-              (change)="onFile(picker.files); picker.value = ''" />
-            <p-button label="Choose APK" (onClick)="picker.click()">
-              <ng-template #icon><svg lucideIcon="smartphone" aria-hidden="true" /></ng-template>
-            </p-button>
-            <span class="caption">{{ apk?.name || 'No file selected' }}</span>
+          <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
+            (change)="onFile(picker.files); picker.value = ''" />
+          <div
+            class="dropzone"
+            [class.active]="dragOver()"
+            tabindex="0"
+            role="button"
+            (click)="picker.click()"
+            (keydown.enter)="picker.click()"
+            (keydown.space)="$event.preventDefault(); picker.click()"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event)"
+          >
+            <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
+            <span>{{ apk?.name || 'Drag and drop an APK here, or click to choose' }}</span>
           </div>
           @if (inspecting()) {
             <p class="caption">Reading version from APK…</p>
@@ -122,6 +131,7 @@ export class AppUpdatesPage {
   error = signal<string | null>(null);
   ok = signal<string | null>(null);
   inspecting = signal(false);
+  dragOver = signal(false);
   identity = signal<{ version_code: number; version_name: string } | null>(null);
   drafts = signal<Record<string, string>>({});
   changelog = '';
@@ -143,6 +153,25 @@ export class AppUpdatesPage {
 
   setDraft(id: string, value: string) {
     this.drafts.update((current) => ({ ...current, [id]: value }));
+  }
+
+  onDragOver(event: DragEvent) {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    this.dragOver.set(true);
+  }
+
+  onDragLeave(event: DragEvent) {
+    event.preventDefault();
+    this.dragOver.set(false);
+  }
+
+  onDrop(event: DragEvent) {
+    event.preventDefault();
+    this.dragOver.set(false);
+    void this.onFile(event.dataTransfer?.files ?? null);
   }
 
   async onFile(list: FileList | null) {

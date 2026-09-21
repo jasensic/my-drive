@@ -30,6 +30,8 @@ apps/android/.gradle/
 apps/android/app/build/
 apps/android/domain/build/
 apps/android/build/
+apps/android/buildSrc/.gradle/
+apps/android/buildSrc/build/
 apps/android/local.properties
 apps/android/mydrive-upload.jks
 *.apk
