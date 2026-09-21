@@ -49,11 +49,18 @@ class FakeRemote : RemoteFileSource {
         )
     }
 
-    override suspend fun downloadTo(url: String, token: String, destinationPath: String) {
+    override suspend fun downloadTo(
+        url: String,
+        token: String,
+        destinationPath: String,
+        onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)?,
+    ) {
         downloaded += 1
         java.io.File(destinationPath).apply {
             parentFile?.mkdirs()
-            writeBytes(byteArrayOf(1, 2, 3))
+            val bytes = byteArrayOf(1, 2, 3)
+            writeBytes(bytes)
+            onProgress?.invoke(bytes.size.toLong(), bytes.size.toLong())
         }
     }
 
@@ -285,6 +292,27 @@ class SyncFilesUseCaseTest {
         val server = parseManualServer("http://192.168.1.5:8080/v1")
         assertEquals("192.168.1.5", server.host)
         assertEquals(8080, server.port)
+    }
+
+    @Test
+    fun publishesDownloadProgressWhileSyncing() = runTest {
+        val remote = FakeRemote()
+        val store = FakeStore()
+        val state = FakeState()
+        val progress = InMemorySyncProgressStore()
+        val result = SyncFilesUseCase(
+            FakeConnectivity(),
+            DiscoverServerUseCase(FakeConnectivity(), FakeDiscovery(DiscoveredServer("192.168.1.10", 8080, "my-drive")), state),
+            remote,
+            store,
+            state,
+            "Phone A",
+            progress,
+        ).execute("admin", "password123")
+        assertEquals(1, result.downloaded)
+        assertEquals(SyncPhase.COMPLETED, progress.current().phase)
+        assertEquals(1, progress.current().totalFiles)
+        assertEquals(1, progress.current().completedFiles)
     }
 }
 

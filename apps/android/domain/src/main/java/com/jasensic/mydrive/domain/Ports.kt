@@ -19,7 +19,12 @@ interface RemoteFileSource {
         lastSyncAt: String?,
         haveFileIds: Set<String>,
     ): SyncManifest
-    suspend fun downloadTo(url: String, token: String, destinationPath: String)
+    suspend fun downloadTo(
+        url: String,
+        token: String,
+        destinationPath: String,
+        onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)? = null,
+    )
     suspend fun latestAppRelease(baseUrl: String, token: String): AppRelease?
     suspend fun createAlbum(baseUrl: String, token: String, name: String, silo: LibrarySilo): Album
     suspend fun renameAlbum(baseUrl: String, token: String, id: String, name: String): Album

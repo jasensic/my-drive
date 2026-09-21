@@ -60,34 +60,74 @@ class SyncFilesUseCase(
     private val localStore: LocalMediaStore,
     private val state: SyncStateRepository,
     private val deviceName: String,
+    private val progress: SyncProgressStore = InMemorySyncProgressStore(),
 ) {
     suspend fun execute(
         username: String? = null,
         password: String? = null,
         manualHost: String? = null,
     ): SyncResult {
-        val server = discovery.execute(manualHost)
-        val base = server.baseUrl
-        var session = state.session()
-        if (session == null) {
-            require(!username.isNullOrBlank() && !password.isNullOrBlank()) { "login required" }
-            val loggedIn = remote.login(base, username, password)
-            val deviceId = remote.registerDevice(base, loggedIn.token, deviceName)
-            session = loggedIn.copy(deviceId = deviceId)
-            state.saveSession(session)
-        }
-        val deviceId = session.deviceId ?: error("device is not registered")
+        progress.publish(
+            SyncProgress(
+                phase = SyncPhase.CONNECTING,
+                message = if (username.isNullOrBlank()) "Searching the LAN…" else "Signing in…",
+            ),
+        )
         return try {
+            val server = discovery.execute(manualHost)
+            val base = server.baseUrl
+            var session = state.session()
+            if (session == null) {
+                require(!username.isNullOrBlank() && !password.isNullOrBlank()) { "login required" }
+                val loggedIn = remote.login(base, username, password)
+                val deviceId = remote.registerDevice(base, loggedIn.token, deviceName)
+                session = loggedIn.copy(deviceId = deviceId)
+                state.saveSession(session)
+            }
+            val deviceId = session.deviceId ?: error("device is not registered")
+            progress.publish(
+                SyncProgress(phase = SyncPhase.PREPARING, message = "Preparing downloads…"),
+            )
             val have = localStore.knownIds()
             val lastSync = state.lastSyncAt().takeIf { have.isNotEmpty() }
             val manifest = remote.fetchManifest(base, session.token, deviceId, lastSync, have)
             localStore.replaceAlbums(manifest.albums)
+            val total = manifest.files.size
             var downloaded = 0
+            var completed = 0
             for (file in manifest.files) {
+                progress.publish(
+                    SyncProgress(
+                        phase = SyncPhase.DOWNLOADING,
+                        completedFiles = completed,
+                        totalFiles = total,
+                        currentFileName = file.name,
+                        currentBytes = 0L,
+                        currentTotalBytes = file.size.coerceAtLeast(0L),
+                        message = "Downloading ${file.name}…",
+                    ),
+                )
                 val path = localStore.pathFor(file.id)
                 val reused = reuseLocalFile(file, path)
                 if (!reused) {
-                    remote.downloadTo(lanUrl(base, file.url), session.token, path)
+                    remote.downloadTo(lanUrl(base, file.url), session.token, path) { bytesRead, contentLength ->
+                        val totalBytes = when {
+                            contentLength > 0L -> contentLength
+                            file.size > 0L -> file.size
+                            else -> 0L
+                        }
+                        progress.publish(
+                            SyncProgress(
+                                phase = SyncPhase.DOWNLOADING,
+                                completedFiles = completed,
+                                totalFiles = total,
+                                currentFileName = file.name,
+                                currentBytes = bytesRead,
+                                currentTotalBytes = totalBytes,
+                                message = "Downloading ${file.name}…",
+                            ),
+                        )
+                    }
                     if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
                         !checksumMatchesPath(file.checksum, path)
                     ) {
@@ -97,13 +137,45 @@ class SyncFilesUseCase(
                     downloaded += 1
                 }
                 localStore.commit(file, path)
+                completed += 1
+                progress.publish(
+                    SyncProgress(
+                        phase = SyncPhase.DOWNLOADING,
+                        completedFiles = completed,
+                        totalFiles = total,
+                        currentFileName = file.name,
+                        currentBytes = 0L,
+                        currentTotalBytes = 0L,
+                        message = "Downloading ${file.name}…",
+                    ),
+                )
             }
             state.saveLastSyncAt(manifest.generatedAt)
+            val summary = when {
+                total == 0 -> "Up to date"
+                downloaded == 0 -> "Synced $total files"
+                else -> "Downloaded $downloaded of $total files"
+            }
+            progress.publish(
+                SyncProgress(
+                    phase = SyncPhase.COMPLETED,
+                    completedFiles = total,
+                    totalFiles = total,
+                    message = summary,
+                ),
+            )
             SyncResult(server, manifest, downloaded)
         } catch (err: Throwable) {
             if (err.message == "login required") {
                 state.clearSession()
             }
+            progress.publish(
+                SyncProgress(
+                    phase = SyncPhase.FAILED,
+                    errorMessage = err.message ?: "Download failed",
+                    message = err.message ?: "Download failed",
+                ),
+            )
             throw err
         }
     }

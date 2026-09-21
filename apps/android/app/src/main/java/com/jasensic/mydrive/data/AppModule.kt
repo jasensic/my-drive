@@ -19,8 +19,11 @@ import com.jasensic.mydrive.domain.RemoteFileSource
 import com.jasensic.mydrive.domain.ServerDiscovery
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
 import com.jasensic.mydrive.domain.SyncFilesUseCase
+import com.jasensic.mydrive.domain.SyncProgressStore
+import com.jasensic.mydrive.domain.SyncScheduler
 import com.jasensic.mydrive.domain.SyncStateRepository
 import com.jasensic.mydrive.domain.ThemePreferences
+import com.jasensic.mydrive.domain.InMemorySyncProgressStore
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -41,6 +44,7 @@ abstract class PortBindings {
     @Binds abstract fun fileOpener(impl: AndroidExternalFileOpener): ExternalFileOpener
     @Binds abstract fun mediaSharer(impl: AndroidMediaSharer): MediaSharer
     @Binds abstract fun themePrefs(impl: DataStoreThemePreferences): ThemePreferences
+    @Binds abstract fun syncScheduler(impl: WorkManagerSyncScheduler): SyncScheduler
 }
 
 @Module
@@ -49,6 +53,10 @@ object AppProvides {
     @Provides
     @Singleton
     fun appDb(provider: DbProvider) = provider.db
+
+    @Provides
+    @Singleton
+    fun syncProgressStore(): SyncProgressStore = InMemorySyncProgressStore()
 
     @Provides
     @Singleton
@@ -81,7 +89,8 @@ object AppProvides {
         remote: RemoteFileSource,
         local: LocalMediaStore,
         state: SyncStateRepository,
-    ) = SyncFilesUseCase(connectivity, discovery, remote, local, state, android.os.Build.MODEL)
+        progress: SyncProgressStore,
+    ) = SyncFilesUseCase(connectivity, discovery, remote, local, state, android.os.Build.MODEL, progress)
 
     @Provides
     fun checkUpdateUseCase(

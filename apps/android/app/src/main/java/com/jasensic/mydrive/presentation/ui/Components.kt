@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jasensic.mydrive.domain.LocalFile
+import com.jasensic.mydrive.domain.SyncPhase
+import com.jasensic.mydrive.presentation.UiState
 import java.io.File
 import kotlin.math.absoluteValue
 
@@ -110,5 +114,44 @@ fun EmptyLibrary(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+@Composable
+fun SyncStatusBar(
+    state: UiState,
+    modifier: Modifier = Modifier,
+) {
+    val progress = state.syncProgress
+    val showSync = progress.isActive || progress.phase == SyncPhase.COMPLETED
+    val message = state.statusMessage ?: state.progress
+    if (!showSync && message == null) return
+
+    Column(modifier.fillMaxWidth()) {
+        when {
+            progress.phase == SyncPhase.DOWNLOADING && progress.totalFiles > 0 -> {
+                LinearProgressIndicator(
+                    progress = { progress.fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "${progress.percent}% · ${message.orEmpty()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            showSync || message != null -> {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                if (message != null) {
+                    Text(
+                        message,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
     }
 }

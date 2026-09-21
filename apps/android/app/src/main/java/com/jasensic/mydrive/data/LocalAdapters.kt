@@ -174,7 +174,11 @@ class RoomLocalMediaStore @Inject constructor(
         val retriever = android.media.MediaMetadataRetriever()
         return try {
             retriever.setDataSource(file.path)
+            val title = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_TITLE)
+                ?.takeIf { it.isNotBlank() }
             val artist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?.takeIf { it.isNotBlank() }
+            val albumArtist = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                 ?.takeIf { it.isNotBlank() }
             val album = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_ALBUM)
                 ?.takeIf { it.isNotBlank() }
@@ -190,7 +194,9 @@ class RoomLocalMediaStore @Inject constructor(
                 null
             }
             file.copy(
+                title = title,
                 artist = artist,
+                albumArtist = albumArtist,
                 albumName = file.albumName ?: album,
                 durationMs = duration,
                 modifiedAtMillis = modified,

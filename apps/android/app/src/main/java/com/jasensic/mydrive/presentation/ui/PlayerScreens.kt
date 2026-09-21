@@ -42,6 +42,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
+import com.jasensic.mydrive.domain.trackHeadline
+import com.jasensic.mydrive.domain.trackSubtitle
 
 @Composable
 fun MiniPlayer(
@@ -68,9 +70,10 @@ fun MiniPlayer(
                 corner = 8.dp,
             )
             Column(Modifier.weight(1f)) {
-                Text(current.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                Text(current.trackHeadline(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                val subtitle = current.trackSubtitle().ifBlank { current.displayArtist }
                 Text(
-                    current.displayArtist,
+                    subtitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -127,13 +130,13 @@ fun NowPlayingScreen(
         )
         Spacer(Modifier.height(28.dp))
         Text(
-            current?.name ?: "Nothing playing",
+            current?.trackHeadline() ?: "Nothing playing",
             style = MaterialTheme.typography.headlineSmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            current?.displayArtist.orEmpty(),
+            current?.let { it.trackSubtitle().ifBlank { it.displayArtist } }.orEmpty(),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

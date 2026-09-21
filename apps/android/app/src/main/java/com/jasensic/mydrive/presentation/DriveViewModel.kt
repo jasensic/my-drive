@@ -15,16 +15,22 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.ManageLibraryUseCase
 import com.jasensic.mydrive.domain.OpenLocalFileUseCase
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
-import com.jasensic.mydrive.domain.SyncFilesUseCase
+import com.jasensic.mydrive.domain.SyncPhase
+import com.jasensic.mydrive.domain.SyncProgress
+import com.jasensic.mydrive.domain.SyncProgressStore
+import com.jasensic.mydrive.domain.SyncScheduler
 import com.jasensic.mydrive.domain.ThemeMode
 import com.jasensic.mydrive.domain.ThemePreferences
 import com.jasensic.mydrive.domain.classifyLibrary
+import com.jasensic.mydrive.domain.syncProgressLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -64,12 +70,25 @@ data class UiState(
     val loggedIn: Boolean = false,
     val albums: List<Album> = emptyList(),
     val files: List<LocalFile> = emptyList(),
+    val syncProgress: SyncProgress = SyncProgress(),
     val progress: String? = null,
     val error: String? = null,
     val availableUpdate: AppRelease? = null,
     val appVersion: String = "",
 ) {
     val library: ClassifiedLibrary get() = classifyLibrary(files)
+
+    val isBusy: Boolean
+        get() = syncProgress.isActive || progress != null
+
+    val statusMessage: String?
+        get() = when {
+            syncProgress.isActive ||
+                syncProgress.phase == SyncPhase.COMPLETED ||
+                syncProgress.phase == SyncPhase.FAILED ->
+                syncProgressLabel(syncProgress).ifBlank { null }
+            else -> progress
+        }
 
     val viewerFile: LocalFile?
         get() = (screen as? Screen.Viewer)?.let { viewer ->
@@ -82,7 +101,8 @@ data class UiState(
 
 @HiltViewModel
 class DriveViewModel @Inject constructor(
-    private val syncFiles: SyncFilesUseCase,
+    private val syncScheduler: SyncScheduler,
+    private val syncProgressStore: SyncProgressStore,
     private val listLibrary: ListLocalLibraryUseCase,
     private val loadState: LoadAppStateUseCase,
     private val checkUpdate: CheckAppUpdateUseCase,
@@ -106,10 +126,62 @@ class DriveViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            syncProgressStore.observe().collect { progress ->
+                handleSyncProgress(progress)
+            }
+        }
+        viewModelScope.launch {
             refresh(discoverOnStart = true)
             if (_ui.value.loggedIn) {
                 syncExisting()
             }
+        }
+    }
+
+    private suspend fun handleSyncProgress(progress: SyncProgress) {
+        _ui.value = _ui.value.copy(
+            syncProgress = progress,
+            error = when (progress.phase) {
+                SyncPhase.FAILED -> progress.errorMessage ?: progress.message
+                SyncPhase.CONNECTING, SyncPhase.PREPARING, SyncPhase.DOWNLOADING -> null
+                else -> _ui.value.error
+            },
+        )
+        when (progress.phase) {
+            SyncPhase.COMPLETED -> {
+                val library = runCatching { listLibrary.execute() }.getOrNull()
+                val snapshot = runCatching { loadState.execute(discover = false) }.getOrNull()
+                val update = runCatching { checkUpdate.execute() }.getOrNull()
+                navigate(currentFrame().copy(screen = Screen.Hub), record = _ui.value.screen != Screen.Hub)
+                _ui.value = _ui.value.copy(
+                    syncProgress = progress,
+                    error = null,
+                    loggedIn = true,
+                    serverLabel = snapshot?.server?.let { "${it.host}:${it.port}" } ?: _ui.value.serverLabel,
+                    lastSync = snapshot?.lastSync ?: _ui.value.lastSync,
+                    albums = library?.albums ?: _ui.value.albums,
+                    files = library?.files ?: _ui.value.files,
+                    availableUpdate = update,
+                )
+                delay(1_500)
+                if (syncProgressStore.current().phase == SyncPhase.COMPLETED) {
+                    syncProgressStore.publish(SyncProgress())
+                }
+            }
+            SyncPhase.FAILED -> {
+                val needsLogin = progress.errorMessage == "login required" || progress.message == "login required"
+                _ui.value = _ui.value.copy(
+                    syncProgress = progress,
+                    error = if (needsLogin) "Sign in once to this server" else progress.errorMessage,
+                    loggedIn = if (needsLogin) false else _ui.value.loggedIn,
+                    screen = if (needsLogin) Screen.Connect else _ui.value.screen,
+                )
+                delay(2_000)
+                if (syncProgressStore.current().phase == SyncPhase.FAILED) {
+                    syncProgressStore.publish(SyncProgress())
+                }
+            }
+            else -> Unit
         }
     }
 
@@ -311,8 +383,14 @@ class DriveViewModel @Inject constructor(
             val current = _ui.value.files.find { it.id == fileId } ?: return@launch
             runCatching {
                 if (!File(current.path).isFile) {
-                    _ui.value = _ui.value.copy(progress = "Downloading ${current.name}…", error = null)
-                    syncFiles.execute()
+                    _ui.value = _ui.value.copy(error = null)
+                    syncScheduler.enqueue()
+                    val result = syncProgressStore.observe().first {
+                        it.phase == SyncPhase.COMPLETED || it.phase == SyncPhase.FAILED
+                    }
+                    if (result.phase == SyncPhase.FAILED) {
+                        error(result.errorMessage ?: "Sync failed")
+                    }
                     val library = listLibrary.execute()
                     _ui.value = _ui.value.copy(albums = library.albums, files = library.files)
                     val updated = library.files.find { it.id == fileId }
@@ -321,10 +399,8 @@ class DriveViewModel @Inject constructor(
                 } else {
                     openLocalFile.execute(current)
                 }
-            }.onSuccess {
-                _ui.value = _ui.value.copy(progress = null)
             }.onFailure {
-                _ui.value = _ui.value.copy(progress = null, error = it.message)
+                _ui.value = _ui.value.copy(error = it.message)
             }
         }
     }
@@ -342,42 +418,12 @@ class DriveViewModel @Inject constructor(
     }
 
     private fun connect(username: String?, password: String?, manualHost: String?) {
-        viewModelScope.launch {
-            _ui.value = _ui.value.copy(
-                progress = if (username.isNullOrBlank()) "Searching the LAN…" else "Signing in…",
-                error = null,
-            )
-            runCatching {
-                val result = syncFiles.execute(
-                    username?.ifBlank { null },
-                    password?.ifBlank { null },
-                    manualHost?.ifBlank { null },
-                )
-                val library = listLibrary.execute()
-                val update = runCatching { checkUpdate.execute() }.getOrNull()
-                Triple(result, library, update)
-            }.onSuccess { (result, library, update) ->
-                navigate(currentFrame().copy(screen = Screen.Hub), record = _ui.value.screen != Screen.Hub)
-                _ui.value = _ui.value.copy(
-                    progress = null,
-                    error = null,
-                    loggedIn = true,
-                    serverLabel = "${result.server.host}:${result.server.port}",
-                    lastSync = result.manifest.generatedAt,
-                    albums = library.albums,
-                    files = library.files,
-                    availableUpdate = update,
-                )
-            }.onFailure {
-                val needsLogin = it.message == "login required"
-                _ui.value = _ui.value.copy(
-                    progress = null,
-                    error = if (needsLogin) "Sign in once to this server" else it.message,
-                    loggedIn = if (needsLogin) false else _ui.value.loggedIn,
-                    screen = if (needsLogin) Screen.Connect else _ui.value.screen,
-                )
-            }
-        }
+        _ui.value = _ui.value.copy(error = null)
+        syncScheduler.enqueue(
+            username?.ifBlank { null },
+            password?.ifBlank { null },
+            manualHost?.ifBlank { null },
+        )
     }
 
     fun installUpdate() {

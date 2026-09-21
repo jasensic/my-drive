@@ -37,7 +37,12 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MusicGroup
 import com.jasensic.mydrive.domain.groupMusicByAlbum
 import com.jasensic.mydrive.domain.groupMusicByArtist
+import com.jasensic.mydrive.domain.isSong
+import com.jasensic.mydrive.domain.otherAudio
 import com.jasensic.mydrive.domain.recentMusic
+import com.jasensic.mydrive.domain.songTitle
+import com.jasensic.mydrive.domain.trackHeadline
+import com.jasensic.mydrive.domain.trackSubtitle
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -54,9 +59,13 @@ fun MusicScreen(
     onLongPress: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
-    val groupedAlbums = remember(tracks, albums) { groupMusicByAlbum(tracks, albums) }
-    val artists = remember(tracks) { groupMusicByArtist(tracks) }
-    val recent = remember(tracks) { recentMusic(tracks) }
+    val songs = remember(tracks) {
+        tracks.filter { it.isSong() }.sortedBy { it.trackHeadline().lowercase() }
+    }
+    val other = remember(tracks) { otherAudio(tracks) }
+    val groupedAlbums = remember(songs, albums) { groupMusicByAlbum(songs, albums) }
+    val artists = remember(songs) { groupMusicByArtist(songs) }
+    val recent = remember(songs) { recentMusic(songs) }
     val selecting = selectedIds.isNotEmpty()
     val detail = when {
         albumId != null -> groupedAlbums.find { it.id == albumId } ?: MusicGroup(albumId, albums.find { it.id == albumId }?.name ?: "Album", emptyList(), null)
@@ -109,8 +118,8 @@ fun MusicScreen(
             item { SectionLabel("Recently added") }
             item {
                 MusicCarousel(recent.map { track ->
-                    MusicGroup(track.id, track.name, listOf(track), track.artworkPath)
-                }, onClick = { group -> onPlay(tracks, group.id) })
+                    MusicGroup(track.id, track.songTitle(), listOf(track), track.artworkPath)
+                }, onClick = { group -> onPlay(songs, group.id) })
             }
         }
         if (groupedAlbums.isNotEmpty()) {
@@ -121,16 +130,31 @@ fun MusicScreen(
             item { SectionLabel("Artists") }
             item { MusicCarousel(artists, onClick = { onOpenArtist(it.name) }) }
         }
-        item { SectionLabel("Tracks") }
-        items(tracks, key = { it.id }) { track ->
-            TrackRow(
-                track,
-                selected = track.id in selectedIds,
-                onClick = {
-                    if (selecting) onToggleSelect(track.id) else onPlay(tracks, track.id)
-                },
-                onLongClick = { onLongPress(track.id) },
-            )
+        if (songs.isNotEmpty()) {
+            item { SectionLabel("Tracks") }
+            items(songs, key = { it.id }) { track ->
+                TrackRow(
+                    track,
+                    selected = track.id in selectedIds,
+                    onClick = {
+                        if (selecting) onToggleSelect(track.id) else onPlay(songs, track.id)
+                    },
+                    onLongClick = { onLongPress(track.id) },
+                )
+            }
+        }
+        if (other.isNotEmpty()) {
+            item { SectionLabel("Other audio") }
+            items(other, key = { it.id }) { track ->
+                TrackRow(
+                    track,
+                    selected = track.id in selectedIds,
+                    onClick = {
+                        if (selecting) onToggleSelect(track.id) else onPlay(other, track.id)
+                    },
+                    onLongClick = { onLongPress(track.id) },
+                )
+            }
         }
         item { Spacer(Modifier.height(12.dp)) }
     }
@@ -227,14 +251,17 @@ fun TrackRow(
             corner = 8.dp,
         )
         Column(Modifier.weight(1f)) {
-            Text(track.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                "${track.displayArtist} · ${track.displayAlbum}",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(track.trackHeadline(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            val subtitle = track.trackSubtitle()
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         if (selected) {
             Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)

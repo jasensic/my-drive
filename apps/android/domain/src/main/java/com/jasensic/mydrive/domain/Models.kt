@@ -69,12 +69,14 @@ data class LocalFile(
     val size: Long,
     val path: String,
     val artist: String? = null,
+    val albumArtist: String? = null,
+    val title: String? = null,
     val durationMs: Long? = null,
     val modifiedAtMillis: Long = 0L,
     val artworkPath: String? = null,
 ) {
     val displayArtist: String
-        get() = artist?.takeIf { it.isNotBlank() } ?: UNKNOWN_ARTIST
+        get() = primaryArtist().ifBlank { UNKNOWN_ARTIST }
 
     val displayAlbum: String
         get() = albumName?.takeIf { it.isNotBlank() } ?: UNKNOWN_ALBUM
@@ -82,6 +84,88 @@ data class LocalFile(
     val isVisual: Boolean
         get() = mediaKind == MediaKind.PHOTO || mediaKind == MediaKind.VIDEO
 }
+
+/** True when tags identify this audio file as a song (title and/or artist). */
+fun LocalFile.isSong(): Boolean =
+    mediaKind == MediaKind.AUDIO &&
+        (!title.isNullOrBlank() || !artist.isNullOrBlank() || !albumArtist.isNullOrBlank())
+
+fun LocalFile.primaryArtist(): String {
+    albumArtist?.trim()?.takeIf { it.isNotBlank() }?.let { return stripFeaturing(it).first }
+    val raw = artist?.trim()?.takeIf { it.isNotBlank() } ?: return ""
+    return stripFeaturing(raw).first
+}
+
+fun LocalFile.songTitle(): String {
+    title?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+    return titleFromFileName()
+}
+
+/** Top line: `"Artist" - "Song"` for identified tracks, cleaned file name otherwise. */
+fun LocalFile.trackHeadline(): String {
+    if (!isSong()) return fileBaseName()
+    return "${displayArtist} - ${songTitle()}"
+}
+
+/** Bottom line: collaborations (if any) and album for songs. */
+fun LocalFile.trackSubtitle(): String {
+    if (!isSong()) return "Audio file"
+    return listOfNotNull(
+        collaborations().takeIf { it.isNotBlank() },
+        albumName?.trim()?.takeIf { it.isNotBlank() },
+    ).joinToString(" · ")
+}
+
+fun LocalFile.collaborations(): String {
+    val primary = primaryArtist()
+    if (primary.isBlank()) return ""
+    val guests = linkedSetOf<String>()
+    val rawArtist = artist?.trim().orEmpty()
+    if (rawArtist.isNotBlank()) {
+        val (lead, featured) = stripFeaturing(rawArtist)
+        splitArtists(lead)
+            .drop(if (albumArtist.isNullOrBlank()) 1 else 0)
+            .forEach { guests += it }
+        splitArtists(featured).forEach { guests += it }
+    }
+    return guests
+        .filter { !it.equals(primary, ignoreCase = true) }
+        .joinToString(", ")
+}
+
+private fun LocalFile.fileBaseName(): String =
+    name.substringBeforeLast('.').takeIf { name.contains('.') && it.isNotBlank() } ?: name
+
+private fun LocalFile.titleFromFileName(): String {
+    val bare = fileBaseName()
+    val primary = primaryArtist()
+    if (primary.isNotBlank()) {
+        for (sep in listOf(" - ", " – ", " — ", " ~ ")) {
+            val prefix = primary + sep
+            if (bare.startsWith(prefix, ignoreCase = true)) {
+                return bare.substring(prefix.length).trim().ifBlank { bare }
+            }
+        }
+    }
+    return bare
+}
+
+private fun stripFeaturing(value: String): Pair<String, String> {
+    val match = FEATURING_SPLIT.find(value) ?: return value.trim() to ""
+    val lead = value.substring(0, match.range.first).trim()
+    val featured = value.substring(match.range.last + 1).trim()
+    return lead to featured
+}
+
+private fun splitArtists(value: String): List<String> {
+    if (value.isBlank()) return emptyList()
+    return value.split(ARTIST_SPLIT)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+}
+
+private val FEATURING_SPLIT = Regex("""\s+(?:feat\.?|ft\.?|featuring)\s+""", RegexOption.IGNORE_CASE)
+private val ARTIST_SPLIT = Regex("""\s*[,;/&]\s*|\s+and\s+""", RegexOption.IGNORE_CASE)
 
 data class LocalLibrary(
     val albums: List<Album>,

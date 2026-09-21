@@ -25,7 +25,6 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -256,7 +255,7 @@ private fun HubScreen(
                             IconButton(onClick = { dialog = HubDialog.CreateAlbum }) {
                                 Icon(Icons.Outlined.Add, contentDescription = "New album")
                             }
-                            IconButton(onClick = onSync, enabled = state.progress == null) {
+                            IconButton(onClick = onSync, enabled = !state.isBusy) {
                                 Icon(Icons.Outlined.Sync, contentDescription = "Sync")
                             }
                             IconButton(onClick = { settings = true }) {
@@ -268,9 +267,7 @@ private fun HubScreen(
                     },
                     scrollBehavior = scroll,
                 )
-                if (state.progress != null) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
+                SyncStatusBar(state, modifier = Modifier.fillMaxWidth())
                 state.error?.let {
                     Text(
                         it,

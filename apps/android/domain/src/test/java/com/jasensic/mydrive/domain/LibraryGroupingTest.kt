@@ -49,16 +49,15 @@ class LibraryGroupingTest {
     @Test
     fun groupsAlbumsAndFallsBackWhenMetadataIsMissing() {
         val albums = groupMusicByAlbum(listOf(trackA, trackB, trackC))
-        assertEquals(listOf("Debut", UNKNOWN_ALBUM), albums.map { it.name })
+        assertEquals(listOf("Debut"), albums.map { it.name })
         assertEquals(listOf("a1", "a2"), albums.first().tracks.map { it.id })
         assertEquals("/art/a.jpg", albums.first().artworkPath)
-        assertEquals(UNKNOWN_ALBUM, albums.last().name)
     }
 
     @Test
     fun groupsArtists() {
         val artists = groupMusicByArtist(listOf(trackA, trackC))
-        assertEquals(listOf("Ada", UNKNOWN_ARTIST), artists.map { it.name })
+        assertEquals(listOf("Ada"), artists.map { it.name })
         assertEquals(1, artists.first().tracks.size)
     }
 
@@ -87,7 +86,7 @@ class LibraryGroupingTest {
     @Test
     fun folderGroupingReusesAlbumMetadata() {
         val folders = groupMusicByFolder(listOf(trackA, trackC))
-        assertEquals(setOf("Debut", UNKNOWN_ALBUM), folders.map { it.name }.toSet())
+        assertEquals(setOf("Debut"), folders.map { it.name }.toSet())
     }
 
     @Test
@@ -106,6 +105,53 @@ class LibraryGroupingTest {
         val docs = groupFilesByAlbum(listOf(pdf), albums, LibrarySilo.FILES)
         assertEquals(listOf("Work"), docs.map { it.name })
         assertEquals(listOf("d1"), docs.single().tracks.map { it.id })
+    }
+
+    @Test
+    fun otherAudioHoldsUnidentifiedTracks() {
+        assertEquals(listOf("a3"), otherAudio(listOf(trackA, trackC)).map { it.id })
+    }
+
+    @Test
+    fun trackHeadlineUsesArtistAndTitle() {
+        val tagged = file(
+            "t1",
+            "Soto Asa - High School.mp3",
+            MediaKind.AUDIO,
+            albumName = "Super Sintiendo 64",
+            artist = "Soto Asa",
+            title = "High School",
+        )
+        assertEquals("Soto Asa - High School", tagged.trackHeadline())
+        assertEquals("Super Sintiendo 64", tagged.trackSubtitle())
+    }
+
+    @Test
+    fun trackSubtitleShowsCollaborationsAndAlbum() {
+        val tagged = file(
+            "t2",
+            "track.flac",
+            MediaKind.AUDIO,
+            albumName = "Debut",
+            artist = "Ada feat. Bea",
+            albumArtist = "Ada",
+            title = "Duet",
+        )
+        assertEquals("Ada - Duet", tagged.trackHeadline())
+        assertEquals("Bea · Debut", tagged.trackSubtitle())
+    }
+
+    @Test
+    fun stripsArtistPrefixFromFileNameWhenTitleMissing() {
+        val tagged = file(
+            "t3",
+            "Soto Asa - Las 12.flac",
+            MediaKind.AUDIO,
+            artist = "Soto Asa",
+            albumName = "Las 12",
+        )
+        assertEquals("Soto Asa - Las 12", tagged.trackHeadline())
+        assertEquals("Las 12", tagged.trackSubtitle())
     }
 }
 
@@ -151,6 +197,8 @@ private fun file(
     albumId: String? = null,
     albumName: String? = null,
     artist: String? = null,
+    albumArtist: String? = null,
+    title: String? = null,
     modified: Long = 0L,
     artwork: String? = null,
     path: String = "/tmp/$name",
@@ -164,6 +212,8 @@ private fun file(
     size = 10,
     path = path,
     artist = artist,
+    albumArtist = albumArtist,
+    title = title,
     durationMs = 1_000,
     modifiedAtMillis = modified,
     artworkPath = artwork,

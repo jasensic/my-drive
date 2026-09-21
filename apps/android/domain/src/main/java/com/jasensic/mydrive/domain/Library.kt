@@ -23,9 +23,13 @@ fun classifyLibrary(files: List<LocalFile>): ClassifiedLibrary {
 }
 
 fun recentMusic(files: List<LocalFile>, limit: Int = 12): List<LocalFile> =
-    files.filter { it.mediaKind == MediaKind.AUDIO }
+    files.filter { it.isSong() }
         .sortedByDescending { it.modifiedAtMillis }
         .take(limit.coerceAtLeast(0))
+
+fun otherAudio(files: List<LocalFile>): List<LocalFile> =
+    files.filter { it.mediaKind == MediaKind.AUDIO && !it.isSong() }
+        .sortedBy { it.trackHeadline().lowercase() }
 
 fun groupMusicByAlbum(files: List<LocalFile>, albums: List<Album> = emptyList()): List<MusicGroup> {
     val grouped = groupMusic(files) { file ->
@@ -41,7 +45,7 @@ fun groupMusicByAlbum(files: List<LocalFile>, albums: List<Album> = emptyList())
 
 fun groupMusicByArtist(files: List<LocalFile>): List<MusicGroup> =
     groupMusic(files) { file ->
-        val name = file.displayArtist
+        val name = file.primaryArtist().ifBlank { UNKNOWN_ARTIST }
         name.lowercase() to name
     }
 
@@ -72,10 +76,10 @@ private fun groupMusic(
     files: List<LocalFile>,
     key: (LocalFile) -> Pair<String, String>,
 ): List<MusicGroup> =
-    files.filter { it.mediaKind == MediaKind.AUDIO }
+    files.filter { it.isSong() }
         .groupBy { key(it) }
         .map { (idName, tracks) ->
-            val sorted = tracks.sortedBy { it.name.lowercase() }
+            val sorted = tracks.sortedBy { it.trackHeadline().lowercase() }
             MusicGroup(
                 id = idName.first,
                 name = idName.second,

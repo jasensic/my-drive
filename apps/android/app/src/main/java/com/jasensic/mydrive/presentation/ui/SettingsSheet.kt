@@ -11,7 +11,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -55,16 +54,13 @@ fun SettingsSheet(
                         if (release.changelog.isNotBlank()) {
                             Text(release.changelog, style = MaterialTheme.typography.bodySmall)
                         }
-                        Button(onClick = onUpdate, enabled = state.progress == null) { Text("Install update") }
+                        Button(onClick = onUpdate, enabled = !state.isBusy) { Text("Install update") }
                     }
                 }
             }
-            state.progress?.let {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
+            SyncStatusBar(state)
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Button(onClick = onSync, enabled = state.progress == null, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = onSync, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
                 Text("Sync now")
             }
             OutlinedButton(onClick = onConnection, modifier = Modifier.fillMaxWidth()) {

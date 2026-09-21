@@ -183,7 +183,12 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         )
     }
 
-    override suspend fun downloadTo(url: String, token: String, destinationPath: String) {
+    override suspend fun downloadTo(
+        url: String,
+        token: String,
+        destinationPath: String,
+        onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)?,
+    ) {
         withContext(Dispatchers.IO) {
             val req = Request.Builder()
                 .url(url)
@@ -193,9 +198,22 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                 if (resp.code == 401) error("login required")
                 if (!resp.isSuccessful) error("download failed: ${resp.code}")
                 val body = resp.body ?: error("empty body")
+                val contentLength = body.contentLength()
                 val dest = File(destinationPath)
                 dest.parentFile?.mkdirs()
-                dest.outputStream().use { out -> body.byteStream().copyTo(out) }
+                dest.outputStream().use { out ->
+                    body.byteStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var totalRead = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            out.write(buffer, 0, read)
+                            totalRead += read
+                            onProgress?.invoke(totalRead, contentLength)
+                        }
+                    }
+                }
             }
         }
     }

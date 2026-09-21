@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playback_channel_name">Now playing</string>
+    <string name="sync_channel_name">Downloads</string>
+    <string name="sync_channel_description">Background sync and file download progress</string>
+    <string name="sync_notification_title">Downloading</string>
+    <string name="sync_notification_complete_title">Download complete</string>
+    <string name="sync_notification_failed_title">Download failed</string>
+</resources>
