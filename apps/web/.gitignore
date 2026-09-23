@@ -38,6 +38,8 @@ yarn-error.log
 testem.log
 test-results/
 playwright-report/
+blob-report/
+e2e/.auth/
 __screenshots__/
 
 # System files

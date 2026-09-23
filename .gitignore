@@ -42,6 +42,8 @@ apps/android/mydrive-upload.jks
 coverage/
 playwright-report/
 test-results/
+blob-report/
+apps/web/e2e/.auth/
 *.log
 
 # OS
