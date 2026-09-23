@@ -5,8 +5,38 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      android: ${{ steps.filter.outputs.android }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+            web:
+              - 'apps/web/**'
+            android:
+              - 'apps/android/**'
+              - '.github/actions/upload-named-android-apk/**'
+              - '.github/workflows/android-release.yml'
+            workflow:
+              - '.github/workflows/ci.yml'
+
   api:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.api) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +49,8 @@ jobs:
         run: cargo test --workspace
 
   web:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.web) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +67,8 @@ jobs:
           npm run build
 
   android-domain:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.android) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +81,8 @@ jobs:
         run: ./gradlew buildSrc:test :domain:test --no-daemon
 
   android-apk:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.android) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +124,8 @@ jobs:
       - uses: ./.github/actions/upload-named-android-apk
 
   e2e:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.api) || fromJSON(needs.changes.outputs.web) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -124,3 +162,28 @@ jobs:
         env:
           E2E_BASE_URL: http://127.0.0.1:4200
         run: npx playwright test
+
+  ci:
+    name: CI
+    needs: [changes, api, web, android-domain, android-apk, e2e]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selected jobs to pass
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            local name="$1" result="$2"
+            echo "$name=$result"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              fail=1
+            fi
+          }
+          check changes "${{ needs.changes.result }}"
+          check api "${{ needs.api.result }}"
+          check web "${{ needs.web.result }}"
+          check android-domain "${{ needs.android-domain.result }}"
+          check android-apk "${{ needs.android-apk.result }}"
+          check e2e "${{ needs.e2e.result }}"
+          exit "$fail"
