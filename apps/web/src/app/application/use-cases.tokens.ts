@@ -7,7 +7,7 @@ import {
   SpotifyTrack,
 } from '../domain/cloud-import.models';
 import { MusicSearchResult } from '../domain/music.models';
-import { Album, AppRelease, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, AuthSession, Device, LibrarySilo, MediaFile, ShareGrant, SharePermission, ShareResourceType, SyncProfile, SyncRule, UserProfile } from '../domain/models';
 
 export interface CheckSetup {
   execute(): Promise<boolean>;
@@ -21,9 +21,18 @@ export interface Login {
   execute(username: string, password: string): Promise<AuthSession>;
 }
 
+export interface RegisterAccount {
+  execute(username: string, password: string): Promise<AuthSession>;
+}
+
+export interface ListUsers {
+  execute(): Promise<UserProfile[]>;
+}
+
 export interface SessionQuery {
   hasSession(): boolean;
   username(): string | null;
+  userId(): string | null;
   logout(): void;
 }
 
@@ -61,6 +70,23 @@ export interface RenameMedia {
 
 export interface ShareMedia {
   execute(files: MediaFile[]): Promise<{ name: string; mime: string; blob: Blob }[]>;
+}
+
+export interface ListShares {
+  execute(resourceType?: ShareResourceType, resourceId?: string): Promise<ShareGrant[]>;
+}
+
+export interface CreateShare {
+  execute(input: {
+    resourceType: ShareResourceType;
+    resourceId: string;
+    granteeId: string;
+    permission: SharePermission;
+  }): Promise<ShareGrant>;
+}
+
+export interface RevokeShare {
+  execute(id: string): Promise<void>;
 }
 
 export interface TrashMedia {
@@ -166,6 +192,8 @@ export interface ImportMusicTrack {
 export const CHECK_SETUP = new InjectionToken<CheckSetup>('CHECK_SETUP');
 export const SETUP_ADMIN = new InjectionToken<SetupAdmin>('SETUP_ADMIN');
 export const LOGIN = new InjectionToken<Login>('LOGIN');
+export const REGISTER_ACCOUNT = new InjectionToken<RegisterAccount>('REGISTER_ACCOUNT');
+export const LIST_USERS = new InjectionToken<ListUsers>('LIST_USERS');
 export const SESSION_QUERY = new InjectionToken<SessionQuery>('SESSION_QUERY');
 export const LIST_LIBRARY = new InjectionToken<ListLibrary>('LIST_LIBRARY');
 export const GET_MEDIA = new InjectionToken<GetMedia>('GET_MEDIA');
@@ -176,6 +204,9 @@ export const DELETE_ALBUM = new InjectionToken<DeleteAlbum>('DELETE_ALBUM');
 export const ASSIGN_FILE_ALBUM = new InjectionToken<AssignFileAlbum>('ASSIGN_FILE_ALBUM');
 export const RENAME_MEDIA = new InjectionToken<RenameMedia>('RENAME_MEDIA');
 export const SHARE_MEDIA = new InjectionToken<ShareMedia>('SHARE_MEDIA');
+export const LIST_SHARES = new InjectionToken<ListShares>('LIST_SHARES');
+export const CREATE_SHARE = new InjectionToken<CreateShare>('CREATE_SHARE');
+export const REVOKE_SHARE = new InjectionToken<RevokeShare>('REVOKE_SHARE');
 export const TRASH_MEDIA = new InjectionToken<TrashMedia>('TRASH_MEDIA');
 export const RESTORE_MEDIA = new InjectionToken<RestoreMedia>('RESTORE_MEDIA');
 export const PURGE_MEDIA = new InjectionToken<PurgeMedia>('PURGE_MEDIA');

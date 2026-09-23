@@ -1,15 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use domain::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
-use domain::ports::{
-    AlbumRepository, AppReleaseRepository, DeviceRepository, FileRepository, ObjectStore,
-    SyncProfileRepository, UserRepository,
+use domain::model::{
+    Album, AppRelease, Device, FileRecord, Share, ShareResourceType, SyncProfile, User, UserSummary,
 };
-use domain::{AlbumId, AppReleaseId, DeviceId, DomainError, FileId, UserId};
+use domain::ports::{
+    AlbumRepository, AppReleaseRepository, DeviceExclusionRepository, DeviceRepository,
+    FileRepository, ObjectStore, ShareRepository, SyncProfileRepository, UserRepository,
+};
+use domain::{AlbumId, AppReleaseId, DeviceId, DomainError, FileId, ShareId, UserId};
 
 #[derive(Clone, Default)]
 pub struct MemoryStore {
@@ -24,6 +26,8 @@ struct Inner {
     devices: Vec<Device>,
     profiles: Vec<SyncProfile>,
     app_releases: Vec<AppRelease>,
+    exclusions: HashSet<(DeviceId, FileId)>,
+    shares: Vec<Share>,
     objects: HashMap<String, Vec<u8>>,
 }
 
@@ -69,6 +73,20 @@ impl UserRepository for MemoryStore {
             .find(|u| u.id == id)
             .cloned())
     }
+
+    async fn list_summaries(&self) -> Result<Vec<UserSummary>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .users
+            .iter()
+            .map(|u| UserSummary {
+                id: u.id,
+                username: u.username.clone(),
+            })
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -86,6 +104,18 @@ impl AlbumRepository for MemoryStore {
             .albums
             .iter()
             .filter(|a| a.owner_id == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn list_by_ids(&self, ids: &[AlbumId]) -> Result<Vec<Album>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .albums
+            .iter()
+            .filter(|a| ids.contains(&a.id))
             .cloned()
             .collect())
     }
@@ -170,6 +200,30 @@ impl FileRepository for MemoryStore {
             .cloned())
     }
 
+    async fn list_by_ids(&self, ids: &[FileId]) -> Result<Vec<FileRecord>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .files
+            .iter()
+            .filter(|f| ids.contains(&f.id))
+            .cloned()
+            .collect())
+    }
+
+    async fn list_by_album_ids(&self, ids: &[AlbumId]) -> Result<Vec<FileRecord>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .files
+            .iter()
+            .filter(|f| f.album_id.is_some_and(|id| ids.contains(&id)))
+            .cloned()
+            .collect())
+    }
+
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError> {
         let mut inner = self.inner.lock().unwrap();
         let file = inner
@@ -200,6 +254,27 @@ impl FileRepository for MemoryStore {
             .find(|f| f.id == id)
             .ok_or_else(|| DomainError::not_found("file not found"))?;
         file.thumbnail_key = Some(thumbnail_key.to_string());
+        Ok(())
+    }
+
+    async fn set_mobile_variant(
+        &self,
+        id: FileId,
+        object_key: &str,
+        checksum: &str,
+        size: u64,
+        mime: &str,
+    ) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        let file = inner
+            .files
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or_else(|| DomainError::not_found("file not found"))?;
+        file.mobile_object_key = Some(object_key.to_string());
+        file.mobile_checksum = Some(checksum.to_string());
+        file.mobile_size = Some(size);
+        file.mobile_mime = Some(mime.to_string());
         Ok(())
     }
 
@@ -399,5 +474,114 @@ impl ObjectStore for MemoryStore {
     async fn delete(&self, key: &str) -> Result<(), DomainError> {
         self.inner.lock().unwrap().objects.remove(key);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl DeviceExclusionRepository for MemoryStore {
+    async fn merge(&self, device_id: DeviceId, file_ids: &[FileId]) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        for file_id in file_ids {
+            inner.exclusions.insert((device_id, *file_id));
+        }
+        Ok(())
+    }
+
+    async fn list(&self, device_id: DeviceId) -> Result<Vec<FileId>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .exclusions
+            .iter()
+            .filter(|(d, _)| *d == device_id)
+            .map(|(_, f)| *f)
+            .collect())
+    }
+}
+
+#[async_trait]
+impl ShareRepository for MemoryStore {
+    async fn upsert(&self, share: &Share) -> Result<Share, DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(existing) = inner.shares.iter_mut().find(|s| {
+            s.resource_type == share.resource_type
+                && s.resource_id == share.resource_id
+                && s.grantee_id == share.grantee_id
+        }) {
+            existing.permission = share.permission;
+            return Ok(existing.clone());
+        }
+        inner.shares.push(share.clone());
+        Ok(share.clone())
+    }
+
+    async fn find_by_id(&self, id: ShareId) -> Result<Option<Share>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .shares
+            .iter()
+            .find(|s| s.id == id)
+            .cloned())
+    }
+
+    async fn delete(&self, id: ShareId) -> Result<(), DomainError> {
+        self.inner.lock().unwrap().shares.retain(|s| s.id != id);
+        Ok(())
+    }
+
+    async fn delete_for_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: uuid::Uuid,
+    ) -> Result<(), DomainError> {
+        self.inner
+            .lock()
+            .unwrap()
+            .shares
+            .retain(|s| !(s.resource_type == resource_type && s.resource_id == resource_id));
+        Ok(())
+    }
+
+    async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Share>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .shares
+            .iter()
+            .filter(|s| s.owner_id == owner_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn list_by_grantee(&self, grantee_id: UserId) -> Result<Vec<Share>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .shares
+            .iter()
+            .filter(|s| s.grantee_id == grantee_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn list_by_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: uuid::Uuid,
+    ) -> Result<Vec<Share>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .shares
+            .iter()
+            .filter(|s| s.resource_type == resource_type && s.resource_id == resource_id)
+            .cloned()
+            .collect())
     }
 }

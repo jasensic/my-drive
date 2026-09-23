@@ -60,6 +60,27 @@ pub fn thumbnail_object_key(id: crate::FileId) -> String {
     format!("images/thumbs/{id}.jpg")
 }
 
+pub const MOBILE_AUDIO_MIME: &str = "audio/mp4";
+
+pub fn mobile_audio_object_key(id: crate::FileId) -> String {
+    format!("music/{id}/mobile.m4a")
+}
+
+/// Lossless audio needs an AAC derivative for Android sync. MP3/M4A/AAC stay as-is.
+pub fn audio_needs_mobile_transcode(mime: &str, name: &str) -> bool {
+    let mime = mime.to_ascii_lowercase();
+    let name = name.to_ascii_lowercase();
+    mime.contains("flac")
+        || mime.contains("wav")
+        || mime.contains("aiff")
+        || mime.contains("alac")
+        || name.ends_with(".flac")
+        || name.ends_with(".wav")
+        || name.ends_with(".aiff")
+        || name.ends_with(".aif")
+        || name.ends_with(".alac")
+}
+
 fn sanitize_object_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -101,5 +122,20 @@ mod tests {
             object_key(MediaKind::Audio, id, "a/b.mp3"),
             "music/00000000-0000-0000-0000-000000000000/a_b.mp3"
         );
+        assert_eq!(
+            mobile_audio_object_key(id),
+            "music/00000000-0000-0000-0000-000000000000/mobile.m4a"
+        );
+    }
+
+    #[test]
+    fn lossless_audio_needs_a_mobile_derivative() {
+        assert!(audio_needs_mobile_transcode("audio/flac", "song.flac"));
+        assert!(audio_needs_mobile_transcode("audio/wav", "song.wav"));
+        assert!(audio_needs_mobile_transcode("audio/aiff", "song.aiff"));
+        assert!(audio_needs_mobile_transcode("audio/mp4", "song.alac"));
+        assert!(!audio_needs_mobile_transcode("audio/mpeg", "song.mp3"));
+        assert!(!audio_needs_mobile_transcode("audio/mp4", "song.m4a"));
+        assert!(!audio_needs_mobile_transcode("audio/aac", "song.aac"));
     }
 }

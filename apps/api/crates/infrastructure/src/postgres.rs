@@ -1,12 +1,16 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use domain::model::{Album, AppRelease, Device, FileRecord, SyncProfile, SyncRule, User};
+use domain::model::{
+    Album, AppRelease, Device, FileRecord, Share, SharePermission, ShareResourceType, SyncProfile,
+    SyncRule, User, UserSummary,
+};
 use domain::ports::{
-    AlbumRepository, AppReleaseRepository, DeviceRepository, FileRepository,
-    SyncProfileRepository, UserRepository,
+    AlbumRepository, AppReleaseRepository, DeviceExclusionRepository, DeviceRepository,
+    FileRepository, ShareRepository, SyncProfileRepository, UserRepository,
 };
 use domain::{
-    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, LibrarySilo, MediaKind, SyncProfileId, UserId,
+    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, LibrarySilo, MediaKind, ShareId, SyncProfileId,
+    UserId,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -52,7 +56,7 @@ impl UserRepository for PgRepos {
         .bind(user.created_at)
         .execute(&self.pool)
         .await
-        .map_err(|e| DomainError::infra(e.to_string()))?;
+        .map_err(|e| unique_or_infra(e, "username already exists"))?;
         Ok(())
     }
 
@@ -85,6 +89,20 @@ impl UserRepository for PgRepos {
             created_at: r.get("created_at"),
         }))
     }
+
+    async fn list_summaries(&self) -> Result<Vec<UserSummary>, DomainError> {
+        let rows = sqlx::query("SELECT id, username FROM users ORDER BY username")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| UserSummary {
+                id: UserId::from_uuid(r.get("id")),
+                username: r.get("username"),
+            })
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -109,6 +127,21 @@ impl AlbumRepository for PgRepos {
             "SELECT id, owner_id, name, silo, created_at FROM albums WHERE owner_id = $1 ORDER BY created_at DESC",
         )
         .bind(owner_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(rows.into_iter().map(row_to_album).collect())
+    }
+
+    async fn list_by_ids(&self, ids: &[AlbumId]) -> Result<Vec<Album>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let uuids: Vec<Uuid> = ids.iter().map(|id| id.0).collect();
+        let rows = sqlx::query(
+            "SELECT id, owner_id, name, silo, created_at FROM albums WHERE id = ANY($1)",
+        )
+        .bind(&uuids)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| DomainError::infra(e.to_string()))?;
@@ -148,8 +181,8 @@ impl AlbumRepository for PgRepos {
 impl FileRepository for PgRepos {
     async fn insert(&self, file: &FileRecord) -> Result<(), DomainError> {
         sqlx::query(
-            "INSERT INTO files (id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+            "INSERT INTO files (id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
         )
         .bind(file.id.0)
         .bind(file.owner_id.0)
@@ -164,6 +197,10 @@ impl FileRepository for PgRepos {
         .bind(file.created_at)
         .bind(file.uploaded_at)
         .bind(file.deleted_at)
+        .bind(&file.mobile_object_key)
+        .bind(&file.mobile_checksum)
+        .bind(file.mobile_size.map(|v| v as i64))
+        .bind(&file.mobile_mime)
         .execute(&self.pool)
         .await
         .map_err(|e| DomainError::infra(e.to_string()))?;
@@ -172,7 +209,7 @@ impl FileRepository for PgRepos {
 
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
         let rows = sqlx::query(
-            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
              FROM files WHERE owner_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC",
         )
         .bind(owner_id.0)
@@ -184,7 +221,7 @@ impl FileRepository for PgRepos {
 
     async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError> {
         let rows = sqlx::query(
-            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
              FROM files WHERE owner_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
         )
         .bind(owner_id.0)
@@ -196,7 +233,7 @@ impl FileRepository for PgRepos {
 
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError> {
         let row = sqlx::query(
-            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
              FROM files WHERE id = $1",
         )
         .bind(id.0)
@@ -204,6 +241,38 @@ impl FileRepository for PgRepos {
         .await
         .map_err(|e| DomainError::infra(e.to_string()))?;
         row.map(row_to_file).transpose()
+    }
+
+    async fn list_by_ids(&self, ids: &[FileId]) -> Result<Vec<FileRecord>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let uuids: Vec<Uuid> = ids.iter().map(|id| id.0).collect();
+        let rows = sqlx::query(
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
+             FROM files WHERE id = ANY($1)",
+        )
+        .bind(&uuids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_file).collect()
+    }
+
+    async fn list_by_album_ids(&self, ids: &[AlbumId]) -> Result<Vec<FileRecord>, DomainError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let uuids: Vec<Uuid> = ids.iter().map(|id| id.0).collect();
+        let rows = sqlx::query(
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
+             FROM files WHERE album_id = ANY($1)",
+        )
+        .bind(&uuids)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_file).collect()
     }
 
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError> {
@@ -233,6 +302,28 @@ impl FileRepository for PgRepos {
             .execute(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn set_mobile_variant(
+        &self,
+        id: FileId,
+        object_key: &str,
+        checksum: &str,
+        size: u64,
+        mime: &str,
+    ) -> Result<(), DomainError> {
+        sqlx::query(
+            "UPDATE files SET mobile_object_key = $2, mobile_checksum = $3, mobile_size = $4, mobile_mime = $5 WHERE id = $1",
+        )
+        .bind(id.0)
+        .bind(object_key)
+        .bind(checksum)
+        .bind(size as i64)
+        .bind(mime)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
         Ok(())
     }
 
@@ -287,6 +378,10 @@ fn row_to_file(r: sqlx::postgres::PgRow) -> Result<FileRecord, DomainError> {
         created_at: r.get("created_at"),
         uploaded_at: r.get("uploaded_at"),
         deleted_at: r.get("deleted_at"),
+        mobile_object_key: r.get("mobile_object_key"),
+        mobile_checksum: r.get("mobile_checksum"),
+        mobile_size: r.get::<Option<i64>, _>("mobile_size").map(|v| v as u64),
+        mobile_mime: r.get("mobile_mime"),
     })
 }
 
@@ -561,4 +656,158 @@ fn row_to_release(r: sqlx::postgres::PgRow) -> Result<AppRelease, DomainError> {
         size: r.get::<i64, _>("size") as u64,
         published_at: r.get("published_at"),
     })
+}
+
+fn unique_or_infra(e: sqlx::Error, conflict: &str) -> DomainError {
+    if let sqlx::Error::Database(db) = &e {
+        if db.code().as_deref() == Some("23505") {
+            return DomainError::conflict(conflict);
+        }
+    }
+    DomainError::infra(e.to_string())
+}
+
+fn row_to_share(r: sqlx::postgres::PgRow) -> Result<Share, DomainError> {
+    let resource_type: String = r.get("resource_type");
+    let permission: String = r.get("permission");
+    Ok(Share {
+        id: ShareId::from_uuid(r.get("id")),
+        resource_type: ShareResourceType::parse(&resource_type)
+            .ok_or_else(|| DomainError::infra("invalid share resource_type"))?,
+        resource_id: r.get("resource_id"),
+        owner_id: UserId::from_uuid(r.get("owner_id")),
+        grantee_id: UserId::from_uuid(r.get("grantee_id")),
+        permission: SharePermission::parse(&permission)
+            .ok_or_else(|| DomainError::infra("invalid share permission"))?,
+        created_at: r.get("created_at"),
+    })
+}
+
+#[async_trait]
+impl DeviceExclusionRepository for PgRepos {
+    async fn merge(&self, device_id: DeviceId, file_ids: &[FileId]) -> Result<(), DomainError> {
+        for file_id in file_ids {
+            sqlx::query(
+                "INSERT INTO device_excluded_files (device_id, file_id) VALUES ($1, $2)
+                 ON CONFLICT DO NOTHING",
+            )
+            .bind(device_id.0)
+            .bind(file_id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    async fn list(&self, device_id: DeviceId) -> Result<Vec<FileId>, DomainError> {
+        let rows = sqlx::query("SELECT file_id FROM device_excluded_files WHERE device_id = $1")
+            .bind(device_id.0)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(rows
+            .into_iter()
+            .map(|r| FileId::from_uuid(r.get("file_id")))
+            .collect())
+    }
+}
+
+#[async_trait]
+impl ShareRepository for PgRepos {
+    async fn upsert(&self, share: &Share) -> Result<Share, DomainError> {
+        let row = sqlx::query(
+            "INSERT INTO shares (id, resource_type, resource_id, owner_id, grantee_id, permission, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (resource_type, resource_id, grantee_id)
+             DO UPDATE SET permission = EXCLUDED.permission
+             RETURNING id, resource_type, resource_id, owner_id, grantee_id, permission, created_at",
+        )
+        .bind(share.id.0)
+        .bind(share.resource_type.as_str())
+        .bind(share.resource_id)
+        .bind(share.owner_id.0)
+        .bind(share.grantee_id.0)
+        .bind(share.permission.as_str())
+        .bind(share.created_at)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| unique_or_infra(e, "already shared with this user"))?;
+        row_to_share(row)
+    }
+
+    async fn find_by_id(&self, id: ShareId) -> Result<Option<Share>, DomainError> {
+        let row = sqlx::query(
+            "SELECT id, resource_type, resource_id, owner_id, grantee_id, permission, created_at FROM shares WHERE id = $1",
+        )
+        .bind(id.0)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        row.map(row_to_share).transpose()
+    }
+
+    async fn delete(&self, id: ShareId) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM shares WHERE id = $1")
+            .bind(id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn delete_for_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: Uuid,
+    ) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM shares WHERE resource_type = $1 AND resource_id = $2")
+            .bind(resource_type.as_str())
+            .bind(resource_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Share>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, resource_type, resource_id, owner_id, grantee_id, permission, created_at
+             FROM shares WHERE owner_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(owner_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_share).collect()
+    }
+
+    async fn list_by_grantee(&self, grantee_id: UserId) -> Result<Vec<Share>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, resource_type, resource_id, owner_id, grantee_id, permission, created_at
+             FROM shares WHERE grantee_id = $1 ORDER BY created_at DESC",
+        )
+        .bind(grantee_id.0)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_share).collect()
+    }
+
+    async fn list_by_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: Uuid,
+    ) -> Result<Vec<Share>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, resource_type, resource_id, owner_id, grantee_id, permission, created_at
+             FROM shares WHERE resource_type = $1 AND resource_id = $2 ORDER BY created_at DESC",
+        )
+        .bind(resource_type.as_str())
+        .bind(resource_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_share).collect()
+    }
 }

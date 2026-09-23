@@ -30,15 +30,43 @@ export interface AuthSession {
   user: { id: string; username: string };
 }
 
+export interface UserProfile {
+  id: string;
+  username: string;
+}
+
+export type ShareResourceType = 'file' | 'album';
+export type SharePermission = 'read' | 'write';
+export type ResourceAccess = 'owner' | 'read' | 'write';
+
+export function isLibraryOwner(item: { access?: ResourceAccess }): boolean {
+  return item.access !== 'read' && item.access !== 'write';
+}
+
+export interface ShareGrant {
+  id: string;
+  resource_type: ShareResourceType;
+  resource_id: string;
+  owner_id: string;
+  grantee_id: string;
+  grantee_username: string;
+  permission: SharePermission;
+  created_at: string;
+}
+
 export interface Album {
   id: string;
+  owner_id?: string;
   name: string;
   silo: LibrarySilo;
   created_at: string;
+  access?: ResourceAccess;
+  shared?: boolean;
 }
 
 export interface MediaFile {
   id: string;
+  owner_id?: string;
   album_id: string | null;
   name: string;
   size: number;
@@ -53,6 +81,8 @@ export interface MediaFile {
   media_url?: string;
   deleted_at?: string | null;
   purge_at?: string | null;
+  access?: ResourceAccess;
+  shared?: boolean;
 }
 
 export interface Device {

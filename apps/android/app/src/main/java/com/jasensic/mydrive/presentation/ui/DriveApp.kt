@@ -1,8 +1,10 @@
 package com.jasensic.mydrive.presentation.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +18,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,8 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import com.jasensic.mydrive.domain.LibrarySource
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.PlaybackState
+import com.jasensic.mydrive.domain.SharePermission
 import com.jasensic.mydrive.domain.ThemeMode
 import com.jasensic.mydrive.domain.albumsInSilo
 import com.jasensic.mydrive.presentation.HubTab
@@ -58,6 +64,8 @@ fun DriveApp(
     themeMode: ThemeMode,
     playback: PlaybackState,
     onSignIn: (String, String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
+    onSetup: (String, String, String) -> Unit,
     onScanLan: (String) -> Unit,
     onOpenLibrary: () -> Unit,
     onTab: (HubTab) -> Unit,
@@ -92,13 +100,19 @@ fun DriveApp(
     onRenameSelected: (String) -> Unit,
     onMoveSelected: (String?) -> Unit,
     onShareSelected: () -> Unit,
+    onShareWithAccount: () -> Unit,
+    onConfirmShare: (String, SharePermission) -> Unit,
+    onRevokeShare: (String) -> Unit,
+    onCloseShareSheet: () -> Unit,
     onTrashSelected: () -> Unit,
+    onLibrarySource: (LibrarySource) -> Unit,
+    onSignOut: () -> Unit,
 ) {
     BackHandler(enabled = state.canGoBack || state.selectedIds.isNotEmpty() || state.screen is Screen.Viewer || state.screen is Screen.NowPlaying) {
         onBack()
     }
     when (val screen = state.screen) {
-        Screen.Connect -> ConnectScreen(state, onSignIn, onScanLan, onOpenLibrary)
+        Screen.Connect -> ConnectScreen(state, onSignIn, onRegister, onSetup, onScanLan, onOpenLibrary)
         Screen.NowPlaying -> {
             NowPlayingScreen(
                 playback = playback,
@@ -120,6 +134,7 @@ fun DriveApp(
             MediaViewerScreen(
                 files = photos,
                 currentId = screen.fileId,
+                authToken = state.authToken,
                 onBack = onCloseViewer,
                 onPage = onViewerPage,
                 onPauseAudio = onPauseAudio,
@@ -153,7 +168,21 @@ fun DriveApp(
             onRenameSelected = onRenameSelected,
             onMoveSelected = onMoveSelected,
             onShareSelected = onShareSelected,
+            onShareWithAccount = onShareWithAccount,
             onTrashSelected = onTrashSelected,
+            onLibrarySource = onLibrarySource,
+            onSignOut = onSignOut,
+        )
+    }
+    if (state.shareSheet.visible) {
+        ShareWithUserDialog(
+            title = state.shareSheet.title,
+            users = state.shareSheet.users,
+            grants = state.shareSheet.grants,
+            canManage = state.shareSheet.canManage,
+            onShare = onConfirmShare,
+            onRevoke = onRevokeShare,
+            onDismiss = onCloseShareSheet,
         )
     }
 }
@@ -188,7 +217,10 @@ private fun HubScreen(
     onRenameSelected: (String) -> Unit,
     onMoveSelected: (String?) -> Unit,
     onShareSelected: () -> Unit,
+    onShareWithAccount: () -> Unit,
     onTrashSelected: () -> Unit,
+    onLibrarySource: (LibrarySource) -> Unit,
+    onSignOut: () -> Unit,
 ) {
     var settings by rememberSaveable { mutableStateOf(false) }
     var dialog by rememberSaveable { mutableStateOf(HubDialog.None) }
@@ -214,7 +246,10 @@ private fun HubScreen(
                             Text(title)
                             if (!selecting) {
                                 Text(
-                                    "${state.files.size} on device · ${state.serverLabel}",
+                                    when (state.librarySource) {
+                                        LibrarySource.DEVICE -> "${state.files.size} on this device · ${state.serverLabel}"
+                                        LibrarySource.SERVER -> "${state.files.size} on server · ${state.serverLabel}"
+                                    },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -237,8 +272,11 @@ private fun HubScreen(
                             IconButton(onClick = onShareSelected) {
                                 Icon(Icons.Outlined.Share, contentDescription = "Share")
                             }
+                            IconButton(onClick = onShareWithAccount) {
+                                Icon(Icons.Outlined.PersonAdd, contentDescription = "Share with account")
+                            }
                             IconButton(onClick = onTrashSelected) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Delete")
+                                Icon(Icons.Outlined.Delete, contentDescription = "Remove from this device")
                             }
                             IconButton(onClick = { dialog = HubDialog.Actions }) {
                                 Icon(Icons.Outlined.MoreVert, contentDescription = "Manage")
@@ -250,6 +288,9 @@ private fun HubScreen(
                             if (currentAlbum != null) {
                                 IconButton(onClick = { dialog = HubDialog.RenameAlbum }) {
                                     Icon(Icons.Outlined.Edit, contentDescription = "Rename album")
+                                }
+                                IconButton(onClick = onShareWithAccount) {
+                                    Icon(Icons.Outlined.PersonAdd, contentDescription = "Share album")
                                 }
                             }
                             IconButton(onClick = { dialog = HubDialog.CreateAlbum }) {
@@ -267,6 +308,22 @@ private fun HubScreen(
                     },
                     scrollBehavior = scroll,
                 )
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = state.librarySource == LibrarySource.DEVICE,
+                        onClick = { onLibrarySource(LibrarySource.DEVICE) },
+                        label = { Text("On this device") },
+                    )
+                    FilterChip(
+                        selected = state.librarySource == LibrarySource.SERVER,
+                        onClick = { onLibrarySource(LibrarySource.SERVER) },
+                        enabled = state.lanAvailable,
+                        label = { Text("On server") },
+                    )
+                }
                 SyncStatusBar(state, modifier = Modifier.fillMaxWidth())
                 state.error?.let {
                     Text(
@@ -374,6 +431,10 @@ private fun HubScreen(
                 settings = false
                 onConnection()
             },
+            onSignOut = {
+                settings = false
+                onSignOut()
+            },
         )
     }
     when (dialog) {
@@ -386,6 +447,10 @@ private fun HubScreen(
             onShare = {
                 dialog = HubDialog.None
                 onShareSelected()
+            },
+            onShareWithAccount = {
+                dialog = HubDialog.None
+                onShareWithAccount()
             },
             onDelete = {
                 dialog = HubDialog.None

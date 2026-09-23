@@ -1,16 +1,24 @@
+pub mod access;
 pub mod error;
+pub mod locks;
+pub mod mobile;
 pub mod usecases;
 
 use std::sync::Arc;
 
 use domain::ports::{
-    AlbumRepository, ApkInspector, AppReleaseRepository, Clock, DeviceRepository, FileRepository,
-    MusicDownloader, ObjectStore, PasswordHasher, SyncProfileRepository, Thumbnailer, TokenService,
-    UserRepository,
+    AlbumRepository, ApkInspector, AppReleaseRepository, AudioTranscoder, Clock, DeviceExclusionRepository,
+    DeviceRepository, FileRepository, MusicDownloader, ObjectStore, PasswordHasher, ShareRepository,
+    SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
 };
 
+pub use access::{AccessibleAlbum, AccessibleFile, ResourceAccess};
 pub use error::AppError;
+pub use locks::FileTranscodeLocks;
 pub use usecases::*;
+
+#[cfg(test)]
+pub(crate) mod test_support;
 
 #[derive(Clone)]
 pub struct Deps {
@@ -18,6 +26,8 @@ pub struct Deps {
     pub albums: Arc<dyn AlbumRepository>,
     pub files: Arc<dyn FileRepository>,
     pub devices: Arc<dyn DeviceRepository>,
+    pub exclusions: Arc<dyn DeviceExclusionRepository>,
+    pub shares: Arc<dyn ShareRepository>,
     pub profiles: Arc<dyn SyncProfileRepository>,
     pub app_releases: Arc<dyn AppReleaseRepository>,
     pub objects: Arc<dyn ObjectStore>,
@@ -27,6 +37,8 @@ pub struct Deps {
     pub thumbnailer: Arc<dyn Thumbnailer>,
     pub apk_inspector: Arc<dyn ApkInspector>,
     pub music: Arc<dyn MusicDownloader>,
+    pub audio_transcoder: Arc<dyn AudioTranscoder>,
+    pub transcode_locks: Arc<FileTranscodeLocks>,
 }
 
 /// Composition helper used by the presentation binary. Handlers still depend on the
@@ -34,6 +46,8 @@ pub struct Deps {
 pub struct Services {
     pub check_setup: Arc<dyn CheckSetup>,
     pub setup_admin: Arc<dyn SetupAdmin>,
+    pub register_user: Arc<dyn RegisterUser>,
+    pub list_users: Arc<dyn ListUsers>,
     pub login: Arc<dyn Login>,
     pub authenticate: Arc<dyn Authenticate>,
     pub current_user: Arc<dyn GetCurrentUser>,
@@ -55,6 +69,10 @@ pub struct Services {
     pub list_devices: Arc<dyn ListDevices>,
     pub upsert_sync_profile: Arc<dyn UpsertSyncProfile>,
     pub get_sync_profile: Arc<dyn GetSyncProfile>,
+    pub merge_device_exclusions: Arc<dyn MergeDeviceExclusions>,
+    pub create_share: Arc<dyn CreateShare>,
+    pub list_shares: Arc<dyn ListShares>,
+    pub delete_share: Arc<dyn DeleteShare>,
     pub build_sync_manifest: Arc<dyn BuildSyncManifest>,
     pub publish_app_release: Arc<dyn PublishAppRelease>,
     pub list_app_releases: Arc<dyn ListAppReleases>,
@@ -73,6 +91,8 @@ impl Services {
         Self {
             check_setup: Arc::new(CheckSetupService::new(deps.clone())),
             setup_admin: Arc::new(SetupAdminService::new(deps.clone())),
+            register_user: Arc::new(RegisterUserService::new(deps.clone())),
+            list_users: Arc::new(ListUsersService::new(deps.clone())),
             login: Arc::new(LoginService::new(deps.clone())),
             authenticate: Arc::new(AuthenticateService::new(deps.clone())),
             current_user: Arc::new(GetCurrentUserService::new(deps.clone())),
@@ -94,6 +114,10 @@ impl Services {
             list_devices: Arc::new(ListDevicesService::new(deps.clone())),
             upsert_sync_profile: Arc::new(UpsertSyncProfileService::new(deps.clone())),
             get_sync_profile: Arc::new(GetSyncProfileService::new(deps.clone())),
+            merge_device_exclusions: Arc::new(MergeDeviceExclusionsService::new(deps.clone())),
+            create_share: Arc::new(CreateShareService::new(deps.clone())),
+            list_shares: Arc::new(ListSharesService::new(deps.clone())),
+            delete_share: Arc::new(DeleteShareService::new(deps.clone())),
             build_sync_manifest: Arc::new(BuildSyncManifestService::new(deps.clone())),
             publish_app_release: Arc::new(PublishAppReleaseService::new(deps.clone())),
             list_app_releases: Arc::new(ListAppReleasesService::new(deps.clone())),
@@ -111,4 +135,3 @@ impl Services {
         }
     }
 }
-

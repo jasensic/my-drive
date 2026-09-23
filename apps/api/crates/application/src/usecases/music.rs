@@ -177,6 +177,10 @@ mod tests {
                 created_at: now,
                 uploaded_at: now,
                 deleted_at: None,
+                mobile_object_key: None,
+                mobile_checksum: None,
+                mobile_size: None,
+                mobile_mime: None,
             })
         }
     }

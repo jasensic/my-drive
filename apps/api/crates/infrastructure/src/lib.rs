@@ -1,6 +1,7 @@
 pub mod apk;
 pub mod clock;
 pub mod config;
+pub mod ffmpeg;
 pub mod hasher;
 pub mod jwt;
 pub mod mdns;
@@ -12,9 +13,10 @@ pub mod thumbnail;
 
 use std::sync::Arc;
 
-use application::Deps;
+use application::{Deps, FileTranscodeLocks};
 use crate::clock::SystemClock;
 use crate::config::Settings;
+use crate::ffmpeg::{FakeAudioTranscoder, FfmpegAudioTranscoder};
 use crate::hasher::Argon2Hasher;
 use crate::jwt::JwtTokenService;
 use crate::memory::MemoryStore;
@@ -31,6 +33,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
     let thumbnailer = Arc::new(ImageThumbnailer);
     let apk_inspector = Arc::new(ZipApkInspector);
     let music = Arc::new(HttpMusicDownloader::new(&settings.musicdl_url)?);
+    let transcode_locks = Arc::new(FileTranscodeLocks::new());
 
     if settings.memory_backend {
         let store = MemoryStore::new();
@@ -39,6 +42,8 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             albums: store.clone(),
             files: store.clone(),
             devices: store.clone(),
+            exclusions: store.clone(),
+            shares: store.clone(),
             profiles: store.clone(),
             app_releases: store.clone(),
             objects: store,
@@ -48,6 +53,8 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             thumbnailer,
             apk_inspector,
             music,
+            audio_transcoder: Arc::new(FakeAudioTranscoder),
+            transcode_locks,
         }));
     }
 
@@ -59,6 +66,8 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         albums: Arc::new(repos.clone()),
         files: Arc::new(repos.clone()),
         devices: Arc::new(repos.clone()),
+        exclusions: Arc::new(repos.clone()),
+        shares: Arc::new(repos.clone()),
         profiles: Arc::new(repos.clone()),
         app_releases: Arc::new(repos),
         objects: Arc::new(objects),
@@ -68,5 +77,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         thumbnailer,
         apk_inspector,
         music,
+        audio_transcoder: Arc::new(FfmpegAudioTranscoder::new()),
+        transcode_locks,
     }))
 }

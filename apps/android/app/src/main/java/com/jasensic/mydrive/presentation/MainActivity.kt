@@ -53,6 +53,8 @@ class MainActivity : ComponentActivity() {
                         themeMode = themeMode,
                         playback = playback,
                         onSignIn = vm::sync,
+                        onRegister = vm::register,
+                        onSetup = vm::setupAdmin,
                         onScanLan = vm::scanLan,
                         onOpenLibrary = vm::openLibrary,
                         onTab = vm::selectTab,
@@ -87,7 +89,13 @@ class MainActivity : ComponentActivity() {
                         onRenameSelected = vm::renameSelected,
                         onMoveSelected = vm::moveSelected,
                         onShareSelected = vm::shareSelected,
+                        onShareWithAccount = vm::shareWithAccount,
+                        onConfirmShare = vm::confirmShare,
+                        onRevokeShare = vm::revokeShare,
+                        onCloseShareSheet = vm::closeShareSheet,
                         onTrashSelected = vm::trashSelected,
+                        onLibrarySource = vm::setLibrarySource,
+                        onSignOut = vm::signOut,
                     )
                 }
             }

@@ -11,6 +11,8 @@ pub enum DomainError {
     #[error("{0}")]
     Unauthorized(String),
     #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     Infrastructure(String),
 }
 
@@ -29,6 +31,10 @@ impl DomainError {
 
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         Self::Unauthorized(msg.into())
+    }
+
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self::Forbidden(msg.into())
     }
 
     pub fn infra(msg: impl Into<String>) -> Self {

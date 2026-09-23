@@ -10,18 +10,24 @@ import { ContextMenu } from 'primeng/contextmenu';
 import { Dialog } from 'primeng/dialog';
 import { InputText } from 'primeng/inputtext';
 import { Select } from 'primeng/select';
+import { SelectButton } from 'primeng/selectbutton';
 import { Tag } from 'primeng/tag';
 import { fileMatchesSilo, filesInAlbum } from '../application/library.use-cases';
 import {
   ASSIGN_FILE_ALBUM,
   CREATE_ALBUM,
+  CREATE_SHARE,
   DELETE_ALBUM,
   EMPTY_TRASH,
   LIST_LIBRARY,
+  LIST_SHARES,
+  LIST_USERS,
   PURGE_MEDIA,
   RENAME_ALBUM,
   RENAME_MEDIA,
   RESTORE_MEDIA,
+  REVOKE_SHARE,
+  SESSION_QUERY,
   SHARE_MEDIA,
   TRASH_MEDIA,
   UPLOAD_MEDIA,
@@ -29,18 +35,23 @@ import {
 import type {
   AssignFileAlbum,
   CreateAlbum,
+  CreateShare,
   DeleteAlbum,
   EmptyTrash,
   ListLibrary,
+  ListShares,
+  ListUsers,
   PurgeMedia,
   RenameAlbum,
   RenameMedia,
   RestoreMedia,
+  RevokeShare,
+  SessionQuery,
   ShareMedia,
   TrashMedia,
   UploadMedia,
 } from '../application/use-cases.tokens';
-import { Album, LibrarySilo, MediaFile } from '../domain/models';
+import { Album, LibrarySilo, MediaFile, ShareGrant, SharePermission, UserProfile, isLibraryOwner } from '../domain/models';
 import { extractError } from './login.page';
 import { MusicPlaybackService } from './music-playback.service';
 import { MusicSearchPanel } from './music-search.panel';
@@ -83,6 +94,7 @@ const SILO_COPY: Record<
     ContextMenu,
     Dialog,
     Select,
+    SelectButton,
     Tag,
     InputText,
     MusicSearchPanel,
@@ -107,24 +119,12 @@ const SILO_COPY: Record<
         <p class="page-lead">{{ trashMode() ? 'Trash for this silo only. Items are removed after 30 days.' : copy().hint }}</p>
       </div>
       <div class="page-actions">
-        <input
-          #picker
-          type="file"
-          multiple
-          hidden
-          [attr.accept]="copy().accept || null"
-          (change)="onFiles(picker.files); picker.value = ''"
-        />
         @if (selectedCount()) {
           <p-button [label]="selectedCount() + ' selected'" [outlined]="true" (onClick)="clearSelection()">
             <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
           </p-button>
           <p-button label="Manage" (onClick)="openMenuForSelection($event)">
             <ng-template #icon><svg lucideIcon="ellipsis" aria-hidden="true" /></ng-template>
-          </p-button>
-        } @else if (!trashMode()) {
-          <p-button label="Upload" (onClick)="picker.click()">
-            <ng-template #icon><svg lucideIcon="upload" aria-hidden="true" /></ng-template>
           </p-button>
         }
         <p-button
@@ -168,10 +168,13 @@ const SILO_COPY: Record<
         <input pInputText placeholder="New album" [(ngModel)]="newAlbum" (keydown.enter)="createAlbum()" />
         <p-button label="Create album" (onClick)="createAlbum()" [disabled]="!newAlbum.trim()" />
         @if (selectedAlbum()) {
-          <p-button label="Rename album" [text]="true" (onClick)="openRenameAlbum()">
+          <p-button label="Rename album" [text]="true" (onClick)="openRenameAlbum()" [disabled]="!selectedAlbumOwned()">
             <ng-template #icon><svg lucideIcon="pencil" aria-hidden="true" /></ng-template>
           </p-button>
-          <p-button label="Delete album" [text]="true" severity="danger" (onClick)="deleteSelectedAlbum()">
+          <p-button label="Share album" [text]="true" (onClick)="openShareAlbum()" [disabled]="!selectedAlbumOwned()">
+            <ng-template #icon><svg lucideIcon="share-2" aria-hidden="true" /></ng-template>
+          </p-button>
+          <p-button label="Delete album" [text]="true" severity="danger" (onClick)="deleteSelectedAlbum()" [disabled]="!selectedAlbumOwned()">
             <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
           </p-button>
         }
@@ -193,8 +196,21 @@ const SILO_COPY: Record<
         (dragleave)="onDragLeave($event)"
         (drop)="onDrop($event)"
       >
-        <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
-        <span>Drag and drop to upload into {{ copy().title.toLowerCase() }}</span>
+        <input
+          #picker
+          type="file"
+          multiple
+          hidden
+          [attr.accept]="copy().accept || null"
+          (change)="onFiles(picker.files); picker.value = ''"
+        />
+        <span class="dropzone-copy">
+          <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
+          <span>Drag and drop to upload into {{ copy().title.toLowerCase() }}</span>
+        </span>
+        <p-button label="Upload" (onClick)="picker.click()">
+          <ng-template #icon><svg lucideIcon="upload" aria-hidden="true" /></ng-template>
+        </p-button>
       </div>
     }
 
@@ -235,6 +251,9 @@ const SILO_COPY: Record<
           <div class="meta">
             <a [routerLink]="['/player', file.id]" (click)="$event.stopPropagation()">{{ file.name }}</a>
             <p-tag [value]="kindLabel(file.media_kind)" />
+            @if (file.shared || file.access === 'read' || file.access === 'write') {
+              <p-tag value="Shared" severity="info" />
+            }
           </div>
           <p class="caption">{{ formatSize(file.size) }}</p>
           @if (trashMode()) {
@@ -253,7 +272,7 @@ const SILO_COPY: Record<
               </p-button>
             </div>
           } @else {
-            @if (silo() === 'photos') {
+            @if (silo() === 'photos' && canManage(file)) {
               <p-select
                 [options]="albumOptions()"
                 [ngModel]="file.album_id"
@@ -276,9 +295,11 @@ const SILO_COPY: Record<
                   </ng-template>
                 </p-button>
               }
-              <p-button label="Move to trash" [text]="true" (onClick)="trash(file)">
-                <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
-              </p-button>
+              @if (canManage(file)) {
+                <p-button label="Move to trash" [text]="true" (onClick)="trash(file)">
+                  <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
+                </p-button>
+              }
             </div>
           }
         </p-card>
@@ -324,6 +345,54 @@ const SILO_COPY: Record<
         <p-button label="Move" (onClick)="confirmMove()" />
       </ng-template>
     </p-dialog>
+
+    <p-dialog
+      header="Share with account"
+      [(visible)]="shareOpen"
+      [modal]="true"
+      [style]="{ width: 'min(28rem, 100vw)' }"
+      [breakpoints]="{ '640px': '100vw' }"
+    >
+      <p class="page-lead">{{ shareHint() }}</p>
+      <div class="field">
+        <label for="share-user">User</label>
+        <p-select
+          inputId="share-user"
+          class="full"
+          [options]="shareUserOptions()"
+          [(ngModel)]="shareGranteeId"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Choose a user"
+        />
+      </div>
+      <div class="field">
+        <label id="share-perm">Permission</label>
+        <p-selectbutton
+          [options]="sharePermissionOptions"
+          [(ngModel)]="sharePermission"
+          optionLabel="label"
+          optionValue="value"
+          [allowEmpty]="false"
+          [fluid]="true"
+          ariaLabelledBy="share-perm"
+        />
+      </div>
+      @if (existingShares().length) {
+        <ul class="share-list">
+          @for (grant of existingShares(); track grant.id) {
+            <li>
+              <span>{{ grant.grantee_username }} ({{ grant.permission }})</span>
+              <p-button label="Remove" [text]="true" severity="danger" (onClick)="revokeGrant(grant)" />
+            </li>
+          }
+        </ul>
+      }
+      <ng-template #footer>
+        <p-button label="Cancel" [text]="true" (onClick)="shareOpen = false" />
+        <p-button label="Share" (onClick)="confirmShare()" [disabled]="!shareGranteeId" />
+      </ng-template>
+    </p-dialog>
     </section>
   `,
 })
@@ -350,11 +419,36 @@ export class LibraryPage {
 
   copy = computed(() => SILO_COPY[this.silo()]);
   albumOptions = computed(() => this.albums().map((a) => ({ label: a.name, value: a.id })));
-  albumFilterOptions = computed(() => [{ label: 'All albums', value: null }, ...this.albumOptions()]);
+  albumFilterOptions = computed(() => [
+    { label: 'All albums', value: null },
+    ...this.albums().map((a) => ({
+      label: a.shared || a.access === 'read' || a.access === 'write' ? `${a.name} (Shared)` : a.name,
+      value: a.id,
+    })),
+  ]);
   moveAlbumOptions = computed(() => this.albumOptions());
   visible = computed(() => filesInAlbum(this.files(), this.selectedAlbum()));
   selectedCount = computed(() => this.selectedIds().size);
   selectedFiles = computed(() => this.files().filter((file) => this.selectedIds().has(file.id)));
+  selectedAlbumOwned = computed(() => {
+    const album = this.albums().find((item) => item.id === this.selectedAlbum());
+    return album ? isLibraryOwner(album) : false;
+  });
+  shareUserOptions = computed(() => this.shareUsers().map((user) => ({ label: user.username, value: user.id })));
+  shareHint = computed(() =>
+    this.shareResourceType === 'album' ? 'People you share this album with can browse its files.' : 'People you share with can view this file.',
+  );
+  sharePermissionOptions = [
+    { label: 'Read', value: 'read' as SharePermission },
+    { label: 'Write', value: 'write' as SharePermission },
+  ];
+  shareOpen = false;
+  shareResourceType: 'file' | 'album' = 'file';
+  shareResourceId = '';
+  shareGranteeId: string | null = null;
+  sharePermission: SharePermission = 'read';
+  shareUsers = signal<UserProfile[]>([]);
+  existingShares = signal<ShareGrant[]>([]);
 
   constructor(
     route: ActivatedRoute,
@@ -367,6 +461,11 @@ export class LibraryPage {
     @Inject(ASSIGN_FILE_ALBUM) private readonly assignAlbum: AssignFileAlbum,
     @Inject(RENAME_MEDIA) private readonly renameMedia: RenameMedia,
     @Inject(SHARE_MEDIA) private readonly shareMedia: ShareMedia,
+    @Inject(CREATE_SHARE) private readonly createShare: CreateShare,
+    @Inject(LIST_SHARES) private readonly listShares: ListShares,
+    @Inject(REVOKE_SHARE) private readonly revokeShare: RevokeShare,
+    @Inject(LIST_USERS) private readonly listUsers: ListUsers,
+    @Inject(SESSION_QUERY) private readonly session: SessionQuery,
     @Inject(TRASH_MEDIA) private readonly trashMedia: TrashMedia,
     @Inject(RESTORE_MEDIA) private readonly restoreMedia: RestoreMedia,
     @Inject(PURGE_MEDIA) private readonly purgeMedia: PurgeMedia,
@@ -452,14 +551,22 @@ export class LibraryPage {
       ];
     }
     const items: MenuItem[] = [];
-    if (count === 1) {
+    const ownersOnly = this.selectedFiles().every((file) => this.canManage(file));
+    if (count === 1 && ownersOnly) {
       items.push({ label: 'Rename', lucide: 'pencil', command: () => this.openRenameFile() });
     }
-    items.push(
-      { label: 'Move / album', lucide: 'folder', command: () => this.openMove() },
-      { label: 'Share', lucide: 'share-2', command: () => void this.shareSelected() },
-      { label: 'Delete', lucide: 'trash-2', command: () => void this.bulkTrash() },
-    );
+    if (ownersOnly) {
+      items.push({ label: 'Move / album', lucide: 'folder', command: () => this.openMove() });
+    }
+    items.push({ label: 'Share', lucide: 'share-2', command: () => void this.shareSelected() });
+    if (ownersOnly) {
+      items.push({
+        label: 'Share with account',
+        lucide: 'link',
+        command: () => void this.openShareFiles(),
+      });
+      items.push({ label: 'Delete', lucide: 'trash-2', command: () => void this.bulkTrash() });
+    }
     return items;
   }
 
@@ -477,6 +584,10 @@ export class LibraryPage {
 
   isCurrent(file: MediaFile): boolean {
     return this.playback.current()?.id === file.id;
+  }
+
+  canManage(file: MediaFile): boolean {
+    return isLibraryOwner(file);
   }
 
   play(file: MediaFile) {
@@ -682,6 +793,81 @@ export class LibraryPage {
         URL.revokeObjectURL(url);
       }
       this.ok.set(`Prepared ${files.length} file${files.length === 1 ? '' : 's'} to share.`);
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async openShareFiles() {
+    const file = this.selectedFiles()[0];
+    if (!file) {
+      return;
+    }
+    await this.openShareDialog('file', file.id);
+  }
+
+  async openShareAlbum() {
+    const albumId = this.selectedAlbum();
+    if (!albumId) {
+      return;
+    }
+    await this.openShareDialog('album', albumId);
+  }
+
+  private async openShareDialog(resourceType: 'file' | 'album', resourceId: string) {
+    this.shareResourceType = resourceType;
+    this.shareResourceId = resourceId;
+    this.shareGranteeId = null;
+    this.sharePermission = resourceType === 'album' ? 'write' : 'read';
+    this.error.set(null);
+    try {
+      const [users, grants] = await Promise.all([
+        this.listUsers.execute(),
+        this.listShares.execute(resourceType, resourceId),
+      ]);
+      this.shareUsers.set(users.filter((user) => user.id !== this.session.userId() && user.username !== this.session.username()));
+      this.existingShares.set(grants);
+      this.shareOpen = true;
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async confirmShare() {
+    if (!this.shareGranteeId) {
+      return;
+    }
+    try {
+      if (this.shareResourceType === 'file') {
+        for (const file of this.selectedFiles()) {
+          await this.createShare.execute({
+            resourceType: 'file',
+            resourceId: file.id,
+            granteeId: this.shareGranteeId,
+            permission: this.sharePermission,
+          });
+        }
+      } else {
+        await this.createShare.execute({
+          resourceType: 'album',
+          resourceId: this.shareResourceId,
+          granteeId: this.shareGranteeId,
+          permission: this.sharePermission,
+        });
+      }
+      this.ok.set('Shared with account.');
+      this.shareOpen = false;
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async revokeGrant(grant: ShareGrant) {
+    try {
+      await this.revokeShare.execute(grant.id);
+      this.existingShares.set(this.existingShares().filter((item) => item.id !== grant.id));
+      await this.reload();
     } catch (err) {
       this.error.set(extractError(err));
     }

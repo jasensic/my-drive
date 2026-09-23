@@ -22,6 +22,9 @@
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.MyDrive">
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
@@ -47,6 +50,8 @@
             android:stopWithTask="false">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
         <service

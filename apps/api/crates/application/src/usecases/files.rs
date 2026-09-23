@@ -3,10 +3,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use domain::model::{Album, FileRecord};
-use domain::{AlbumId, FileId, LibrarySilo, MediaKind, UserId};
+use domain::{AlbumId, FileId, LibrarySilo, MediaKind, ShareResourceType, UserId};
 use sha2::{Digest, Sha256};
 
-use super::albums::owned_album;
+use crate::access::{
+    accessible_file, list_accessible_files, require_album_write, require_file_owner, require_file_read,
+    AccessibleFile,
+};
+use crate::mobile::ensure_mobile_audio_best_effort;
 use crate::{AppError, Deps};
 
 pub struct UploadCommand {
@@ -16,6 +20,12 @@ pub struct UploadCommand {
     pub mime: String,
     pub bytes: Bytes,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileContentVariant {
+    Original,
+    Mobile,
 }
 
 pub struct FileContent {
@@ -36,12 +46,12 @@ pub trait ListFiles: Send + Sync {
         &self,
         owner_id: UserId,
         silo: Option<LibrarySilo>,
-    ) -> Result<Vec<FileRecord>, AppError>;
+    ) -> Result<Vec<AccessibleFile>, AppError>;
 }
 
 #[async_trait]
 pub trait GetFile: Send + Sync {
-    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError>;
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<AccessibleFile, AppError>;
 }
 
 #[async_trait]
@@ -52,7 +62,7 @@ pub trait UpdateFile: Send + Sync {
         id: FileId,
         name: Option<String>,
         album_id: Option<Option<AlbumId>>,
-    ) -> Result<FileRecord, AppError>;
+    ) -> Result<AccessibleFile, AppError>;
 }
 
 #[async_trait]
@@ -64,6 +74,7 @@ pub trait GetFileContent: Send + Sync {
         start: Option<u64>,
         end: Option<u64>,
         thumbnail: bool,
+        variant: FileContentVariant,
     ) -> Result<FileContent, AppError>;
 }
 
@@ -166,9 +177,13 @@ impl UploadFile for UploadFileService {
             created_at: cmd.created_at.unwrap_or(now),
             uploaded_at: now,
             deleted_at: None,
+            mobile_object_key: None,
+            mobile_checksum: None,
+            mobile_size: None,
+            mobile_mime: None,
         };
         self.deps.files.insert(&record).await?;
-        Ok(record)
+        Ok(ensure_mobile_audio_best_effort(&self.deps, record).await)
     }
 }
 
@@ -188,10 +203,10 @@ impl ListFiles for ListFilesService {
         &self,
         owner_id: UserId,
         silo: Option<LibrarySilo>,
-    ) -> Result<Vec<FileRecord>, AppError> {
-        let mut files = self.deps.files.list_by_owner(owner_id).await?;
+    ) -> Result<Vec<AccessibleFile>, AppError> {
+        let mut files = list_accessible_files(&self.deps, owner_id).await?;
         if let Some(silo) = silo {
-            files.retain(|file| silo.contains(file.media_kind));
+            files.retain(|item| silo.contains(item.file.media_kind));
         }
         Ok(files)
     }
@@ -209,8 +224,8 @@ impl GetFileService {
 
 #[async_trait]
 impl GetFile for GetFileService {
-    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
-        owned_file(&self.deps, owner_id, id).await
+    async fn execute(&self, owner_id: UserId, id: FileId) -> Result<AccessibleFile, AppError> {
+        accessible_file(&self.deps, owner_id, id).await
     }
 }
 
@@ -232,8 +247,8 @@ impl UpdateFile for UpdateFileService {
         id: FileId,
         name: Option<String>,
         album_id: Option<Option<AlbumId>>,
-    ) -> Result<FileRecord, AppError> {
-        let file = owned_file(&self.deps, owner_id, id).await?;
+    ) -> Result<AccessibleFile, AppError> {
+        let file = require_file_owner(&self.deps, owner_id, id).await?;
         if file.is_trashed() {
             return Err(AppError::validation("restore the file before editing it"));
         }
@@ -250,7 +265,7 @@ impl UpdateFile for UpdateFileService {
             }
             self.deps.files.assign_album(id, album_id).await?;
         }
-        owned_file(&self.deps, owner_id, id).await
+        accessible_file(&self.deps, owner_id, id).await
     }
 }
 
@@ -260,7 +275,7 @@ async fn ensure_album_accepts(
     album_id: AlbumId,
     media_kind: MediaKind,
 ) -> Result<Album, AppError> {
-    let album = owned_album(deps, owner_id, album_id).await?;
+    let album = require_album_write(deps, owner_id, album_id).await?;
     if !album.silo.contains(media_kind) {
         return Err(AppError::validation(
             "album belongs to another library section",
@@ -302,8 +317,9 @@ impl GetFileContent for GetFileContentService {
         start: Option<u64>,
         end: Option<u64>,
         thumbnail: bool,
+        variant: FileContentVariant,
     ) -> Result<FileContent, AppError> {
-        let file = owned_file(&self.deps, owner_id, id).await?;
+        let mut file = require_file_read(&self.deps, owner_id, id).await?;
         if thumbnail {
             let data = if let Some(key) = file.thumbnail_key.clone() {
                 self.deps.objects.get(&key).await?
@@ -320,36 +336,38 @@ impl GetFileContent for GetFileContentService {
                 start: 0,
             });
         }
+        if variant == FileContentVariant::Mobile {
+            file = ensure_mobile_audio_best_effort(&self.deps, file).await;
+        }
+        let (object_key, mime, total_size) = if variant == FileContentVariant::Mobile
+            && file.has_mobile_audio()
+        {
+            (
+                file.mobile_object_key.clone().unwrap(),
+                file.mobile_mime.clone().unwrap(),
+                file.mobile_size.unwrap(),
+            )
+        } else {
+            (file.object_key.clone(), file.mime.clone(), file.size)
+        };
         if let Some(start) = start {
-            let (data, total) = self.deps.objects.get_range(&file.object_key, start, end).await?;
+            let (data, total) = self.deps.objects.get_range(&object_key, start, end).await?;
             Ok(FileContent {
-                mime: file.mime,
+                mime,
                 total_size: total,
                 data,
                 start,
             })
         } else {
-            let data = self.deps.objects.get(&file.object_key).await?;
+            let data = self.deps.objects.get(&object_key).await?;
             Ok(FileContent {
-                mime: file.mime,
-                total_size: file.size,
+                mime,
+                total_size,
                 data,
                 start: 0,
             })
         }
     }
-}
-
-async fn owned_file(deps: &Deps, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
-    let file = deps
-        .files
-        .find_by_id(id)
-        .await?
-        .ok_or_else(|| AppError::not_found("file not found"))?;
-    if file.owner_id != owner_id {
-        return Err(AppError::not_found("file not found"));
-    }
-    Ok(file)
 }
 
 fn in_silo(file: &FileRecord, silo: Option<LibrarySilo>) -> bool {
@@ -361,6 +379,12 @@ async fn remove_stored_file(deps: &Deps, file: &FileRecord) -> Result<(), AppErr
     if let Some(thumb) = &file.thumbnail_key {
         let _ = deps.objects.delete(thumb).await;
     }
+    if let Some(mobile) = &file.mobile_object_key {
+        let _ = deps.objects.delete(mobile).await;
+    }
+    deps.shares
+        .delete_for_resource(ShareResourceType::File, file.id.0)
+        .await?;
     deps.files.delete(file.id).await?;
     Ok(())
 }
@@ -405,13 +429,13 @@ impl TrashFileService {
 #[async_trait]
 impl TrashFile for TrashFileService {
     async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
-        let file = owned_file(&self.deps, owner_id, id).await?;
+        let file = require_file_owner(&self.deps, owner_id, id).await?;
         if file.is_trashed() {
             return Err(AppError::validation("file is already in the trash"));
         }
         let now = self.deps.clock.now();
         self.deps.files.set_deleted_at(id, Some(now)).await?;
-        owned_file(&self.deps, owner_id, id).await
+        require_file_owner(&self.deps, owner_id, id).await
     }
 }
 
@@ -428,12 +452,12 @@ impl RestoreFileService {
 #[async_trait]
 impl RestoreFile for RestoreFileService {
     async fn execute(&self, owner_id: UserId, id: FileId) -> Result<FileRecord, AppError> {
-        let file = owned_file(&self.deps, owner_id, id).await?;
+        let file = require_file_owner(&self.deps, owner_id, id).await?;
         if !file.is_trashed() {
             return Err(AppError::validation("file is not in the trash"));
         }
         self.deps.files.set_deleted_at(id, None).await?;
-        owned_file(&self.deps, owner_id, id).await
+        require_file_owner(&self.deps, owner_id, id).await
     }
 }
 
@@ -450,7 +474,7 @@ impl PurgeFileService {
 #[async_trait]
 impl PurgeFile for PurgeFileService {
     async fn execute(&self, owner_id: UserId, id: FileId) -> Result<(), AppError> {
-        let file = owned_file(&self.deps, owner_id, id).await?;
+        let file = require_file_owner(&self.deps, owner_id, id).await?;
         if !file.is_trashed() {
             return Err(AppError::validation("move the file to trash before deleting it"));
         }
@@ -486,4 +510,3 @@ impl EmptyTrash for EmptyTrashService {
         Ok(removed)
     }
 }
-

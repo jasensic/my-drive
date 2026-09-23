@@ -37,7 +37,12 @@ pub async fn list(
         .list_albums
         .execute(user.user_id, silo)
         .await?;
-    Ok(Json(albums.into_iter().map(Into::into).collect()))
+    Ok(Json(
+        albums
+            .into_iter()
+            .map(AlbumDto::from_accessible)
+            .collect(),
+    ))
 }
 
 #[utoipa::path(post, path = "/v1/albums", request_body = CreateAlbumRequest, responses((status = 200, body = AlbumDto)), security(("bearer" = [])))]

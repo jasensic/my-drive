@@ -17,7 +17,7 @@ import { ThemeModeService } from './theme.service';
       <div class="nav-backdrop" (click)="navOpen.set(false)"></div>
       <aside class="sidebar">
         <a class="brand" routerLink="/photos" (click)="navOpen.set(false)">
-          <img src="favicon.svg" width="32" height="32" alt="" />
+          <img src="icon-192.png" width="32" height="32" alt="" />
           <span>my-drive</span>
         </a>
         <nav class="nav" aria-label="Primary">

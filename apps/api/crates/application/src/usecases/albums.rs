@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use domain::model::Album;
-use domain::{AlbumId, LibrarySilo, UserId};
+use domain::{AlbumId, LibrarySilo, ShareResourceType, UserId};
 
+use crate::access::{
+    list_accessible_albums, require_album_owner, AccessibleAlbum,
+};
 use crate::{AppError, Deps};
 
 #[async_trait]
@@ -22,7 +25,7 @@ pub trait ListAlbums: Send + Sync {
         &self,
         owner_id: UserId,
         silo: Option<LibrarySilo>,
-    ) -> Result<Vec<Album>, AppError>;
+    ) -> Result<Vec<AccessibleAlbum>, AppError>;
 }
 
 #[async_trait]
@@ -85,10 +88,10 @@ impl ListAlbums for ListAlbumsService {
         &self,
         owner_id: UserId,
         silo: Option<LibrarySilo>,
-    ) -> Result<Vec<Album>, AppError> {
-        let mut albums = self.deps.albums.list_by_owner(owner_id).await?;
+    ) -> Result<Vec<AccessibleAlbum>, AppError> {
+        let mut albums = list_accessible_albums(&self.deps, owner_id).await?;
         if let Some(silo) = silo {
-            albums.retain(|album| album.silo == silo);
+            albums.retain(|item| item.album.silo == silo);
         }
         Ok(albums)
     }
@@ -111,9 +114,9 @@ impl RenameAlbum for RenameAlbumService {
         if name.is_empty() {
             return Err(AppError::validation("album name is required"));
         }
-        let album = owned_album(&self.deps, owner_id, id).await?;
+        let album = require_album_owner(&self.deps, owner_id, id).await?;
         self.deps.albums.update_name(album.id, &name).await?;
-        owned_album(&self.deps, owner_id, id).await
+        require_album_owner(&self.deps, owner_id, id).await
     }
 }
 
@@ -130,24 +133,12 @@ impl DeleteAlbumService {
 #[async_trait]
 impl DeleteAlbum for DeleteAlbumService {
     async fn execute(&self, owner_id: UserId, id: AlbumId) -> Result<(), AppError> {
-        let album = owned_album(&self.deps, owner_id, id).await?;
+        let album = require_album_owner(&self.deps, owner_id, id).await?;
+        self.deps
+            .shares
+            .delete_for_resource(ShareResourceType::Album, album.id.0)
+            .await?;
         self.deps.albums.delete(album.id).await?;
         Ok(())
     }
-}
-
-pub(crate) async fn owned_album(
-    deps: &Deps,
-    owner_id: UserId,
-    id: AlbumId,
-) -> Result<Album, AppError> {
-    let album = deps
-        .albums
-        .find_by_id(id)
-        .await?
-        .ok_or_else(|| AppError::not_found("album not found"))?;
-    if album.owner_id != owner_id {
-        return Err(AppError::not_found("album not found"));
-    }
-    Ok(album)
 }

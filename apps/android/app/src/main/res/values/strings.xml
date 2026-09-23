@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="playback_channel_name">Now playing</string>
+    <string name="auto_root">my-drive</string>
+    <string name="auto_artists">Artists</string>
+    <string name="auto_albums">Albums</string>
+    <string name="auto_songs">Songs</string>
     <string name="sync_channel_name">Downloads</string>
     <string name="sync_channel_description">Background sync and file download progress</string>
     <string name="sync_notification_title">Downloading</string>

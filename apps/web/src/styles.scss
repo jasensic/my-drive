@@ -363,12 +363,11 @@ code {
 .dropzone {
   border: 1px dashed var(--md-border);
   border-radius: var(--md-radius);
-  padding: var(--md-space-6) var(--md-space-4);
+  padding: var(--md-space-4);
   display: flex;
   gap: var(--md-space-3);
   align-items: center;
-  justify-content: center;
-  text-align: center;
+  justify-content: space-between;
   color: var(--md-muted);
   background: var(--md-surface);
   transition:
@@ -377,6 +376,17 @@ code {
     color 200ms ease,
     box-shadow 200ms ease,
     transform 200ms ease;
+}
+
+.dropzone-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--md-space-3);
+  min-width: 0;
+}
+
+.dropzone p-button {
+  flex: none;
 }
 
 .dropzone:hover,
@@ -807,6 +817,21 @@ p-select.full {
   text-decoration: none;
 }
 
+.share-list {
+  list-style: none;
+  margin: var(--md-space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--md-space-2);
+}
+
+.share-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--md-space-2);
+}
+
 body .p-button {
   transition:
     background-color 200ms ease,
@@ -898,6 +923,20 @@ body .p-card:hover {
   .rule {
     grid-template-columns: 1fr;
     gap: var(--md-space-3);
+  }
+
+  .dropzone {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dropzone-copy {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .dropzone p-button {
+    align-self: center;
   }
 }
 

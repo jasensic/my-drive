@@ -26,6 +26,7 @@ impl IntoResponse for ApiError {
             AppError::Domain(DomainError::NotFound(m)) => (StatusCode::NOT_FOUND, m.clone()),
             AppError::Domain(DomainError::Validation(m)) => (StatusCode::BAD_REQUEST, m.clone()),
             AppError::Domain(DomainError::Unauthorized(m)) => (StatusCode::UNAUTHORIZED, m.clone()),
+            AppError::Domain(DomainError::Forbidden(m)) => (StatusCode::FORBIDDEN, m.clone()),
             AppError::Domain(DomainError::Infrastructure(m)) => {
                 tracing::error!("infra error: {m}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())

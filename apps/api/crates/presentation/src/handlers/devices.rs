@@ -1,9 +1,12 @@
 use axum::extract::{Path, State};
 use axum::Json;
-use domain::DeviceId;
+use domain::{DeviceId, FileId};
 use uuid::Uuid;
 
-use crate::dto::{DeviceDto, RegisterDeviceRequest, SyncProfileDto, UpsertProfileRequest};
+use crate::dto::{
+    DeviceDto, DeviceExclusionsDto, DeviceExclusionsRequest, RegisterDeviceRequest, SyncProfileDto,
+    UpsertProfileRequest,
+};
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
 use crate::state::AppState;
@@ -63,4 +66,32 @@ pub async fn put_profile(
         )
         .await?;
     Ok(Json(profile.into()))
+}
+
+#[utoipa::path(
+    put,
+    path = "/v1/devices/{id}/exclusions",
+    params(("id" = Uuid, Path)),
+    request_body = DeviceExclusionsRequest,
+    responses((status = 200, body = DeviceExclusionsDto)),
+    security(("bearer" = []))
+)]
+pub async fn put_exclusions(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<DeviceExclusionsRequest>,
+) -> Result<Json<DeviceExclusionsDto>, ApiError> {
+    let result = state
+        .services
+        .merge_device_exclusions
+        .execute(
+            user.user_id,
+            DeviceId::from_uuid(id),
+            body.file_ids.into_iter().map(FileId::from_uuid).collect(),
+        )
+        .await?;
+    Ok(Json(DeviceExclusionsDto {
+        file_ids: result.file_ids.into_iter().map(|id| id.0).collect(),
+    }))
 }

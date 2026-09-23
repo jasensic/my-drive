@@ -1,8 +1,11 @@
 use chrono::{DateTime, Utc};
 
 use crate::apk::ApkIdentity;
-use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, UserId};
-use crate::model::{Album, AppRelease, Device, FileRecord, SyncProfile, User};
+use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, ShareId, UserId};
+use crate::model::{
+    Album, AppRelease, Device, FileRecord, Share, ShareResourceType, SyncProfile, TranscodedAudio,
+    User, UserSummary,
+};
 use crate::music::{DownloadedAudio, MusicSearch};
 use crate::DomainError;
 
@@ -28,12 +31,14 @@ pub trait UserRepository: Send + Sync {
     async fn insert(&self, user: &User) -> Result<(), DomainError>;
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, DomainError>;
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, DomainError>;
+    async fn list_summaries(&self) -> Result<Vec<UserSummary>, DomainError>;
 }
 
 #[async_trait::async_trait]
 pub trait AlbumRepository: Send + Sync {
     async fn insert(&self, album: &Album) -> Result<(), DomainError>;
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Album>, DomainError>;
+    async fn list_by_ids(&self, ids: &[AlbumId]) -> Result<Vec<Album>, DomainError>;
     async fn find_by_id(&self, id: AlbumId) -> Result<Option<Album>, DomainError>;
     async fn update_name(&self, id: AlbumId, name: &str) -> Result<(), DomainError>;
     async fn delete(&self, id: AlbumId) -> Result<(), DomainError>;
@@ -44,10 +49,20 @@ pub trait FileRepository: Send + Sync {
     async fn insert(&self, file: &FileRecord) -> Result<(), DomainError>;
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
     async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
+    async fn list_by_ids(&self, ids: &[FileId]) -> Result<Vec<FileRecord>, DomainError>;
+    async fn list_by_album_ids(&self, ids: &[AlbumId]) -> Result<Vec<FileRecord>, DomainError>;
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError>;
     async fn assign_album(&self, id: FileId, album_id: Option<AlbumId>) -> Result<(), DomainError>;
     async fn update_name(&self, id: FileId, name: &str) -> Result<(), DomainError>;
     async fn set_thumbnail_key(&self, id: FileId, thumbnail_key: &str) -> Result<(), DomainError>;
+    async fn set_mobile_variant(
+        &self,
+        id: FileId,
+        object_key: &str,
+        checksum: &str,
+        size: u64,
+        mime: &str,
+    ) -> Result<(), DomainError>;
     async fn set_deleted_at(
         &self,
         id: FileId,
@@ -62,6 +77,31 @@ pub trait DeviceRepository: Send + Sync {
     async fn list_by_user(&self, user_id: UserId) -> Result<Vec<Device>, DomainError>;
     async fn find_by_id(&self, id: DeviceId) -> Result<Option<Device>, DomainError>;
     async fn touch_sync(&self, id: DeviceId, at: DateTime<Utc>) -> Result<(), DomainError>;
+}
+
+#[async_trait::async_trait]
+pub trait DeviceExclusionRepository: Send + Sync {
+    async fn merge(&self, device_id: DeviceId, file_ids: &[FileId]) -> Result<(), DomainError>;
+    async fn list(&self, device_id: DeviceId) -> Result<Vec<FileId>, DomainError>;
+}
+
+#[async_trait::async_trait]
+pub trait ShareRepository: Send + Sync {
+    async fn upsert(&self, share: &Share) -> Result<Share, DomainError>;
+    async fn find_by_id(&self, id: ShareId) -> Result<Option<Share>, DomainError>;
+    async fn delete(&self, id: ShareId) -> Result<(), DomainError>;
+    async fn delete_for_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: uuid::Uuid,
+    ) -> Result<(), DomainError>;
+    async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<Share>, DomainError>;
+    async fn list_by_grantee(&self, grantee_id: UserId) -> Result<Vec<Share>, DomainError>;
+    async fn list_by_resource(
+        &self,
+        resource_type: ShareResourceType,
+        resource_id: uuid::Uuid,
+    ) -> Result<Vec<Share>, DomainError>;
 }
 
 #[async_trait::async_trait]
@@ -100,6 +140,17 @@ pub trait ObjectStore: Send + Sync {
 
 pub trait Thumbnailer: Send + Sync {
     fn jpeg_thumbnail(&self, bytes: &[u8], mime: &str) -> Option<Vec<u8>>;
+}
+
+/// AAC-LC 256 kbps stereo 48 kHz for Android sync. Cover art is optional JPEG bytes.
+#[async_trait::async_trait]
+pub trait AudioTranscoder: Send + Sync {
+    async fn transcode_aac_256(
+        &self,
+        original: &[u8],
+        source_mime: &str,
+        cover_jpeg: Option<&[u8]>,
+    ) -> Result<TranscodedAudio, DomainError>;
 }
 
 /// Search and download via the musicdl-export sidecar. Search results stay on that

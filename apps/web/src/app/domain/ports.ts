@@ -6,20 +6,23 @@ import {
   SpotifyTrack,
 } from './cloud-import.models';
 import { MusicSearchResult } from './music.models';
-import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from './models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, ShareGrant, SharePermission, ShareResourceType, SyncProfile, SyncRule, UserProfile } from './models';
 
 export interface TokenStore {
   get(): string | null;
   username(): string | null;
-  set(token: string, username: string): void;
+  userId(): string | null;
+  set(token: string, username: string, userId?: string): void;
   clear(): void;
 }
 
 export interface AuthRepository {
   status(): Promise<{ setup_required: boolean }>;
   setup(username: string, password: string): Promise<AuthSession>;
+  register(username: string, password: string): Promise<AuthSession>;
   login(username: string, password: string): Promise<AuthSession>;
   me(): Promise<{ id: string; username: string }>;
+  listUsers(): Promise<UserProfile[]>;
 }
 
 export interface AlbumRepository {
@@ -48,6 +51,17 @@ export interface DeviceRepository {
   register(name: string): Promise<Device>;
   getProfile(deviceId: string): Promise<SyncProfile>;
   saveProfile(deviceId: string, name: string, rules: SyncRule[]): Promise<SyncProfile>;
+}
+
+export interface ShareRepository {
+  list(resourceType?: ShareResourceType, resourceId?: string): Promise<ShareGrant[]>;
+  create(input: {
+    resourceType: ShareResourceType;
+    resourceId: string;
+    granteeId: string;
+    permission: SharePermission;
+  }): Promise<ShareGrant>;
+  remove(id: string): Promise<void>;
 }
 
 export interface AppReleaseRepository {
@@ -102,6 +116,7 @@ export const AUTH_REPOSITORY = new InjectionToken<AuthRepository>('AUTH_REPOSITO
 export const ALBUM_REPOSITORY = new InjectionToken<AlbumRepository>('ALBUM_REPOSITORY');
 export const FILE_REPOSITORY = new InjectionToken<FileRepository>('FILE_REPOSITORY');
 export const DEVICE_REPOSITORY = new InjectionToken<DeviceRepository>('DEVICE_REPOSITORY');
+export const SHARE_REPOSITORY = new InjectionToken<ShareRepository>('SHARE_REPOSITORY');
 export const APP_RELEASE_REPOSITORY = new InjectionToken<AppReleaseRepository>('APP_RELEASE_REPOSITORY');
 export const CLOUD_IMPORT_CONFIG = new InjectionToken<CloudImportConfigPort>('CLOUD_IMPORT_CONFIG');
 export const GOOGLE_PHOTOS_IMPORT = new InjectionToken<GooglePhotosImportPort>('GOOGLE_PHOTOS_IMPORT');

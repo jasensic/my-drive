@@ -1,4 +1,4 @@
-use application::UploadCommand;
+use application::{FileContentVariant, UploadCommand};
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -8,7 +8,7 @@ use bytes::Bytes;
 use domain::{AlbumId, FileId, LibrarySilo};
 use uuid::Uuid;
 
-use crate::dto::{EmptyTrashResponse, FileDto, FileListQuery, UpdateFileRequest};
+use crate::dto::{ContentQuery, EmptyTrashResponse, FileDto, FileListQuery, UpdateFileRequest};
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
 use crate::state::AppState;
@@ -37,7 +37,7 @@ pub async fn list(
 ) -> Result<Json<Vec<FileDto>>, ApiError> {
     let silo = parse_silo(query.silo.as_deref())?;
     let files = state.services.list_files.execute(user.user_id, silo).await?;
-    Ok(Json(files.into_iter().map(FileDto::from_record).collect()))
+    Ok(Json(files.into_iter().map(FileDto::from_accessible).collect()))
 }
 
 #[utoipa::path(
@@ -155,7 +155,7 @@ pub async fn get(
         .get_file
         .execute(user.user_id, FileId::from_uuid(id))
         .await?;
-    Ok(Json(FileDto::from_record(file)))
+    Ok(Json(FileDto::from_accessible(file)))
 }
 
 #[utoipa::path(patch, path = "/v1/files/{id}", params(("id" = Uuid, Path)), request_body = UpdateFileRequest, responses((status = 200, body = FileDto)), security(("bearer" = [])))]
@@ -175,7 +175,7 @@ pub async fn update(
             body.album_id.map(|album_id| album_id.map(AlbumId::from_uuid)),
         )
         .await?;
-    Ok(Json(FileDto::from_record(file)))
+    Ok(Json(FileDto::from_accessible(file)))
 }
 
 #[utoipa::path(
@@ -238,14 +238,24 @@ pub async fn purge(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[utoipa::path(get, path = "/v1/files/{id}/content", params(("id" = Uuid, Path)), responses((status = 200), (status = 206)), security(("bearer" = [])))]
+#[utoipa::path(
+    get,
+    path = "/v1/files/{id}/content",
+    params(
+        ("id" = Uuid, Path),
+        ("variant" = Option<String>, Query, description = "original (default) or mobile")
+    ),
+    responses((status = 200), (status = 206)),
+    security(("bearer" = []))
+)]
 pub async fn content(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     Path(id): Path<Uuid>,
+    Query(query): Query<ContentQuery>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    stream_file(&state, user, id, headers, false).await
+    stream_file(&state, user, id, headers, false, query.variant.as_deref()).await
 }
 
 #[utoipa::path(get, path = "/v1/files/{id}/thumbnail", params(("id" = Uuid, Path)), responses((status = 200)), security(("bearer" = [])))]
@@ -255,7 +265,7 @@ pub async fn thumbnail(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    stream_file(&state, user, id, headers, true).await
+    stream_file(&state, user, id, headers, true, None).await
 }
 
 async fn stream_file(
@@ -264,12 +274,18 @@ async fn stream_file(
     id: Uuid,
     headers: HeaderMap,
     thumbnail: bool,
+    variant: Option<&str>,
 ) -> Result<Response, ApiError> {
     let (start, end) = parse_range(headers.get(header::RANGE).and_then(|v| v.to_str().ok()));
+    let variant = if variant == Some("mobile") {
+        FileContentVariant::Mobile
+    } else {
+        FileContentVariant::Original
+    };
     let content = state
         .services
         .get_file_content
-        .execute(user.user_id, FileId::from_uuid(id), start, end, thumbnail)
+        .execute(user.user_id, FileId::from_uuid(id), start, end, thumbnail, variant)
         .await?;
     let len = content.data.len() as u64;
     let end_inclusive = content.start.saturating_add(len.saturating_sub(1));

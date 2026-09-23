@@ -37,3 +37,4 @@ id_type!(AlbumId);
 id_type!(DeviceId);
 id_type!(SyncProfileId);
 id_type!(AppReleaseId);
+id_type!(ShareId);

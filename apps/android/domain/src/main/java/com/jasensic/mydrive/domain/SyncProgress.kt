@@ -94,5 +94,6 @@ interface SyncScheduler {
         username: String? = null,
         password: String? = null,
         manualHost: String? = null,
+        authAction: AuthAction = AuthAction.LOGIN,
     )
 }

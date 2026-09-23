@@ -1,7 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::dto::*;
-use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, music, shares, sync};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -9,8 +9,10 @@ use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
         health::health,
         auth::status,
         auth::setup,
+        auth::register,
         auth::login,
         auth::me,
+        auth::list_users,
         albums::list,
         albums::create,
         albums::rename,
@@ -32,6 +34,10 @@ use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
         devices::register,
         devices::get_profile,
         devices::put_profile,
+        devices::put_exclusions,
+        shares::list,
+        shares::create,
+        shares::delete,
         sync::manifest,
         app::list,
         app::latest,
@@ -69,6 +75,11 @@ use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
         MusicTrackDto,
         MusicSearchResponse,
         ImportMusicRequest,
+        DeviceExclusionsRequest,
+        DeviceExclusionsDto,
+        CreateShareRequest,
+        ShareListQuery,
+        ShareDto,
         crate::error::ErrorBody,
     )),
     tags(

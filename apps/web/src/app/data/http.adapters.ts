@@ -1,7 +1,7 @@
 import { HttpClient, HttpInterceptorFn } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
-import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, SyncProfile, SyncRule } from '../domain/models';
+import { Album, AppRelease, ApkIdentity, AuthSession, Device, LibrarySilo, MediaFile, ShareGrant, SharePermission, ShareResourceType, SyncProfile, SyncRule, UserProfile } from '../domain/models';
 import {
   ALBUM_REPOSITORY,
   APP_RELEASE_REPOSITORY,
@@ -13,6 +13,8 @@ import {
   DeviceRepository,
   FILE_REPOSITORY,
   FileRepository,
+  SHARE_REPOSITORY,
+  ShareRepository,
   TOKEN_STORE,
   TokenStore,
 } from '../domain/ports';
@@ -21,6 +23,7 @@ import {
 export class LocalTokenStore implements TokenStore {
   private readonly tokenKey = 'mydrive.token';
   private readonly userKey = 'mydrive.username';
+  private readonly userIdKey = 'mydrive.userId';
 
   get(): string | null {
     return localStorage.getItem(this.tokenKey);
@@ -30,14 +33,24 @@ export class LocalTokenStore implements TokenStore {
     return localStorage.getItem(this.userKey);
   }
 
-  set(token: string, username: string): void {
+  userId(): string | null {
+    return localStorage.getItem(this.userIdKey);
+  }
+
+  set(token: string, username: string, userId?: string): void {
     localStorage.setItem(this.tokenKey, token);
     localStorage.setItem(this.userKey, username);
+    if (userId) {
+      localStorage.setItem(this.userIdKey, userId);
+    } else {
+      localStorage.removeItem(this.userIdKey);
+    }
   }
 
   clear(): void {
     localStorage.removeItem(this.tokenKey);
     localStorage.removeItem(this.userKey);
+    localStorage.removeItem(this.userIdKey);
   }
 }
 
@@ -62,12 +75,20 @@ export class HttpAuthRepository implements AuthRepository {
     return firstValueFrom(this.http.post<AuthSession>('/v1/setup', { username, password }));
   }
 
+  register(username: string, password: string): Promise<AuthSession> {
+    return firstValueFrom(this.http.post<AuthSession>('/v1/register', { username, password }));
+  }
+
   login(username: string, password: string): Promise<AuthSession> {
     return firstValueFrom(this.http.post<AuthSession>('/v1/login', { username, password }));
   }
 
   me(): Promise<{ id: string; username: string }> {
     return firstValueFrom(this.http.get<{ id: string; username: string }>('/v1/me'));
+  }
+
+  listUsers(): Promise<UserProfile[]> {
+    return firstValueFrom(this.http.get<UserProfile[]>('/v1/users'));
   }
 }
 
@@ -207,11 +228,46 @@ export class HttpAppReleaseRepository implements AppReleaseRepository {
   }
 }
 
+@Injectable()
+export class HttpShareRepository implements ShareRepository {
+  constructor(private readonly http: HttpClient) {}
+  list(resourceType?: ShareResourceType, resourceId?: string): Promise<ShareGrant[]> {
+    const params = new URLSearchParams();
+    if (resourceType) {
+      params.set('resource_type', resourceType);
+    }
+    if (resourceId) {
+      params.set('resource_id', resourceId);
+    }
+    const query = params.toString();
+    return firstValueFrom(this.http.get<ShareGrant[]>(`/v1/shares${query ? `?${query}` : ''}`));
+  }
+  create(input: {
+    resourceType: ShareResourceType;
+    resourceId: string;
+    granteeId: string;
+    permission: SharePermission;
+  }): Promise<ShareGrant> {
+    return firstValueFrom(
+      this.http.post<ShareGrant>('/v1/shares', {
+        resource_type: input.resourceType,
+        resource_id: input.resourceId,
+        grantee_id: input.granteeId,
+        permission: input.permission,
+      }),
+    );
+  }
+  async remove(id: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/shares/${id}`));
+  }
+}
+
 export const DATA_PROVIDERS = [
   { provide: TOKEN_STORE, useClass: LocalTokenStore },
   { provide: AUTH_REPOSITORY, useClass: HttpAuthRepository },
   { provide: ALBUM_REPOSITORY, useClass: HttpAlbumRepository },
   { provide: FILE_REPOSITORY, useClass: HttpFileRepository },
   { provide: DEVICE_REPOSITORY, useClass: HttpDeviceRepository },
+  { provide: SHARE_REPOSITORY, useClass: HttpShareRepository },
   { provide: APP_RELEASE_REPOSITORY, useClass: HttpAppReleaseRepository },
 ];

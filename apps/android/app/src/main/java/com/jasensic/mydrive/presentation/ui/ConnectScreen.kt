@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.presentation.UiState
 
@@ -35,12 +36,15 @@ import com.jasensic.mydrive.presentation.UiState
 fun ConnectScreen(
     state: UiState,
     onSignIn: (String, String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
+    onSetup: (String, String, String) -> Unit,
     onScanLan: (String) -> Unit,
     onOpenLibrary: () -> Unit,
 ) {
-    var user by remember { mutableStateOf("admin") }
+    var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
+    var registerMode by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -76,7 +80,7 @@ fun ConnectScreen(
                 )
                 if (state.loggedIn) {
                     Text(
-                        "You are already signed in. Keep the phone on the same Wi-Fi: the app scans `_mydrive._tcp` and syncs without asking for a password again.",
+                        "Signed in as ${state.username.ifBlank { "this account" }}. Keep the phone on the same Wi-Fi: the app scans `_mydrive._tcp` and syncs without asking for a password again.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(onClick = { onScanLan(host) }, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
@@ -84,13 +88,53 @@ fun ConnectScreen(
                     }
                 } else {
                     OutlinedTextField(user, { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    OutlinedTextField(pass, { pass = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                    Button(
-                        onClick = { onSignIn(user, pass, host) },
-                        enabled = !state.isBusy,
+                    OutlinedTextField(
+                        pass,
+                        { pass = it },
+                        label = { Text("Password") },
                         modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Sign in and download")
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                    val canSubmit = !state.isBusy && user.isNotBlank() && pass.isNotBlank()
+                    when {
+                        state.setupRequired -> {
+                            Text(
+                                "This server needs a first account. Creating it also signs you in.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Button(
+                                onClick = { onSetup(user, pass, host) },
+                                enabled = canSubmit,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Create admin account")
+                            }
+                        }
+                        registerMode -> {
+                            Button(
+                                onClick = { onRegister(user, pass, host) },
+                                enabled = canSubmit,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Create account")
+                            }
+                            TextButton(onClick = { registerMode = false }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Have an account? Sign in")
+                            }
+                        }
+                        else -> {
+                            Button(
+                                onClick = { onSignIn(user, pass, host) },
+                                enabled = canSubmit,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Sign in and download")
+                            }
+                            TextButton(onClick = { registerMode = true }, modifier = Modifier.fillMaxWidth()) {
+                                Text("Create account")
+                            }
+                        }
                     }
                 }
             }

@@ -2,4 +2,6 @@
 <paths>
     <files-path name="updates" path="updates/" />
     <files-path name="media" path="media/" />
+    <files-path name="users" path="users/" />
+    <cache-path name="stream" path="stream/" />
 </paths>

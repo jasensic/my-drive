@@ -32,6 +32,7 @@ fun SettingsSheet(
     onSync: () -> Unit,
     onUpdate: () -> Unit,
     onConnection: () -> Unit,
+    onSignOut: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -40,6 +41,9 @@ fun SettingsSheet(
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Settings", style = MaterialTheme.typography.headlineSmall)
             Text("Server ${state.serverLabel}", style = MaterialTheme.typography.bodyMedium)
+            if (state.username.isNotBlank()) {
+                Text("Signed in as ${state.username}", style = MaterialTheme.typography.bodySmall)
+            }
             Text("App ${state.appVersion} · last sync ${state.lastSync ?: "never"}", style = MaterialTheme.typography.bodySmall)
             Text("Theme", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -65,6 +69,11 @@ fun SettingsSheet(
             }
             OutlinedButton(onClick = onConnection, modifier = Modifier.fillMaxWidth()) {
                 Text("Connection and sign-in")
+            }
+            if (state.loggedIn) {
+                OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign out")
+                }
             }
             Spacer(Modifier.height(8.dp))
         }

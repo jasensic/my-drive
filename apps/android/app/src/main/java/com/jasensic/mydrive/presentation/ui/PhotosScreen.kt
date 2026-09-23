@@ -121,7 +121,7 @@ fun PhotosScreen(
                         FilterChip(
                             selected = albumId == album.id,
                             onClick = { onOpenAlbum(album.id) },
-                            label = { Text(album.name) },
+                            label = { Text(if (album.shared) "${album.name} · Shared" else album.name) },
                         )
                     }
                 }
@@ -192,16 +192,16 @@ fun PhotosScreen(
 @Composable
 private fun thumbnailModel(file: LocalFile): Any {
     val context = LocalContext.current
-    val disk = File(file.path)
+    val model = mediaModel(file.artworkPath) ?: mediaModel(file.thumbnailUrl) ?: mediaModel(file.path) ?: file.path
     return if (file.mediaKind == MediaKind.VIDEO) {
         ImageRequest.Builder(context)
-            .data(disk)
+            .data(model)
             .decoderFactory(VideoFrameDecoder.Factory())
             .videoFrameMillis(1_000)
             .crossfade(true)
             .build()
     } else {
-        disk
+        model
     }
 }
 
@@ -210,6 +210,7 @@ private fun thumbnailModel(file: LocalFile): Any {
 fun MediaViewerScreen(
     files: List<LocalFile>,
     currentId: String,
+    authToken: String?,
     onBack: () -> Unit,
     onPage: (String) -> Unit,
     onPauseAudio: () -> Unit,
@@ -233,7 +234,7 @@ fun MediaViewerScreen(
                 MediaKind.PHOTO -> ZoomablePhoto(file)
                 MediaKind.VIDEO -> {
                     LaunchedEffect(file.id) { onPauseAudio() }
-                    VideoPlayer(file)
+                    VideoPlayer(file, authToken)
                 }
                 else -> Text(file.name, color = Color.White, modifier = Modifier.padding(24.dp))
             }
@@ -265,7 +266,7 @@ private fun ZoomablePhoto(file: LocalFile) {
     var scale by remember(file.id) { mutableFloatStateOf(1f) }
     var offset by remember(file.id) { mutableStateOf(Offset.Zero) }
     AsyncImage(
-        model = File(file.path),
+        model = mediaModel(file.path) ?: file.remoteUrl ?: file.path,
         contentDescription = file.name,
         contentScale = ContentScale.Fit,
         modifier = Modifier
@@ -287,14 +288,33 @@ private fun ZoomablePhoto(file: LocalFile) {
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun VideoPlayer(file: LocalFile) {
+private fun VideoPlayer(file: LocalFile, authToken: String?) {
     val context = LocalContext.current
-    val exo = remember(file.id) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(Uri.fromFile(File(file.path))))
-            prepare()
-            playWhenReady = true
+    val exo = remember(file.id, file.path, file.remoteUrl, authToken) {
+        val uri = when {
+            File(file.path).isFile -> Uri.fromFile(File(file.path))
+            !file.remoteUrl.isNullOrBlank() -> Uri.parse(file.remoteUrl)
+            else -> Uri.fromFile(File(file.path))
         }
+        val http = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            .apply {
+                if (!authToken.isNullOrBlank()) {
+                    setDefaultRequestProperties(mapOf("Authorization" to "Bearer $authToken"))
+                }
+            }
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(
+                androidx.media3.exoplayer.source.DefaultMediaSourceFactory(
+                    androidx.media3.datasource.DefaultDataSource.Factory(context, http),
+                ),
+            )
+            .build()
+            .apply {
+                setMediaItem(MediaItem.fromUri(uri))
+                prepare()
+                playWhenReady = true
+            }
     }
     DisposableEffect(file.id) {
         onDispose { exo.release() }

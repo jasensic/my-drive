@@ -80,7 +80,7 @@ fun FilesScreen(
                         FilterChip(
                             selected = albumId == album.id,
                             onClick = { onOpenAlbum(album.id) },
-                            label = { Text(album.name) },
+                            label = { Text(if (album.shared) "${album.name} · Shared" else album.name) },
                         )
                     }
                 }
@@ -130,6 +130,8 @@ private fun FileRow(
             val meta = listOfNotNull(
                 formatSize(file.size),
                 formatModified(file.modifiedAtMillis).takeIf { it.isNotBlank() },
+                "Shared".takeIf { file.shared },
+                "On device".takeIf { file.onDevice && !file.remoteUrl.isNullOrBlank() },
             ).joinToString(" · ")
             Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

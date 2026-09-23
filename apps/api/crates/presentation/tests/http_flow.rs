@@ -424,5 +424,235 @@ async fn typed_albums_rename_and_file_updates() {
     assert!(file["album_id"].is_null());
 }
 
+#[tokio::test]
+async fn register_users_share_exclusions_and_mobile_audio() {
+    let (base, client) = spawn_app().await;
+    let setup: Value = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"admin","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let admin_token = setup["token"].as_str().unwrap();
+
+    let too_early = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"other","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(too_early.status(), 409);
+
+    let registered: Value = client
+        .post(format!("{base}/v1/register"))
+        .json(&serde_json::json!({"username":"friend","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let friend_token = registered["token"].as_str().unwrap();
+    let friend_id = registered["user"]["id"].as_str().unwrap();
+
+    let duplicate = client
+        .post(format!("{base}/v1/register"))
+        .json(&serde_json::json!({"username":"friend","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), 409);
+
+    let users: Value = client
+        .get(format!("{base}/v1/users"))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(users.as_array().unwrap().len(), 2);
+    assert!(users[0]["password_hash"].is_null() || users[0].get("password_hash").is_none());
+
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(b"\xFF\xD8\xFF fakejpeg")
+            .file_name("photo.jpg")
+            .mime_str("image/jpeg")
+            .unwrap(),
+    );
+    let uploaded: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(admin_token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let file_id = uploaded["id"].as_str().unwrap();
+
+    let denied = client
+        .get(format!("{base}/v1/files/{file_id}"))
+        .bearer_auth(friend_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+
+    let share: Value = client
+        .post(format!("{base}/v1/shares"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({
+            "resource_type": "file",
+            "resource_id": file_id,
+            "grantee_id": friend_id,
+            "permission": "read"
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(share["grantee_username"], "friend");
+
+    let allowed: Value = client
+        .get(format!("{base}/v1/files/{file_id}"))
+        .bearer_auth(friend_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(allowed["access"], "read");
+    assert_eq!(allowed["shared"], true);
+
+    let trash = client
+        .post(format!("{base}/v1/files/{file_id}/trash"))
+        .bearer_auth(friend_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(trash.status(), 403);
+
+    let device: Value = client
+        .post(format!("{base}/v1/devices"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"name":"Phone A"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let device_id = device["id"].as_str().unwrap();
+    let exclusions: Value = client
+        .put(format!("{base}/v1/devices/{device_id}/exclusions"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"file_ids": [file_id]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(exclusions["file_ids"].as_array().unwrap().len(), 1);
+
+    let manifest: Value = client
+        .post(format!("{base}/v1/sync/manifest"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({
+            "device_id": device_id,
+            "have_file_ids": []
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(manifest["files"].as_array().unwrap().is_empty());
+
+    let flac = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(b"fLaCnotreally")
+            .file_name("song.flac")
+            .mime_str("audio/flac")
+            .unwrap(),
+    );
+    let flac_file: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(admin_token)
+        .multipart(flac)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let flac_id = flac_file["id"].as_str().unwrap();
+    let original = client
+        .get(format!("{base}/v1/files/{flac_id}/content"))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(&original[..], b"fLaCnotreally");
+    let mobile = client
+        .get(format!("{base}/v1/files/{flac_id}/content?variant=mobile"))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        mobile.headers().get("content-type").unwrap(),
+        "audio/mp4"
+    );
+    let mobile_bytes = mobile.bytes().await.unwrap();
+    assert_eq!(&mobile_bytes[..], b"fake-aac");
+
+    let friend_device: Value = client
+        .post(format!("{base}/v1/devices"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"name":"Phone B"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let music_manifest: Value = client
+        .post(format!("{base}/v1/sync/manifest"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({
+            "device_id": friend_device["id"],
+            "have_file_ids": []
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let audio = music_manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == flac_id)
+        .unwrap();
+    assert_eq!(audio["mime"], "audio/mp4");
+    assert!(audio["url"].as_str().unwrap().contains("variant=mobile"));
+}
+
 #[allow(dead_code)]
 fn _keep_addr_type(_: SocketAddr) {}

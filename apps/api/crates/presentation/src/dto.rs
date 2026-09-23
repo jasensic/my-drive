@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
-use domain::model::{Album, Device, FileRecord, ManifestEntry, SyncManifest, SyncProfile, SyncRule, User};
+use domain::model::{
+    Album, Device, FileRecord, ManifestEntry, SharePermission, ShareResourceType, SyncManifest,
+    SyncProfile, SyncRule, User, UserSummary,
+};
 use domain::MediaKind;
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
@@ -37,6 +40,15 @@ impl From<User> for UserDto {
     }
 }
 
+impl From<UserSummary> for UserDto {
+    fn from(value: UserSummary) -> Self {
+        Self {
+            id: value.id.0,
+            username: value.username,
+        }
+    }
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct CreateAlbumRequest {
     pub name: String,
@@ -56,26 +68,42 @@ pub struct AlbumListQuery {
 #[derive(Serialize, ToSchema)]
 pub struct AlbumDto {
     pub id: Uuid,
+    pub owner_id: Uuid,
     pub name: String,
     #[schema(value_type = String)]
     pub silo: domain::LibrarySilo,
     pub created_at: DateTime<Utc>,
+    pub access: String,
+    pub shared: bool,
 }
 
 impl From<Album> for AlbumDto {
     fn from(value: Album) -> Self {
         Self {
             id: value.id.0,
+            owner_id: value.owner_id.0,
             name: value.name,
             silo: value.silo,
             created_at: value.created_at,
+            access: "owner".into(),
+            shared: false,
         }
+    }
+}
+
+impl AlbumDto {
+    pub fn from_accessible(item: application::AccessibleAlbum) -> Self {
+        let mut dto = Self::from(item.album);
+        dto.access = item.access.as_str().into();
+        dto.shared = item.shared;
+        dto
     }
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct FileDto {
     pub id: Uuid,
+    pub owner_id: Uuid,
     pub album_id: Option<Uuid>,
     pub name: String,
     pub size: u64,
@@ -89,13 +117,25 @@ pub struct FileDto {
     pub purge_at: Option<DateTime<Utc>>,
     pub content_url: String,
     pub thumbnail_url: Option<String>,
+    pub access: String,
+    pub shared: bool,
 }
 
 impl FileDto {
     pub fn from_record(file: FileRecord) -> Self {
+        Self::from_accessible(application::AccessibleFile {
+            file,
+            access: application::ResourceAccess::Owner,
+            shared: false,
+        })
+    }
+
+    pub fn from_accessible(item: application::AccessibleFile) -> Self {
+        let file = item.file;
         let purge_at = file.purge_at();
         Self {
             id: file.id.0,
+            owner_id: file.owner_id.0,
             album_id: file.album_id.map(|a| a.0),
             name: file.name,
             size: file.size,
@@ -110,6 +150,8 @@ impl FileDto {
             thumbnail_url: file
                 .thumbnail_key
                 .map(|_| format!("/v1/files/{}/thumbnail", file.id)),
+            access: item.access.as_str().into(),
+            shared: item.shared,
         }
     }
 }
@@ -239,13 +281,18 @@ pub struct ManifestFileDto {
 
 impl ManifestFileDto {
     pub fn from_entry(entry: ManifestEntry) -> Self {
+        let url = if entry.mobile {
+            format!("/v1/files/{}/content?variant=mobile", entry.id)
+        } else {
+            format!("/v1/files/{}/content", entry.id)
+        };
         Self {
             id: entry.id.0,
             name: entry.name,
             size: entry.size,
             mime: entry.mime,
             checksum: entry.checksum,
-            url: format!("/v1/files/{}/content", entry.id),
+            url,
             media_kind: entry.media_kind,
             album_id: entry.album_id.map(|a| a.0),
         }
@@ -348,4 +395,62 @@ pub struct MusicSearchResponse {
 pub struct ImportMusicRequest {
     pub search_id: String,
     pub track_id: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct DeviceExclusionsRequest {
+    pub file_ids: Vec<Uuid>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DeviceExclusionsDto {
+    pub file_ids: Vec<Uuid>,
+}
+
+#[derive(Deserialize, Default, ToSchema)]
+pub struct ContentQuery {
+    pub variant: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateShareRequest {
+    pub resource_type: String,
+    pub resource_id: Uuid,
+    pub grantee_id: Uuid,
+    pub permission: String,
+}
+
+#[derive(Deserialize, Default, ToSchema)]
+pub struct ShareListQuery {
+    pub resource_type: Option<String>,
+    pub resource_id: Option<Uuid>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ShareDto {
+    pub id: Uuid,
+    #[schema(value_type = String)]
+    pub resource_type: ShareResourceType,
+    pub resource_id: Uuid,
+    pub owner_id: Uuid,
+    pub grantee_id: Uuid,
+    pub grantee_username: String,
+    #[schema(value_type = String)]
+    pub permission: SharePermission,
+    pub created_at: DateTime<Utc>,
+}
+
+impl ShareDto {
+    pub fn from_view(view: application::ShareView) -> Self {
+        Self {
+            id: view.share.id.0,
+            resource_type: view.share.resource_type,
+            resource_id: view.share.resource_id,
+            owner_id: view.share.owner_id.0,
+            grantee_id: view.share.grantee_id.0,
+            grantee_username: view.grantee_username,
+            permission: view.share.permission,
+            created_at: view.share.created_at,
+        }
+    }
 }

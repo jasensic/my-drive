@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use domain::model::{Device, SyncProfile, SyncRule};
-use domain::{DeviceId, MediaKind, SyncProfileId, UserId};
+use domain::{DeviceId, FileId, MediaKind, SyncProfileId, UserId};
 
 use crate::{AppError, Deps};
 
@@ -30,6 +30,21 @@ pub trait UpsertSyncProfile: Send + Sync {
 #[async_trait]
 pub trait GetSyncProfile: Send + Sync {
     async fn execute(&self, user_id: UserId, device_id: DeviceId) -> Result<SyncProfile, AppError>;
+}
+
+#[derive(Debug, Clone)]
+pub struct DeviceExclusions {
+    pub file_ids: Vec<FileId>,
+}
+
+#[async_trait]
+pub trait MergeDeviceExclusions: Send + Sync {
+    async fn execute(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        file_ids: Vec<FileId>,
+    ) -> Result<DeviceExclusions, AppError>;
 }
 
 pub struct RegisterDeviceService {
@@ -138,6 +153,40 @@ impl GetSyncProfile for GetSyncProfileService {
             .find_by_device(device.id)
             .await?
             .ok_or_else(|| AppError::not_found("sync profile not found"))
+    }
+}
+
+pub struct MergeDeviceExclusionsService {
+    deps: Arc<Deps>,
+}
+
+impl MergeDeviceExclusionsService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl MergeDeviceExclusions for MergeDeviceExclusionsService {
+    async fn execute(
+        &self,
+        user_id: UserId,
+        device_id: DeviceId,
+        file_ids: Vec<FileId>,
+    ) -> Result<DeviceExclusions, AppError> {
+        let device = owned_device(&self.deps, user_id, device_id).await?;
+        let mut existing = Vec::new();
+        for id in file_ids {
+            if self.deps.files.find_by_id(id).await?.is_some() {
+                existing.push(id);
+            }
+        }
+        if !existing.is_empty() {
+            self.deps.exclusions.merge(device.id, &existing).await?;
+        }
+        Ok(DeviceExclusions {
+            file_ids: self.deps.exclusions.list(device.id).await?,
+        })
     }
 }
 

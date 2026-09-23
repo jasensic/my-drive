@@ -252,7 +252,11 @@ fun TrackRow(
         )
         Column(Modifier.weight(1f)) {
             Text(track.trackHeadline(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            val subtitle = track.trackSubtitle()
+            val subtitle = listOfNotNull(
+                track.trackSubtitle().takeIf { it.isNotBlank() },
+                "Shared".takeIf { track.shared },
+                "On device".takeIf { track.onDevice && !track.path.isBlank() && track.remoteUrl != null },
+            ).joinToString(" · ")
             if (subtitle.isNotBlank()) {
                 Text(
                     subtitle,

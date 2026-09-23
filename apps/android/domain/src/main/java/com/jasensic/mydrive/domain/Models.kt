@@ -4,10 +4,22 @@ enum class MediaKind { PHOTO, VIDEO, AUDIO, OTHER }
 
 enum class LibrarySilo { MUSIC, PHOTOS, FILES }
 
+enum class ResourceAccess { OWNER, READ, WRITE }
+
+enum class ShareResourceType { FILE, ALBUM }
+
+enum class SharePermission { READ, WRITE }
+
+enum class LibrarySource { DEVICE, SERVER }
+
+enum class AuthAction { LOGIN, REGISTER, SETUP }
+
 data class Album(
     val id: String,
     val name: String,
     val silo: LibrarySilo = LibrarySilo.PHOTOS,
+    val shared: Boolean = false,
+    val access: ResourceAccess = ResourceAccess.OWNER,
 )
 
 data class ManifestFile(
@@ -57,6 +69,41 @@ data class AuthSession(
     val token: String,
     val username: String,
     val deviceId: String?,
+    val userId: String? = null,
+)
+
+data class ServerStatus(
+    val setupRequired: Boolean,
+)
+
+data class UserProfile(
+    val id: String,
+    val username: String,
+)
+
+data class ShareGrant(
+    val id: String,
+    val resourceType: ShareResourceType,
+    val resourceId: String,
+    val ownerId: String,
+    val granteeId: String,
+    val granteeUsername: String,
+    val permission: SharePermission,
+)
+
+data class RemoteFile(
+    val id: String,
+    val name: String,
+    val size: Long,
+    val mime: String,
+    val checksum: String,
+    val mediaKind: MediaKind,
+    val albumId: String?,
+    val contentUrl: String,
+    val thumbnailUrl: String?,
+    val shared: Boolean,
+    val access: ResourceAccess,
+    val createdAt: String? = null,
 )
 
 data class LocalFile(
@@ -74,6 +121,11 @@ data class LocalFile(
     val durationMs: Long? = null,
     val modifiedAtMillis: Long = 0L,
     val artworkPath: String? = null,
+    val onDevice: Boolean = true,
+    val remoteUrl: String? = null,
+    val thumbnailUrl: String? = null,
+    val shared: Boolean = false,
+    val access: ResourceAccess = ResourceAccess.OWNER,
 ) {
     val displayArtist: String
         get() = primaryArtist().ifBlank { UNKNOWN_ARTIST }
@@ -222,12 +274,55 @@ data class AppRelease(
     val downloadUrl: String,
 )
 
+fun LocalFile.hasLocalBytes(): Boolean =
+    onDevice && path.isNotBlank() && java.io.File(path).isFile
+
 fun parseMediaKind(value: String?): MediaKind =
     when (value?.lowercase()) {
         "photo" -> MediaKind.PHOTO
         "video" -> MediaKind.VIDEO
         "audio" -> MediaKind.AUDIO
         else -> MediaKind.OTHER
+    }
+
+fun parseResourceAccess(value: String?): ResourceAccess =
+    when (value?.lowercase()) {
+        "read" -> ResourceAccess.READ
+        "write" -> ResourceAccess.WRITE
+        else -> ResourceAccess.OWNER
+    }
+
+fun parseShareResourceType(value: String?): ShareResourceType =
+    when (value?.lowercase()) {
+        "album" -> ShareResourceType.ALBUM
+        else -> ShareResourceType.FILE
+    }
+
+fun parseSharePermission(value: String?): SharePermission =
+    when (value?.lowercase()) {
+        "write" -> SharePermission.WRITE
+        else -> SharePermission.READ
+    }
+
+fun ShareResourceType.wireValue(): String =
+    when (this) {
+        ShareResourceType.FILE -> "file"
+        ShareResourceType.ALBUM -> "album"
+    }
+
+fun SharePermission.wireValue(): String =
+    when (this) {
+        SharePermission.READ -> "read"
+        SharePermission.WRITE -> "write"
+    }
+
+fun AuthAction.wireValue(): String = name.lowercase()
+
+fun parseAuthAction(value: String?): AuthAction =
+    when (value?.lowercase()) {
+        "register" -> AuthAction.REGISTER
+        "setup" -> AuthAction.SETUP
+        else -> AuthAction.LOGIN
     }
 
 fun parseLibrarySilo(value: String?): LibrarySilo =

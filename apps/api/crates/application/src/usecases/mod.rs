@@ -4,6 +4,7 @@ mod auth;
 mod devices;
 mod files;
 mod music;
+mod shares;
 mod sync;
 
 pub use albums::*;
@@ -12,4 +13,5 @@ pub use auth::*;
 pub use devices::*;
 pub use files::*;
 pub use music::*;
+pub use shares::*;
 pub use sync::*;

@@ -1,23 +1,36 @@
 package com.jasensic.mydrive.data
 
+import android.content.Context
+import coil.ImageLoader
+import coil.decode.VideoFrameDecoder
 import com.jasensic.mydrive.BuildConfig
 import com.jasensic.mydrive.domain.AppUpdateInstaller
 import com.jasensic.mydrive.domain.AppVersion
 import com.jasensic.mydrive.domain.AudioPlayer
+import com.jasensic.mydrive.domain.BrowseRemoteLibraryUseCase
 import com.jasensic.mydrive.domain.CheckAppUpdateUseCase
+import com.jasensic.mydrive.domain.CheckServerStatusUseCase
 import com.jasensic.mydrive.domain.ConnectivityMonitor
+import com.jasensic.mydrive.domain.CreateShareUseCase
+import com.jasensic.mydrive.domain.DeviceExclusionStore
 import com.jasensic.mydrive.domain.DiscoverServerUseCase
 import com.jasensic.mydrive.domain.ExternalFileOpener
 import com.jasensic.mydrive.domain.InstallAppUpdateUseCase
+import com.jasensic.mydrive.domain.LanAvailabilityUseCase
 import com.jasensic.mydrive.domain.ListLocalLibraryUseCase
+import com.jasensic.mydrive.domain.ListSharesUseCase
+import com.jasensic.mydrive.domain.ListUsersUseCase
 import com.jasensic.mydrive.domain.LoadAppStateUseCase
 import com.jasensic.mydrive.domain.LocalMediaStore
 import com.jasensic.mydrive.domain.ManageLibraryUseCase
 import com.jasensic.mydrive.domain.MediaSharer
 import com.jasensic.mydrive.domain.OpenLocalFileUseCase
 import com.jasensic.mydrive.domain.RemoteFileSource
+import com.jasensic.mydrive.domain.RevokeShareUseCase
 import com.jasensic.mydrive.domain.ServerDiscovery
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
+import com.jasensic.mydrive.domain.SignOutUseCase
+import com.jasensic.mydrive.domain.StreamRemoteFileUseCase
 import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncProgressStore
 import com.jasensic.mydrive.domain.SyncScheduler
@@ -28,7 +41,9 @@ import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import okhttp3.OkHttpClient
 import javax.inject.Singleton
 
 @Module
@@ -39,6 +54,7 @@ abstract class PortBindings {
     @Binds abstract fun remote(impl: RetrofitRemoteFileSource): RemoteFileSource
     @Binds abstract fun local(impl: RoomLocalMediaStore): LocalMediaStore
     @Binds abstract fun state(impl: DataStoreSyncState): SyncStateRepository
+    @Binds abstract fun exclusions(impl: DataStoreDeviceExclusions): DeviceExclusionStore
     @Binds abstract fun installer(impl: AndroidAppUpdateInstaller): AppUpdateInstaller
     @Binds abstract fun audioPlayer(impl: ExoPlayerAudioPlayer): AudioPlayer
     @Binds abstract fun fileOpener(impl: AndroidExternalFileOpener): ExternalFileOpener
@@ -52,10 +68,6 @@ abstract class PortBindings {
 object AppProvides {
     @Provides
     @Singleton
-    fun appDb(provider: DbProvider) = provider.db
-
-    @Provides
-    @Singleton
     fun syncProgressStore(): SyncProgressStore = InMemorySyncProgressStore()
 
     @Provides
@@ -63,6 +75,31 @@ object AppProvides {
     fun appVersion(): AppVersion = object : AppVersion {
         override fun currentCode() = BuildConfig.VERSION_CODE
         override fun currentName() = BuildConfig.VERSION_NAME
+    }
+
+    @Provides
+    @Singleton
+    fun imageLoader(
+        @ApplicationContext context: Context,
+        state: SyncStateRepository,
+    ): ImageLoader {
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val request = chain.request()
+                val token = state.cachedToken()
+                val next = if (!token.isNullOrBlank() && request.header("Authorization").isNullOrBlank()) {
+                    request.newBuilder().header("Authorization", "Bearer $token").build()
+                } else {
+                    request
+                }
+                chain.proceed(next)
+            }
+            .build()
+        return ImageLoader.Builder(context)
+            .okHttpClient(client)
+            .components { add(VideoFrameDecoder.Factory()) }
+            .crossfade(true)
+            .build()
     }
 
     @Provides
@@ -79,8 +116,7 @@ object AppProvides {
     fun loadAppStateUseCase(
         state: SyncStateRepository,
         local: LocalMediaStore,
-        discovery: ServerDiscovery,
-    ) = LoadAppStateUseCase(state, local, discovery)
+    ) = LoadAppStateUseCase(state, local)
 
     @Provides
     fun syncUseCase(
@@ -90,7 +126,17 @@ object AppProvides {
         local: LocalMediaStore,
         state: SyncStateRepository,
         progress: SyncProgressStore,
-    ) = SyncFilesUseCase(connectivity, discovery, remote, local, state, android.os.Build.MODEL, progress)
+        exclusions: DeviceExclusionStore,
+    ) = SyncFilesUseCase(
+        connectivity,
+        discovery,
+        remote,
+        local,
+        state,
+        android.os.Build.MODEL,
+        progress,
+        exclusions,
+    )
 
     @Provides
     fun checkUpdateUseCase(
@@ -117,5 +163,60 @@ object AppProvides {
         remote: RemoteFileSource,
         local: LocalMediaStore,
         state: SyncStateRepository,
-    ) = ManageLibraryUseCase(remote, local, state)
+        exclusions: DeviceExclusionStore,
+    ) = ManageLibraryUseCase(remote, local, state, exclusions)
+
+    @Provides
+    fun checkServerStatusUseCase(
+        remote: RemoteFileSource,
+        state: SyncStateRepository,
+        discovery: DiscoverServerUseCase,
+    ) = CheckServerStatusUseCase(remote, state, discovery)
+
+    @Provides
+    fun signOutUseCase(
+        state: SyncStateRepository,
+        local: LocalMediaStore,
+    ) = SignOutUseCase(state, local)
+
+    @Provides
+    fun lanAvailabilityUseCase(connectivity: ConnectivityMonitor) = LanAvailabilityUseCase(connectivity)
+
+    @Provides
+    fun browseRemoteLibraryUseCase(
+        remote: RemoteFileSource,
+        local: LocalMediaStore,
+        state: SyncStateRepository,
+    ) = BrowseRemoteLibraryUseCase(remote, local, state)
+
+    @Provides
+    fun streamRemoteFileUseCase(
+        remote: RemoteFileSource,
+        local: LocalMediaStore,
+        state: SyncStateRepository,
+    ) = StreamRemoteFileUseCase(remote, local, state)
+
+    @Provides
+    fun listUsersUseCase(
+        remote: RemoteFileSource,
+        state: SyncStateRepository,
+    ) = ListUsersUseCase(remote, state)
+
+    @Provides
+    fun listSharesUseCase(
+        remote: RemoteFileSource,
+        state: SyncStateRepository,
+    ) = ListSharesUseCase(remote, state)
+
+    @Provides
+    fun createShareUseCase(
+        remote: RemoteFileSource,
+        state: SyncStateRepository,
+    ) = CreateShareUseCase(remote, state)
+
+    @Provides
+    fun revokeShareUseCase(
+        remote: RemoteFileSource,
+        state: SyncStateRepository,
+    ) = RevokeShareUseCase(remote, state)
 }

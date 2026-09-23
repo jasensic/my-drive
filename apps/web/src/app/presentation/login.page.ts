@@ -1,4 +1,4 @@
-import { Component, Inject, signal } from '@angular/core';
+import { Component, Inject, computed, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -6,8 +6,8 @@ import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
 import { Password } from 'primeng/password';
-import { CHECK_SETUP, LOGIN, SETUP_ADMIN } from '../application/use-cases.tokens';
-import type { CheckSetup, Login, SetupAdmin } from '../application/use-cases.tokens';
+import { CHECK_SETUP, LOGIN, REGISTER_ACCOUNT, SETUP_ADMIN } from '../application/use-cases.tokens';
+import type { CheckSetup, Login, RegisterAccount, SetupAdmin } from '../application/use-cases.tokens';
 import { ThemeModeService } from './theme.service';
 
 @Component({
@@ -26,10 +26,10 @@ import { ThemeModeService } from './theme.service';
         </button>
       </div>
       <div class="auth-brand">
-        <img src="favicon.svg" width="36" height="36" alt="" />
+        <img src="icon-192.png" width="36" height="36" alt="" />
         <span>my-drive</span>
       </div>
-      <p-card [header]="setupRequired() ? 'Create admin' : 'Sign in to my-drive'">
+      <p-card [header]="header()">
         <form class="stack-form" (ngSubmit)="submit()">
           <div class="field">
             <label for="user">Username</label>
@@ -44,9 +44,17 @@ import { ThemeModeService } from './theme.service';
           }
           <p-button
             type="submit"
-            [label]="setupRequired() ? 'Complete setup' : 'Login'"
+            [label]="submitLabel()"
             [loading]="busy()"
           />
+          @if (!setupRequired()) {
+            <p-button
+              type="button"
+              [text]="true"
+              [label]="registerMode() ? 'Have an account? Sign in' : 'Create account'"
+              (onClick)="registerMode.set(!registerMode())"
+            />
+          }
         </form>
       </p-card>
     </div>
@@ -56,13 +64,27 @@ export class LoginPage {
   username = '';
   password = '';
   setupRequired = signal(false);
+  registerMode = signal(false);
   busy = signal(false);
   error = signal<string | null>(null);
+  header = computed(() => {
+    if (this.setupRequired()) {
+      return 'Create admin';
+    }
+    return this.registerMode() ? 'Create account' : 'Sign in to my-drive';
+  });
+  submitLabel = computed(() => {
+    if (this.setupRequired()) {
+      return 'Complete setup';
+    }
+    return this.registerMode() ? 'Create account' : 'Login';
+  });
 
   constructor(
     @Inject(CHECK_SETUP) private readonly checkSetup: CheckSetup,
     @Inject(SETUP_ADMIN) private readonly setupAdmin: SetupAdmin,
     @Inject(LOGIN) private readonly login: Login,
+    @Inject(REGISTER_ACCOUNT) private readonly registerAccount: RegisterAccount,
     readonly theme: ThemeModeService,
     private readonly router: Router,
   ) {
@@ -78,6 +100,8 @@ export class LoginPage {
     try {
       if (this.setupRequired()) {
         await this.setupAdmin.execute(this.username, this.password);
+      } else if (this.registerMode()) {
+        await this.registerAccount.execute(this.username, this.password);
       } else {
         await this.login.execute(this.username, this.password);
       }

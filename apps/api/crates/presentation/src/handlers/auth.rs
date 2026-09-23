@@ -52,3 +52,28 @@ pub async fn me(
     let user = state.services.current_user.execute(user.user_id).await?;
     Ok(Json(user.into()))
 }
+
+#[utoipa::path(post, path = "/v1/register", request_body = CredentialsRequest, responses((status = 200, body = AuthResponse)))]
+pub async fn register(
+    State(state): State<AppState>,
+    Json(body): Json<CredentialsRequest>,
+) -> Result<Json<AuthResponse>, ApiError> {
+    let result = state
+        .services
+        .register_user
+        .execute(body.username, body.password)
+        .await?;
+    Ok(Json(AuthResponse {
+        token: result.token,
+        user: result.user.into(),
+    }))
+}
+
+#[utoipa::path(get, path = "/v1/users", responses((status = 200, body = [UserDto])), security(("bearer" = [])))]
+pub async fn list_users(
+    State(state): State<AppState>,
+    CurrentUser(_user): CurrentUser,
+) -> Result<Json<Vec<UserDto>>, ApiError> {
+    let users = state.services.list_users.execute().await?;
+    Ok(Json(users.into_iter().map(Into::into).collect()))
+}

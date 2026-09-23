@@ -34,6 +34,13 @@ import com.jasensic.mydrive.presentation.UiState
 import java.io.File
 import kotlin.math.absoluteValue
 
+fun mediaModel(path: String?): Any? {
+    if (path.isNullOrBlank()) return null
+    if (path.startsWith("http://") || path.startsWith("https://")) return path
+    val file = File(path)
+    return if (file.isFile) file else path
+}
+
 private val AlbumPalette = listOf(
     Color(0xFF0F766E),
     Color(0xFF7C3AED),
@@ -56,16 +63,17 @@ fun Artwork(
     val color = remember(fallbackName) {
         AlbumPalette[fallbackName.hashCode().absoluteValue % AlbumPalette.size]
     }
-    val artPath = file?.artworkPath
+    val artPath = file?.artworkPath ?: file?.thumbnailUrl
+    val model = mediaModel(artPath)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(corner))
             .background(color),
         contentAlignment = Alignment.Center,
     ) {
-        if (artPath != null) {
+        if (model != null) {
             AsyncImage(
-                model = File(artPath),
+                model = model,
                 contentDescription = fallbackName,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

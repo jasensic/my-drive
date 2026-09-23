@@ -2,11 +2,8 @@ package com.jasensic.mydrive.data
 
 import android.content.ComponentName
 import android.content.Context
-import android.net.Uri
 import android.util.Log
 import androidx.core.content.ContextCompat
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -15,7 +12,6 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
-import com.jasensic.mydrive.domain.songTitle
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -57,12 +53,14 @@ class ExoPlayerAudioPlayer @Inject constructor(
 
     override fun playQueue(files: List<LocalFile>, startId: String) {
         runWhenReady {
-            val tracks = files.filter { it.mediaKind == MediaKind.AUDIO && File(it.path).isFile }
+            val tracks = files.filter {
+                it.mediaKind == MediaKind.AUDIO && (File(it.path).isFile || !it.remoteUrl.isNullOrBlank())
+            }
             if (tracks.isEmpty()) return@runWhenReady
             val player = controller ?: return@runWhenReady
             queue = tracks
             val start = tracks.indexOfFirst { it.id == startId }.let { if (it < 0) 0 else it }
-            player.setMediaItems(tracks.map { it.toMediaItem() }, start, 0L)
+            player.setMediaItems(tracks.map { it.toPlayableMediaItem(context) }, start, 0L)
             player.prepare()
             player.play()
             emitState()
@@ -231,20 +229,4 @@ class ExoPlayerAudioPlayer @Inject constructor(
     private companion object {
         const val TAG = "ExoPlayerAudioPlayer"
     }
-}
-
-private fun LocalFile.toMediaItem(): MediaItem {
-    val art = artworkPath?.let(::File)?.takeIf { it.isFile }
-    val metadata = MediaMetadata.Builder()
-        .setTitle(songTitle())
-        .setArtist(displayArtist)
-        .setAlbumTitle(displayAlbum)
-        .setArtworkUri(art?.let { Uri.fromFile(it) })
-        .setIsPlayable(true)
-        .build()
-    return MediaItem.Builder()
-        .setMediaId(id)
-        .setUri(Uri.fromFile(File(path)))
-        .setMediaMetadata(metadata)
-        .build()
 }

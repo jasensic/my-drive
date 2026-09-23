@@ -4,11 +4,20 @@ import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.AppRelease
 import com.jasensic.mydrive.domain.AuthSession
 import com.jasensic.mydrive.domain.ManifestFile
+import com.jasensic.mydrive.domain.RemoteFile
 import com.jasensic.mydrive.domain.RemoteFileSource
+import com.jasensic.mydrive.domain.ServerStatus
+import com.jasensic.mydrive.domain.ShareGrant
+import com.jasensic.mydrive.domain.SharePermission
+import com.jasensic.mydrive.domain.ShareResourceType
 import com.jasensic.mydrive.domain.SyncManifest
 import com.jasensic.mydrive.domain.LibrarySilo
+import com.jasensic.mydrive.domain.UserProfile
 import com.jasensic.mydrive.domain.parseLibrarySilo
 import com.jasensic.mydrive.domain.parseMediaKind
+import com.jasensic.mydrive.domain.parseResourceAccess
+import com.jasensic.mydrive.domain.parseSharePermission
+import com.jasensic.mydrive.domain.parseShareResourceType
 import com.jasensic.mydrive.domain.wireValue
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
@@ -28,23 +37,34 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class StatusDto(@Json(name = "setup_required") val setupRequired: Boolean = false)
 data class CredentialsDto(val username: String, val password: String)
 data class AuthDto(val token: String, val user: UserDto)
 data class UserDto(val id: String, val username: String)
 data class NameDto(val name: String)
 data class DeviceDto(val id: String, val name: String)
+data class DeviceExclusionsRequestDto(@Json(name = "file_ids") val fileIds: List<String>)
+data class DeviceExclusionsDto(@Json(name = "file_ids") val fileIds: List<String> = emptyList())
 data class ManifestRequestDto(
     @Json(name = "device_id") val deviceId: String,
     @Json(name = "last_sync_at") val lastSyncAt: String?,
     @Json(name = "have_file_ids") val haveFileIds: List<String>,
 )
-data class AlbumDto(val id: String, val name: String, val silo: String = "photos")
+data class AlbumDto(
+    val id: String,
+    val name: String,
+    val silo: String = "photos",
+    val shared: Boolean = false,
+    val access: String = "owner",
+)
 data class CreateAlbumDto(val name: String, val silo: String)
 data class FileDto(
     val id: String,
@@ -55,6 +75,25 @@ data class FileDto(
     @Json(name = "media_kind") val mediaKind: String = "other",
     @Json(name = "album_id") val albumId: String? = null,
     @Json(name = "content_url") val contentUrl: String = "",
+    @Json(name = "thumbnail_url") val thumbnailUrl: String? = null,
+    @Json(name = "created_at") val createdAt: String? = null,
+    val shared: Boolean = false,
+    val access: String = "owner",
+)
+data class ShareDto(
+    val id: String,
+    @Json(name = "resource_type") val resourceType: String = "file",
+    @Json(name = "resource_id") val resourceId: String = "",
+    @Json(name = "owner_id") val ownerId: String = "",
+    @Json(name = "grantee_id") val granteeId: String = "",
+    @Json(name = "grantee_username") val granteeUsername: String = "",
+    val permission: String = "read",
+)
+data class CreateShareDto(
+    @Json(name = "resource_type") val resourceType: String,
+    @Json(name = "resource_id") val resourceId: String,
+    @Json(name = "grantee_id") val granteeId: String,
+    val permission: String,
 )
 data class ManifestDto(
     @Json(name = "generated_at") val generatedAt: String,
@@ -82,14 +121,33 @@ data class AppReleaseDto(
 )
 
 interface DriveApi {
+    @GET("/v1/status")
+    suspend fun status(): StatusDto
+
+    @POST("/v1/setup")
+    suspend fun setup(@Body body: CredentialsDto): AuthDto
+
+    @POST("/v1/register")
+    suspend fun register(@Body body: CredentialsDto): AuthDto
+
     @POST("/v1/login")
     suspend fun login(@Body body: CredentialsDto): AuthDto
+
+    @GET("/v1/users")
+    suspend fun listUsers(@Header("Authorization") authorization: String): List<UserDto>
 
     @POST("/v1/devices")
     suspend fun registerDevice(
         @Header("Authorization") authorization: String,
         @Body body: NameDto,
     ): DeviceDto
+
+    @PUT("/v1/devices/{id}/exclusions")
+    suspend fun putExclusions(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body body: DeviceExclusionsRequestDto,
+    ): DeviceExclusionsDto
 
     @POST("/v1/sync/manifest")
     suspend fun manifest(
@@ -101,6 +159,18 @@ interface DriveApi {
     suspend fun latestRelease(
         @Header("Authorization") authorization: String,
     ): AppReleaseDto
+
+    @GET("/v1/albums")
+    suspend fun listAlbums(
+        @Header("Authorization") authorization: String,
+        @Query("silo") silo: String?,
+    ): List<AlbumDto>
+
+    @GET("/v1/files")
+    suspend fun listFiles(
+        @Header("Authorization") authorization: String,
+        @Query("silo") silo: String?,
+    ): List<FileDto>
 
     @POST("/v1/albums")
     suspend fun createAlbum(
@@ -121,11 +191,24 @@ interface DriveApi {
         @Path("id") id: String,
     )
 
-    @POST("/v1/files/{id}/trash")
-    suspend fun trashFile(
+    @GET("/v1/shares")
+    suspend fun listShares(
+        @Header("Authorization") authorization: String,
+        @Query("resource_type") resourceType: String?,
+        @Query("resource_id") resourceId: String?,
+    ): List<ShareDto>
+
+    @POST("/v1/shares")
+    suspend fun createShare(
+        @Header("Authorization") authorization: String,
+        @Body body: CreateShareDto,
+    ): ShareDto
+
+    @DELETE("/v1/shares/{id}")
+    suspend fun deleteShare(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
-    ): FileDto
+    )
 }
 
 @Singleton
@@ -145,11 +228,20 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
             .build()
             .create(DriveApi::class.java)
 
+    override suspend fun serverStatus(baseUrl: String): ServerStatus =
+        wrapAuth { ServerStatus(api(baseUrl).status().setupRequired) }
+
+    override suspend fun setup(baseUrl: String, username: String, password: String): AuthSession =
+        wrapAuth { api(baseUrl).setup(CredentialsDto(username, password)).toSession() }
+
+    override suspend fun register(baseUrl: String, username: String, password: String): AuthSession =
+        wrapAuth { api(baseUrl).register(CredentialsDto(username, password)).toSession() }
+
     override suspend fun login(baseUrl: String, username: String, password: String): AuthSession =
-        wrapAuth {
-            val dto = api(baseUrl).login(CredentialsDto(username, password))
-            AuthSession(dto.token, dto.user.username, null)
-        }
+        wrapAuth { api(baseUrl).login(CredentialsDto(username, password)).toSession() }
+
+    override suspend fun listUsers(baseUrl: String, token: String): List<UserProfile> =
+        wrapAuth { api(baseUrl).listUsers("Bearer $token").map { UserProfile(it.id, it.username) } }
 
     override suspend fun registerDevice(baseUrl: String, token: String, name: String): String =
         wrapAuth { api(baseUrl).registerDevice("Bearer $token", NameDto(name)).id }
@@ -179,7 +271,7 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                     albumId = it.albumId,
                 )
             },
-            albums = dto.albums.map { Album(it.id, it.name, parseLibrarySilo(it.silo)) },
+            albums = dto.albums.map { it.toAlbum() },
         )
     }
 
@@ -237,13 +329,13 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
     override suspend fun createAlbum(baseUrl: String, token: String, name: String, silo: LibrarySilo): Album =
         wrapAuth {
             val dto = api(baseUrl).createAlbum("Bearer $token", CreateAlbumDto(name, silo.wireValue()))
-            Album(dto.id, dto.name, parseLibrarySilo(dto.silo))
+            Album(dto.id, dto.name, parseLibrarySilo(dto.silo), dto.shared, parseResourceAccess(dto.access))
         }
 
     override suspend fun renameAlbum(baseUrl: String, token: String, id: String, name: String): Album =
         wrapAuth {
             val dto = api(baseUrl).renameAlbum("Bearer $token", id, NameDto(name))
-            Album(dto.id, dto.name, parseLibrarySilo(dto.silo))
+            Album(dto.id, dto.name, parseLibrarySilo(dto.silo), dto.shared, parseResourceAccess(dto.access))
         }
 
     override suspend fun deleteAlbum(baseUrl: String, token: String, id: String) {
@@ -288,8 +380,63 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         }
     }
 
-    override suspend fun trashFile(baseUrl: String, token: String, id: String) {
-        wrapAuth { api(baseUrl).trashFile("Bearer $token", id) }
+    override suspend fun listAlbums(baseUrl: String, token: String, silo: LibrarySilo?): List<Album> =
+        wrapAuth {
+            api(baseUrl).listAlbums("Bearer $token", silo?.wireValue()).map { it.toAlbum() }
+        }
+
+    override suspend fun listFiles(baseUrl: String, token: String, silo: LibrarySilo?): List<RemoteFile> =
+        wrapAuth {
+            api(baseUrl).listFiles("Bearer $token", silo?.wireValue()).map { it.toRemoteFile() }
+        }
+
+    override suspend fun mergeDeviceExclusions(
+        baseUrl: String,
+        token: String,
+        deviceId: String,
+        fileIds: Collection<String>,
+    ): Set<String> = wrapAuth {
+        api(baseUrl).putExclusions(
+            "Bearer $token",
+            deviceId,
+            DeviceExclusionsRequestDto(fileIds.toList()),
+        ).fileIds.toSet()
+    }
+
+    override suspend fun listShares(
+        baseUrl: String,
+        token: String,
+        resourceType: ShareResourceType?,
+        resourceId: String?,
+    ): List<ShareGrant> = wrapAuth {
+        api(baseUrl).listShares(
+            "Bearer $token",
+            resourceType?.wireValue(),
+            resourceId,
+        ).map { it.toGrant() }
+    }
+
+    override suspend fun createShare(
+        baseUrl: String,
+        token: String,
+        resourceType: ShareResourceType,
+        resourceId: String,
+        granteeId: String,
+        permission: SharePermission,
+    ): ShareGrant = wrapAuth {
+        api(baseUrl).createShare(
+            "Bearer $token",
+            CreateShareDto(
+                resourceType = resourceType.wireValue(),
+                resourceId = resourceId,
+                granteeId = granteeId,
+                permission = permission.wireValue(),
+            ),
+        ).toGrant()
+    }
+
+    override suspend fun deleteShare(baseUrl: String, token: String, shareId: String) {
+        wrapAuth { api(baseUrl).deleteShare("Bearer $token", shareId) }
     }
 
     private fun absoluteApi(baseUrl: String, path: String): String =
@@ -302,3 +449,33 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
             if (ex.code() == 401) error("login required") else throw ex
         }
 }
+
+private fun AuthDto.toSession() = AuthSession(token, user.username, null, user.id)
+
+private fun AlbumDto.toAlbum() =
+    Album(id, name, parseLibrarySilo(silo), shared, parseResourceAccess(access))
+
+private fun FileDto.toRemoteFile() = RemoteFile(
+    id = id,
+    name = name,
+    size = size,
+    mime = mime,
+    checksum = checksum,
+    mediaKind = parseMediaKind(mediaKind),
+    albumId = albumId,
+    contentUrl = contentUrl.ifBlank { "/v1/files/$id/content" },
+    thumbnailUrl = thumbnailUrl,
+    shared = shared,
+    access = parseResourceAccess(access),
+    createdAt = createdAt,
+)
+
+private fun ShareDto.toGrant() = ShareGrant(
+    id = id,
+    resourceType = parseShareResourceType(resourceType),
+    resourceId = resourceId,
+    ownerId = ownerId,
+    granteeId = granteeId,
+    granteeUsername = granteeUsername,
+    permission = parseSharePermission(permission),
+)

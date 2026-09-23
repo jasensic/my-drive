@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::handlers::{albums, app, auth, devices, files, health, music, sync};
+use crate::handlers::{albums, app, auth, devices, files, health, music, shares, sync};
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
@@ -39,8 +39,10 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/v1/status", get(auth::status))
         .route("/v1/setup", post(auth::setup))
+        .route("/v1/register", post(auth::register))
         .route("/v1/login", post(auth::login))
         .route("/v1/me", get(auth::me))
+        .route("/v1/users", get(auth::list_users))
         .route("/v1/albums", get(albums::list).post(albums::create))
         .route(
             "/v1/albums/{id}",
@@ -66,6 +68,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/devices/{id}/sync-profile",
             get(devices::get_profile).put(devices::put_profile),
         )
+        .route(
+            "/v1/devices/{id}/exclusions",
+            axum::routing::put(devices::put_exclusions),
+        )
+        .route("/v1/shares", get(shares::list).post(shares::create))
+        .route("/v1/shares/{id}", axum::routing::delete(shares::delete))
         .route("/v1/sync/manifest", post(sync::manifest))
         .route(
             "/v1/app/releases",

@@ -112,6 +112,10 @@ mod tests {
             created_at: Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap(),
             uploaded_at: Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap(),
             deleted_at: None,
+            mobile_object_key: None,
+            mobile_checksum: None,
+            mobile_size: None,
+            mobile_mime: None,
         }
     }
 

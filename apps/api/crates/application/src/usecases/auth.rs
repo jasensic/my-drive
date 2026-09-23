@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use domain::model::{AuthSession, User};
+use domain::model::{AuthSession, User, UserSummary};
 use domain::UserId;
 
 use crate::{AppError, Deps};
@@ -25,6 +25,16 @@ pub trait SetupAdmin: Send + Sync {
 #[async_trait]
 pub trait Login: Send + Sync {
     async fn execute(&self, username: String, password: String) -> Result<SetupResult, AppError>;
+}
+
+#[async_trait]
+pub trait RegisterUser: Send + Sync {
+    async fn execute(&self, username: String, password: String) -> Result<SetupResult, AppError>;
+}
+
+#[async_trait]
+pub trait ListUsers: Send + Sync {
+    async fn execute(&self) -> Result<Vec<UserSummary>, AppError>;
 }
 
 #[async_trait]
@@ -64,15 +74,20 @@ impl SetupAdminService {
     }
 }
 
+fn validate_credentials(username: &str, password: &str) -> Result<(), AppError> {
+    if username.is_empty() || password.len() < 8 {
+        return Err(AppError::validation(
+            "username is required and password must be at least 8 characters",
+        ));
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl SetupAdmin for SetupAdminService {
     async fn execute(&self, username: String, password: String) -> Result<SetupResult, AppError> {
         let username = username.trim().to_string();
-        if username.is_empty() || password.len() < 8 {
-            return Err(AppError::validation(
-                "username is required and password must be at least 8 characters",
-            ));
-        }
+        validate_credentials(&username, &password)?;
         if self.deps.users.count().await? > 0 {
             return Err(AppError::conflict("setup has already been completed"));
         }
@@ -148,5 +163,56 @@ impl GetCurrentUser for GetCurrentUserService {
             .find_by_id(user_id)
             .await?
             .ok_or_else(|| AppError::not_found("user not found"))
+    }
+}
+
+pub struct RegisterUserService {
+    deps: Arc<Deps>,
+}
+
+impl RegisterUserService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl RegisterUser for RegisterUserService {
+    async fn execute(&self, username: String, password: String) -> Result<SetupResult, AppError> {
+        let username = username.trim().to_string();
+        validate_credentials(&username, &password)?;
+        if self.deps.users.count().await? == 0 {
+            return Err(AppError::conflict("setup has not been completed"));
+        }
+        if self.deps.users.find_by_username(&username).await?.is_some() {
+            return Err(AppError::conflict("username already exists"));
+        }
+        let now = self.deps.clock.now();
+        let user = User {
+            id: UserId::new(),
+            username,
+            password_hash: self.deps.hasher.hash(&password)?,
+            created_at: now,
+        };
+        self.deps.users.insert(&user).await?;
+        let token = self.deps.tokens.issue(&user)?;
+        Ok(SetupResult { user, token })
+    }
+}
+
+pub struct ListUsersService {
+    deps: Arc<Deps>,
+}
+
+impl ListUsersService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl ListUsers for ListUsersService {
+    async fn execute(&self) -> Result<Vec<UserSummary>, AppError> {
+        Ok(self.deps.users.list_summaries().await?)
     }
 }

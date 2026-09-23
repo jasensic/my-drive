@@ -5,26 +5,42 @@ import androidx.lifecycle.viewModelScope
 import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.AppRelease
 import com.jasensic.mydrive.domain.AppVersion
+import com.jasensic.mydrive.domain.AuthAction
+import com.jasensic.mydrive.domain.BrowseRemoteLibraryUseCase
 import com.jasensic.mydrive.domain.CheckAppUpdateUseCase
+import com.jasensic.mydrive.domain.CheckServerStatusUseCase
 import com.jasensic.mydrive.domain.ClassifiedLibrary
+import com.jasensic.mydrive.domain.CreateShareUseCase
 import com.jasensic.mydrive.domain.InstallAppUpdateUseCase
+import com.jasensic.mydrive.domain.LanAvailabilityUseCase
 import com.jasensic.mydrive.domain.LibrarySilo
+import com.jasensic.mydrive.domain.LibrarySource
 import com.jasensic.mydrive.domain.ListLocalLibraryUseCase
+import com.jasensic.mydrive.domain.ListSharesUseCase
+import com.jasensic.mydrive.domain.ListUsersUseCase
 import com.jasensic.mydrive.domain.LoadAppStateUseCase
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.ManageLibraryUseCase
 import com.jasensic.mydrive.domain.OpenLocalFileUseCase
+import com.jasensic.mydrive.domain.ResourceAccess
+import com.jasensic.mydrive.domain.RevokeShareUseCase
+import com.jasensic.mydrive.domain.ShareGrant
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
+import com.jasensic.mydrive.domain.SharePermission
+import com.jasensic.mydrive.domain.ShareResourceType
+import com.jasensic.mydrive.domain.SignOutUseCase
+import com.jasensic.mydrive.domain.StreamRemoteFileUseCase
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
 import com.jasensic.mydrive.domain.SyncProgressStore
 import com.jasensic.mydrive.domain.SyncScheduler
 import com.jasensic.mydrive.domain.ThemeMode
 import com.jasensic.mydrive.domain.ThemePreferences
+import com.jasensic.mydrive.domain.UserProfile
 import com.jasensic.mydrive.domain.classifyLibrary
+import com.jasensic.mydrive.domain.hasLocalBytes
 import com.jasensic.mydrive.domain.syncProgressLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +73,16 @@ private data class NavFrame(
     val artistName: String?,
 )
 
+data class ShareSheetState(
+    val visible: Boolean = false,
+    val resourceType: ShareResourceType = ShareResourceType.FILE,
+    val resourceId: String = "",
+    val title: String = "",
+    val users: List<UserProfile> = emptyList(),
+    val grants: List<ShareGrant> = emptyList(),
+    val canManage: Boolean = true,
+)
+
 data class UiState(
     val screen: Screen = Screen.Connect,
     val tab: HubTab = HubTab.MUSIC,
@@ -68,6 +94,11 @@ data class UiState(
     val serverLabel: String = "searching…",
     val lastSync: String? = null,
     val loggedIn: Boolean = false,
+    val username: String = "",
+    val authToken: String? = null,
+    val setupRequired: Boolean = false,
+    val librarySource: LibrarySource = LibrarySource.DEVICE,
+    val lanAvailable: Boolean = false,
     val albums: List<Album> = emptyList(),
     val files: List<LocalFile> = emptyList(),
     val syncProgress: SyncProgress = SyncProgress(),
@@ -75,6 +106,7 @@ data class UiState(
     val error: String? = null,
     val availableUpdate: AppRelease? = null,
     val appVersion: String = "",
+    val shareSheet: ShareSheetState = ShareSheetState(),
 ) {
     val library: ClassifiedLibrary get() = classifyLibrary(files)
 
@@ -110,6 +142,15 @@ class DriveViewModel @Inject constructor(
     private val openLocalFile: OpenLocalFileUseCase,
     private val manageLibrary: ManageLibraryUseCase,
     private val shareFiles: ShareLocalFilesUseCase,
+    private val checkStatus: CheckServerStatusUseCase,
+    private val signOut: SignOutUseCase,
+    private val lan: LanAvailabilityUseCase,
+    private val browseRemote: BrowseRemoteLibraryUseCase,
+    private val streamRemote: StreamRemoteFileUseCase,
+    private val listUsers: ListUsersUseCase,
+    private val listShares: ListSharesUseCase,
+    private val createShare: CreateShareUseCase,
+    private val revokeShare: RevokeShareUseCase,
     themePreferences: ThemePreferences,
     appVersion: AppVersion,
 ) : ViewModel() {
@@ -131,9 +172,14 @@ class DriveViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            refresh(discoverOnStart = true)
+            paintLocalLibrary()
             if (_ui.value.loggedIn) {
+                viewModelScope.launch { enrichLibraryInBackground() }
+                viewModelScope.launch { checkUpdateInBackground() }
+                viewModelScope.launch { runCatching { manageLibrary.flushExclusions() } }
                 syncExisting()
+            } else {
+                viewModelScope.launch { probeServerStatus() }
             }
         }
     }
@@ -150,8 +196,7 @@ class DriveViewModel @Inject constructor(
         when (progress.phase) {
             SyncPhase.COMPLETED -> {
                 val library = runCatching { listLibrary.execute() }.getOrNull()
-                val snapshot = runCatching { loadState.execute(discover = false) }.getOrNull()
-                val update = runCatching { checkUpdate.execute() }.getOrNull()
+                val snapshot = runCatching { loadState.execute() }.getOrNull()
                 navigate(currentFrame().copy(screen = Screen.Hub), record = _ui.value.screen != Screen.Hub)
                 _ui.value = _ui.value.copy(
                     syncProgress = progress,
@@ -159,10 +204,25 @@ class DriveViewModel @Inject constructor(
                     loggedIn = true,
                     serverLabel = snapshot?.server?.let { "${it.host}:${it.port}" } ?: _ui.value.serverLabel,
                     lastSync = snapshot?.lastSync ?: _ui.value.lastSync,
-                    albums = library?.albums ?: _ui.value.albums,
-                    files = library?.files ?: _ui.value.files,
-                    availableUpdate = update,
+                    albums = if (_ui.value.librarySource == LibrarySource.DEVICE) {
+                        library?.albums ?: _ui.value.albums
+                    } else {
+                        _ui.value.albums
+                    },
+                    files = if (_ui.value.librarySource == LibrarySource.DEVICE) {
+                        library?.files ?: _ui.value.files
+                    } else {
+                        _ui.value.files
+                    },
+                    lanAvailable = lan.isAvailable(),
+                    username = snapshot?.username ?: _ui.value.username,
+                    authToken = snapshot?.token ?: _ui.value.authToken,
                 )
+                if (_ui.value.librarySource == LibrarySource.SERVER) {
+                    viewModelScope.launch { refreshLibrary() }
+                }
+                viewModelScope.launch { checkUpdateInBackground() }
+                viewModelScope.launch { enrichLibraryInBackground() }
                 delay(1_500)
                 if (syncProgressStore.current().phase == SyncPhase.COMPLETED) {
                     syncProgressStore.publish(SyncProgress())
@@ -175,6 +235,8 @@ class DriveViewModel @Inject constructor(
                     error = if (needsLogin) "Sign in once to this server" else progress.errorMessage,
                     loggedIn = if (needsLogin) false else _ui.value.loggedIn,
                     screen = if (needsLogin) Screen.Connect else _ui.value.screen,
+                    setupRequired = _ui.value.setupRequired ||
+                        (progress.errorMessage?.contains("setup has not been completed") == true),
                 )
                 delay(2_000)
                 if (syncProgressStore.current().phase == SyncPhase.FAILED) {
@@ -346,7 +408,7 @@ class DriveViewModel @Inject constructor(
         val ids = _ui.value.selectedIds.toList()
         if (ids.isEmpty()) return
         viewModelScope.launch {
-            runCatching { manageLibrary.trashFiles(ids) }
+            runCatching { manageLibrary.excludeFromDevice(ids) }
                 .onSuccess {
                     clearSelection()
                     refreshLibrary()
@@ -359,6 +421,90 @@ class DriveViewModel @Inject constructor(
         val files = _ui.value.selectedFiles
         runCatching { shareFiles.execute(files) }
             .onFailure { _ui.value = _ui.value.copy(error = it.message) }
+    }
+
+    fun shareWithAccount() {
+        val album = _ui.value.albums.find { it.id == _ui.value.albumId }
+        val selected = _ui.value.selectedFiles
+        when {
+            selected.size == 1 -> openShareSheet(
+                ShareResourceType.FILE,
+                selected.first().id,
+                selected.first().name,
+                selected.first().access,
+            )
+            album != null && selected.isEmpty() -> openShareSheet(
+                ShareResourceType.ALBUM,
+                album.id,
+                album.name,
+                album.access,
+            )
+            else -> _ui.value = _ui.value.copy(error = "Select one file, or open an album, to share with an account")
+        }
+    }
+
+    fun closeShareSheet() {
+        _ui.value = _ui.value.copy(shareSheet = ShareSheetState())
+    }
+
+    fun confirmShare(granteeId: String, permission: SharePermission) {
+        val sheet = _ui.value.shareSheet
+        if (!sheet.visible) return
+        viewModelScope.launch {
+            runCatching {
+                createShare.execute(sheet.resourceType, sheet.resourceId, granteeId, permission)
+                listShares.execute(sheet.resourceType, sheet.resourceId)
+            }.onSuccess { grants ->
+                _ui.value = _ui.value.copy(
+                    shareSheet = sheet.copy(grants = grants),
+                    error = null,
+                )
+            }.onFailure { _ui.value = _ui.value.copy(error = it.message) }
+        }
+    }
+
+    fun revokeShare(shareId: String) {
+        val sheet = _ui.value.shareSheet
+        viewModelScope.launch {
+            runCatching {
+                revokeShare.execute(shareId)
+                listShares.execute(sheet.resourceType, sheet.resourceId)
+            }.onSuccess { grants ->
+                _ui.value = _ui.value.copy(shareSheet = sheet.copy(grants = grants), error = null)
+            }.onFailure { _ui.value = _ui.value.copy(error = it.message) }
+        }
+    }
+
+    fun setLibrarySource(source: LibrarySource) {
+        if (source == _ui.value.librarySource) return
+        if (source == LibrarySource.SERVER && !lan.isAvailable()) {
+            _ui.value = _ui.value.copy(error = "On server needs Wi-Fi", lanAvailable = false)
+            return
+        }
+        _ui.value = _ui.value.copy(librarySource = source, error = null, lanAvailable = lan.isAvailable())
+        viewModelScope.launch { refreshLibrary() }
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            runCatching { signOut.execute() }
+            backStack.clear()
+            forwardStack.clear()
+            _ui.value = _ui.value.copy(
+                screen = Screen.Connect,
+                loggedIn = false,
+                username = "",
+                authToken = null,
+                albums = emptyList(),
+                files = emptyList(),
+                selectedIds = emptySet(),
+                librarySource = LibrarySource.DEVICE,
+                lastSync = null,
+                error = null,
+                shareSheet = ShareSheetState(),
+            )
+            probeServerStatus()
+        }
     }
 
     fun stepViewer(delta: Int) {
@@ -382,7 +528,11 @@ class DriveViewModel @Inject constructor(
         viewModelScope.launch {
             val current = _ui.value.files.find { it.id == fileId } ?: return@launch
             runCatching {
-                if (!File(current.path).isFile) {
+                val ready = if (current.hasLocalBytes()) {
+                    current
+                } else if (_ui.value.librarySource == LibrarySource.SERVER || !current.remoteUrl.isNullOrBlank()) {
+                    streamRemote.execute(current)
+                } else {
                     _ui.value = _ui.value.copy(error = null)
                     syncScheduler.enqueue()
                     val result = syncProgressStore.observe().first {
@@ -393,12 +543,10 @@ class DriveViewModel @Inject constructor(
                     }
                     val library = listLibrary.execute()
                     _ui.value = _ui.value.copy(albums = library.albums, files = library.files)
-                    val updated = library.files.find { it.id == fileId }
+                    library.files.find { it.id == fileId }
                         ?: error("File is not on this device yet. Sync first.")
-                    openLocalFile.execute(updated)
-                } else {
-                    openLocalFile.execute(current)
                 }
+                openLocalFile.execute(ready)
             }.onFailure {
                 _ui.value = _ui.value.copy(error = it.message)
             }
@@ -406,7 +554,15 @@ class DriveViewModel @Inject constructor(
     }
 
     fun sync(username: String, password: String, manualHost: String) {
-        connect(username, password, manualHost)
+        connect(username, password, manualHost, AuthAction.LOGIN)
+    }
+
+    fun register(username: String, password: String, manualHost: String) {
+        connect(username, password, manualHost, AuthAction.REGISTER)
+    }
+
+    fun setupAdmin(username: String, password: String, manualHost: String) {
+        connect(username, password, manualHost, AuthAction.SETUP)
     }
 
     fun syncExisting() {
@@ -414,15 +570,16 @@ class DriveViewModel @Inject constructor(
     }
 
     fun scanLan(manualHost: String) {
-        connect(null, null, manualHost.ifBlank { null })
+        connect(null, null, manualHost.ifBlank { null }, AuthAction.LOGIN)
     }
 
-    private fun connect(username: String?, password: String?, manualHost: String?) {
+    private fun connect(username: String?, password: String?, manualHost: String?, authAction: AuthAction) {
         _ui.value = _ui.value.copy(error = null)
         syncScheduler.enqueue(
             username?.ifBlank { null },
             password?.ifBlank { null },
             manualHost?.ifBlank { null },
+            authAction,
         )
     }
 
@@ -444,24 +601,85 @@ class DriveViewModel @Inject constructor(
         }
     }
 
-    private suspend fun refresh(discoverOnStart: Boolean) {
-        val snapshot = runCatching { loadState.execute(discoverOnStart) }.getOrNull() ?: return
-        val update = if (snapshot.loggedIn) runCatching { checkUpdate.execute() }.getOrNull() else null
+    private suspend fun paintLocalLibrary() {
+        val snapshot = runCatching { loadState.execute() }.getOrNull() ?: return
         _ui.value = _ui.value.copy(
-            serverLabel = snapshot.server?.let { "${it.host}:${it.port}" } ?: "not found",
+            serverLabel = snapshot.server?.let { "${it.host}:${it.port}" }
+                ?: if (snapshot.loggedIn) "offline" else "searching…",
             lastSync = snapshot.lastSync,
             albums = snapshot.library.albums,
             files = snapshot.library.files,
-            availableUpdate = update,
             loggedIn = snapshot.loggedIn,
+            username = snapshot.username,
+            authToken = snapshot.token,
+            lanAvailable = lan.isAvailable(),
+            librarySource = LibrarySource.DEVICE,
             screen = if (snapshot.loggedIn) Screen.Hub else Screen.Connect,
         )
         syncNavFlags()
     }
 
+    private suspend fun probeServerStatus(manualHost: String? = null) {
+        val status = runCatching { checkStatus.execute(manualHost) }.getOrNull() ?: return
+        val server = runCatching { loadState.execute() }.getOrNull()?.server
+        _ui.value = _ui.value.copy(
+            setupRequired = status.setupRequired,
+            lanAvailable = lan.isAvailable(),
+            serverLabel = server?.let { "${it.host}:${it.port}" } ?: _ui.value.serverLabel,
+        )
+    }
+
+    private fun openShareSheet(
+        type: ShareResourceType,
+        resourceId: String,
+        title: String,
+        access: ResourceAccess,
+    ) {
+        viewModelScope.launch {
+            val canManage = access == ResourceAccess.OWNER
+            val users = runCatching { listUsers.execute() }.getOrElse { emptyList() }
+            val grants = runCatching { listShares.execute(type, resourceId) }.getOrElse { emptyList() }
+            _ui.value = _ui.value.copy(
+                shareSheet = ShareSheetState(
+                    visible = true,
+                    resourceType = type,
+                    resourceId = resourceId,
+                    title = title,
+                    users = users,
+                    grants = grants,
+                    canManage = canManage,
+                ),
+                error = null,
+            )
+        }
+    }
+
+    private suspend fun enrichLibraryInBackground() {
+        if (_ui.value.librarySource != LibrarySource.DEVICE) return
+        val library = runCatching { listLibrary.enrich() }.getOrNull() ?: return
+        _ui.value = _ui.value.copy(albums = library.albums, files = library.files)
+    }
+
+    private suspend fun checkUpdateInBackground() {
+        val update = runCatching { checkUpdate.execute() }.getOrNull()
+        _ui.value = _ui.value.copy(availableUpdate = update)
+    }
+
     private suspend fun refreshLibrary() {
-        val library = runCatching { listLibrary.execute() }.getOrNull() ?: return
-        _ui.value = _ui.value.copy(albums = library.albums, files = library.files, error = null)
+        val source = _ui.value.librarySource
+        val library = runCatching {
+            if (source == LibrarySource.SERVER && lan.isAvailable()) {
+                browseRemote.execute()
+            } else {
+                listLibrary.execute()
+            }
+        }.getOrNull() ?: return
+        _ui.value = _ui.value.copy(
+            albums = library.albums,
+            files = library.files,
+            error = null,
+            lanAvailable = lan.isAvailable(),
+        )
     }
 
     private fun currentFrame() = NavFrame(

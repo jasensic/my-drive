@@ -17,6 +17,7 @@ import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
 import com.jasensic.mydrive.domain.SyncProgressStore
+import com.jasensic.mydrive.domain.WIFI_UNAVAILABLE
 import com.jasensic.mydrive.domain.syncProgressLabel
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -51,10 +52,19 @@ class SyncWorker @AssistedInject constructor(
             val user = inputData.getString(KEY_USERNAME)
             val pass = inputData.getString(KEY_PASSWORD)
             val host = inputData.getString(KEY_HOST)
-            syncFiles.execute(user, pass, host)
+            val action = com.jasensic.mydrive.domain.parseAuthAction(inputData.getString(KEY_AUTH_ACTION))
+            syncFiles.execute(user, pass, host, action)
             Result.success()
         } catch (err: Throwable) {
-            if (err.message == "login required") Result.failure() else Result.retry()
+            val message = err.message.orEmpty()
+            if (message == "login required" ||
+                message == WIFI_UNAVAILABLE ||
+                message.contains("not found on LAN")
+            ) {
+                Result.failure()
+            } else {
+                Result.retry()
+            }
         } finally {
             updates.cancel()
         }
@@ -151,6 +161,7 @@ class SyncWorker @AssistedInject constructor(
         const val KEY_USERNAME = "username"
         const val KEY_PASSWORD = "password"
         const val KEY_HOST = "host"
+        const val KEY_AUTH_ACTION = "authAction"
         const val CHANNEL_ID = "mydrive_sync"
         const val NOTIFICATION_ID = 42
     }

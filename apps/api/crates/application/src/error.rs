@@ -23,4 +23,8 @@ impl AppError {
     pub fn unauthorized(msg: impl Into<String>) -> Self {
         Self::Domain(DomainError::unauthorized(msg))
     }
+
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self::Domain(DomainError::forbidden(msg))
+    }
 }

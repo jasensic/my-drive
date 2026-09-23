@@ -31,22 +31,16 @@ pub fn evaluate_manifest(
     files: &[FileRecord],
     rules: &[SyncRule],
     have_file_ids: &HashSet<FileId>,
+    excluded_file_ids: &HashSet<FileId>,
     now: DateTime<Utc>,
 ) -> SyncManifest {
     let _ = have_file_ids;
     let selected = files
         .iter()
         .filter(|file| !file.is_trashed())
+        .filter(|file| !excluded_file_ids.contains(&file.id))
         .filter(|file| rules.iter().any(|rule| rule.matches(file, now)))
-        .map(|file| ManifestEntry {
-            id: file.id,
-            name: file.name.clone(),
-            size: file.size,
-            mime: file.mime.clone(),
-            checksum: file.checksum.clone(),
-            media_kind: file.media_kind,
-            album_id: file.album_id,
-        })
+        .map(ManifestEntry::from_file)
         .collect();
 
     SyncManifest {
@@ -82,6 +76,10 @@ mod tests {
             created_at: created,
             uploaded_at: created,
             deleted_at: None,
+            mobile_object_key: None,
+            mobile_checksum: None,
+            mobile_size: None,
+            mobile_mime: None,
         }
     }
 
@@ -122,7 +120,7 @@ mod tests {
             large_video,
             music.clone(),
         ];
-        let manifest = evaluate_manifest(&files, &rules, &HashSet::new(), now);
+        let manifest = evaluate_manifest(&files, &rules, &HashSet::new(), &HashSet::new(), now);
         let ids: HashSet<_> = manifest.files.iter().map(|f| f.id).collect();
         assert!(ids.contains(&recent_photo.id));
         assert!(ids.contains(&small_video.id));
@@ -143,7 +141,7 @@ mod tests {
         }];
         let mut have = HashSet::new();
         have.insert(photo.id);
-        let manifest = evaluate_manifest(&[photo.clone()], &rules, &have, now);
+        let manifest = evaluate_manifest(&[photo.clone()], &rules, &have, &HashSet::new(), now);
         assert_eq!(manifest.files.len(), 1);
         assert_eq!(manifest.files[0].album_id, photo.album_id);
         assert_eq!(manifest.files[0].name, photo.name);
@@ -160,10 +158,11 @@ mod tests {
             max_size_bytes: None,
             include_all: true,
         }];
-        let manifest = evaluate_manifest(&[photo.clone()], &rules, &HashSet::new(), now);
+        let manifest = evaluate_manifest(&[photo.clone()], &rules, &HashSet::new(), &HashSet::new(), now);
         assert_eq!(manifest.files[0].media_kind, MediaKind::Photo);
         assert_eq!(manifest.files[0].album_id, photo.album_id);
         assert!(manifest.albums.is_empty());
+        assert!(!manifest.files[0].mobile);
     }
 
     #[test]
@@ -177,7 +176,65 @@ mod tests {
             max_size_bytes: None,
             include_all: true,
         }];
-        let manifest = evaluate_manifest(&[photo], &rules, &HashSet::new(), now);
+        let manifest = evaluate_manifest(&[photo], &rules, &HashSet::new(), &HashSet::new(), now);
         assert!(manifest.files.is_empty());
+    }
+
+    #[test]
+    fn skips_device_excluded_files() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let keep = file(MediaKind::Photo, 1, 10);
+        let skip = file(MediaKind::Photo, 1, 10);
+        let rules = vec![SyncRule {
+            media_kind: MediaKind::Photo,
+            max_age_days: None,
+            max_size_bytes: None,
+            include_all: true,
+        }];
+        let mut excluded = HashSet::new();
+        excluded.insert(skip.id);
+        let manifest = evaluate_manifest(&[keep.clone(), skip], &rules, &HashSet::new(), &excluded, now);
+        assert_eq!(manifest.files.len(), 1);
+        assert_eq!(manifest.files[0].id, keep.id);
+    }
+
+    #[test]
+    fn audio_entries_use_mobile_variant_when_present() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let mut flac = file(MediaKind::Audio, 1, 80 * 1024 * 1024);
+        flac.mime = "audio/flac".into();
+        flac.checksum = "sha256:flac".into();
+        flac.mobile_object_key = Some("music/id/mobile.m4a".into());
+        flac.mobile_checksum = Some("sha256:aac".into());
+        flac.mobile_size = Some(12_000_000);
+        flac.mobile_mime = Some("audio/mp4".into());
+        let mp3 = {
+            let mut audio = file(MediaKind::Audio, 1, 4_000_000);
+            audio.mime = "audio/mpeg".into();
+            audio.checksum = "sha256:mp3".into();
+            audio
+        };
+        let rules = vec![SyncRule {
+            media_kind: MediaKind::Audio,
+            max_age_days: None,
+            max_size_bytes: None,
+            include_all: true,
+        }];
+        let manifest = evaluate_manifest(
+            &[flac.clone(), mp3.clone()],
+            &rules,
+            &HashSet::new(),
+            &HashSet::new(),
+            now,
+        );
+        let flac_entry = manifest.files.iter().find(|e| e.id == flac.id).unwrap();
+        assert!(flac_entry.mobile);
+        assert_eq!(flac_entry.size, 12_000_000);
+        assert_eq!(flac_entry.mime, "audio/mp4");
+        assert_eq!(flac_entry.checksum, "sha256:aac");
+        let mp3_entry = manifest.files.iter().find(|e| e.id == mp3.id).unwrap();
+        assert!(!mp3_entry.mobile);
+        assert_eq!(mp3_entry.size, mp3.size);
+        assert_eq!(mp3_entry.mime, "audio/mpeg");
     }
 }
