@@ -1,0 +1,33 @@
+name: Upload named Android APK
+description: Publish the versioned my-drive APK as a single-file GitHub Actions artifact
+outputs:
+  name:
+    description: APK file name, e.g. my-drive-0.0.16-PR9.apk
+    value: ${{ steps.apk.outputs.name }}
+  path:
+    description: Workspace-relative path to the APK
+    value: ${{ steps.apk.outputs.path }}
+runs:
+  using: composite
+  steps:
+    - id: apk
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(apps/android/app/build/outputs/apk/release/my-drive-*.apk)
+        if [ "${#apks[@]}" -ne 1 ]; then
+          echo "::error::Expected exactly one my-drive-*.apk under apps/android/app/build/outputs/apk/release, found ${#apks[@]}"
+          ls -la apps/android/app/build/outputs/apk/release || true
+          exit 1
+        fi
+        {
+          echo "path=${apks[0]}"
+          echo "name=$(basename "${apks[0]}")"
+        } >> "$GITHUB_OUTPUT"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.apk.outputs.name }}
+        path: ${{ steps.apk.outputs.path }}
+        if-no-files-found: error
+        compression-level: 0
