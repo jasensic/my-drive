@@ -11,6 +11,8 @@ data class AndroidGitVersion(
     val versionCode: Int,
     val versionName: String,
 ) {
+    fun apkFileName(appName: String = "my-drive"): String = "$appName-$versionName.apk"
+
     companion object {
         private val SEMVER = Regex("""^v?(\d+)\.(\d+)\.(\d+)$""")
 
@@ -88,7 +90,7 @@ data class AndroidGitVersion(
                 Triple(tag.major, tag.minor, tag.patch + commitsAfterTag.coerceAtLeast(0))
             }
             val suffix = when {
-                prNumber != null -> "-PR.$prNumber"
+                prNumber != null -> "-PR$prNumber"
                 !official -> "-PR"
                 else -> ""
             }

@@ -52,8 +52,9 @@ class AndroidGitVersionTest {
             prNumber = 1,
             official = false,
         )
-        assertEquals("1.0.1-PR.1", pr.versionName)
+        assertEquals("1.0.1-PR1", pr.versionName)
         assertEquals(1_000_001, pr.versionCode)
+        assertEquals("my-drive-1.0.1-PR1.apk", pr.apkFileName())
     }
 
     @Test

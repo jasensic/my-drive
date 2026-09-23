@@ -63,6 +63,13 @@ android {
         compose = true
         buildConfig = true
     }
+    applicationVariants.configureEach {
+        val apkName = androidVersion.apkFileName()
+        outputs.configureEach {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl)
+                .outputFileName = apkName
+        }
+    }
 }
 
 dependencies {
