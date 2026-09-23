@@ -42,6 +42,7 @@ test.describe('photos library', () => {
     const photo = pngFile(`${uniqueName('album-shot')}.png`);
     await library.createAlbum(album);
     await library.upload(photo);
+    await expect(library.ok).toContainText('Uploaded 1 file');
     await expect(library.fileLink(photo.name)).toBeVisible();
 
     await page.locator('.filters').getByRole('combobox').click();

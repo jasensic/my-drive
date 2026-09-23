@@ -61,12 +61,12 @@ test.describe('shell', () => {
     await page.goto('/photos');
     await shell.logout.click();
     await expect(page).toHaveURL(/\/login/);
+    const wasDark = (await login.themeToggle.getAttribute('aria-label')) === 'Switch to light mode';
     await login.themeToggle.click();
-    const label = await login.themeToggle.getAttribute('aria-label');
-    if (label === 'Switch to light mode') {
-      await expect(page.locator('html')).toHaveClass(/app-dark/);
-    } else {
+    if (wasDark) {
       await expect(page.locator('html')).not.toHaveClass(/app-dark/);
+    } else {
+      await expect(page.locator('html')).toHaveClass(/app-dark/);
     }
   });
 

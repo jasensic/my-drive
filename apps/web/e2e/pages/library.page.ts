@@ -1,4 +1,4 @@
-import { Locator, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 import { UploadPayload } from '../support/files';
 
 export type LibrarySiloPath = '/photos' | '/music' | '/files';
@@ -45,10 +45,11 @@ export class LibraryPage {
   async createAlbum(name: string): Promise<void> {
     await this.albumName.fill(name);
     await this.page.getByRole('button', { name: 'Create album' }).click();
+    await expect(this.page.getByRole('button', { name: 'Rename album' })).toBeVisible();
   }
 
   async openTrash(): Promise<void> {
-    await this.page.getByRole('button', { name: 'Trash' }).click();
+    await this.page.getByRole('button', { name: 'Trash', exact: true }).click();
   }
 
   async backToLibrary(): Promise<void> {
@@ -56,10 +57,19 @@ export class LibraryPage {
   }
 
   async selectFile(name: string): Promise<void> {
-    await this.card(name).locator('.p-checkbox').click();
+    const card = this.card(name);
+    await expect(card).toBeVisible();
+    const selected = await card.evaluate(
+      (el) => el.classList.contains('selected') || Boolean(el.querySelector('.selected')),
+    );
+    if (!selected) {
+      await card.locator('.p-checkbox').click();
+    }
+    await expect(this.page.getByRole('button', { name: 'Manage' })).toBeVisible();
   }
 
   async openManageMenu(): Promise<void> {
+    await expect(this.page.getByRole('button', { name: 'Manage' })).toBeVisible();
     await this.page.getByRole('button', { name: 'Manage' }).click();
   }
 

@@ -17,7 +17,7 @@ test.describe('trash', () => {
 
     await library.openTrash();
     await expect(library.fileLink(keep.name)).toBeVisible();
-    await expect(page.getByText(/Deletes .*in 30 days|Deletes /)).toBeVisible();
+    await expect(library.card(keep.name).getByText(/Deletes /)).toBeVisible();
     await library.card(keep.name).getByRole('button', { name: 'Restore' }).click();
     await library.backToLibrary();
     await expect(library.fileLink(keep.name)).toBeVisible();

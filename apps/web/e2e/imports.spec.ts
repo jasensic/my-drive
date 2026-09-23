@@ -7,10 +7,10 @@ test.describe('cloud imports', () => {
     await imports.goto();
     await expect(imports.title).toBeVisible();
     await expect(imports.tab('Google Photos')).toBeVisible();
-    await expect(page.getByText('GOOGLE_OAUTH_CLIENT_ID')).toBeVisible();
+    await expect(page.getByRole('tabpanel', { name: 'Google Photos' }).getByText('GOOGLE_OAUTH_CLIENT_ID')).toBeVisible();
 
     await imports.tab('Google Drive').click();
-    await expect(page.getByText('GOOGLE_API_KEY')).toBeVisible();
+    await expect(page.getByRole('tabpanel', { name: 'Google Drive' }).getByText('GOOGLE_API_KEY')).toBeVisible();
 
     await imports.tab('Spotify').click();
     await expect(page.getByText('SPOTIFY_CLIENT_ID')).toBeVisible();
