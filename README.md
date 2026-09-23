@@ -52,7 +52,7 @@ Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódi
 docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
-Las **versiones de Android** no las actualiza Watchtower. Se publica el APK en el portal (**App updates**): el servidor lee `versionCode`/`versionName` del propio APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` del APK es mayor, descarga e instala. CI genera `app-release.apk` en cada PR y en tags `v*`.
+Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versionName` desde el último tag semver de la rama (`1.0.0` o `v1.0.0`): el commit del tag es esa versión y cada commit posterior sube el parche (`1.0.1`, `1.0.2`, …). Sin tags, empieza en `0.0.N` según el número de commits. La versión oficial (sin sufijo) solo sale al mergear a `main`; un APK de PR es `1.0.1-PR42`. `versionCode` deriva de esa semver para que las actualizaciones in-app sigan subiendo. Se publica el APK en el portal (**App updates**): el servidor lee esos campos del APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` es mayor, descarga e instala. CI genera `my-drive-<versionName>.apk` (por ejemplo `my-drive-0.0.16-PR9.apk`) en cada push a `main`, PR y tags `v*`.
 
 ## Funcionalidades principales
 

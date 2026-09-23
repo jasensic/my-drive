@@ -53,34 +53,61 @@ import { extractError } from './login.page';
       <div class="card-list">
         @for (device of devices(); track device.id) {
           <p-card [header]="device.name" [subheader]="device.last_sync_at ? 'Last sync ' + device.last_sync_at : 'Never synced'">
-            <p-button label="Edit rules" (onClick)="edit(device)" />
+            @if (editing()?.device_id === device.id) {
+              <div class="stack-form">
+                <h2 class="section-title">Sync rules</h2>
+                <div class="field">
+                  <label for="profile-name">Profile name</label>
+                  <input id="profile-name" pInputText [(ngModel)]="profileName" />
+                </div>
+                @for (rule of rules(); track rule.media_kind) {
+                  <div class="rule">
+                    <div class="rule-head">
+                      <strong class="rule-kind">{{ kindLabel(rule.media_kind) }}</strong>
+                      <label class="check-row">
+                        <p-checkbox
+                          [ngModel]="rule.include_all"
+                          (ngModelChange)="patchRule(rule.media_kind, { include_all: $event })"
+                          [binary]="true"
+                        />
+                        Include all
+                      </label>
+                    </div>
+                    <div class="rule-fields">
+                      <label class="field">Max age (days)
+                        <p-inputnumber
+                          [ngModel]="rule.max_age_days"
+                          (ngModelChange)="patchRule(rule.media_kind, { max_age_days: $event })"
+                          [min]="0"
+                          [useGrouping]="false"
+                          [showButtons]="true"
+                          placeholder="No limit"
+                        />
+                      </label>
+                      <label class="field">Max size (MB)
+                        <p-inputnumber
+                          [ngModel]="bytesToMb(rule.max_size_bytes)"
+                          (ngModelChange)="patchMaxSizeMb(rule.media_kind, $event)"
+                          [min]="0"
+                          [useGrouping]="false"
+                          [showButtons]="true"
+                          placeholder="No limit"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                }
+                <div class="actions">
+                  <p-button label="Save profile" (onClick)="save(device.id)" />
+                  <p-button label="Cancel" [text]="true" (onClick)="cancel()" />
+                </div>
+              </div>
+            } @else {
+              <p-button label="Edit rules" (onClick)="edit(device)" />
+            }
           </p-card>
         }
       </div>
-
-      @if (editing(); as profile) {
-        <p-card header="Sync rules">
-          <div class="stack-form">
-            <div class="field">
-              <label for="profile-name">Profile name</label>
-              <input id="profile-name" pInputText [(ngModel)]="profileName" />
-            </div>
-            @for (rule of rules(); track rule.media_kind) {
-              <div class="rule">
-                <strong class="rule-kind">{{ rule.media_kind }}</strong>
-                <label class="check-row"><p-checkbox [(ngModel)]="rule.include_all" [binary]="true" /> Include all</label>
-                <label class="field">Max age (days)
-                  <p-inputnumber [(ngModel)]="rule.max_age_days" [min]="0" [showButtons]="true" />
-                </label>
-                <label class="field">Max size (bytes)
-                  <p-inputnumber [(ngModel)]="rule.max_size_bytes" [min]="0" [showButtons]="true" />
-                </label>
-              </div>
-            }
-            <p-button label="Save profile" (onClick)="save(profile.device_id)" />
-          </div>
-        </p-card>
-      }
     </section>
   `,
 })
@@ -130,10 +157,46 @@ export class DevicesPage {
     }
   }
 
+  kindLabel(kind: MediaKind) {
+    switch (kind) {
+      case 'photo':
+        return 'Photos';
+      case 'video':
+        return 'Videos';
+      case 'audio':
+        return 'Audio';
+      default:
+        return 'Files';
+    }
+  }
+
+  bytesToMb(bytes: number | null) {
+    if (bytes == null) {
+      return null;
+    }
+    return bytes / MB;
+  }
+
+  patchMaxSizeMb(kind: MediaKind, mb: number | null) {
+    this.patchRule(kind, { max_size_bytes: mb == null ? null : Math.round(mb * MB) });
+  }
+
+  patchRule(kind: MediaKind, patch: Partial<SyncRule>) {
+    this.rules.update((current) =>
+      current.map((rule) => (rule.media_kind === kind ? { ...rule, ...patch } : rule)),
+    );
+  }
+
+  cancel() {
+    this.editing.set(null);
+    this.rules.set([]);
+    this.profileName = '';
+  }
+
   async save(deviceId: string) {
     try {
       await this.saveProfile.execute(deviceId, this.profileName, this.rules());
-      this.editing.set(null);
+      this.cancel();
       await this.reload();
     } catch (err) {
       this.error.set(extractError(err));
@@ -141,15 +204,17 @@ export class DevicesPage {
   }
 }
 
+const MB = 1024 * 1024;
+
 function ensureKinds(rules: SyncRule[]): SyncRule[] {
-  const kinds: MediaKind[] = ['photo', 'video', 'audio'];
+  const kinds: MediaKind[] = ['photo', 'video', 'audio', 'other'];
   return kinds.map(
     (kind) =>
       rules.find((r) => r.media_kind === kind) ?? {
         media_kind: kind,
         max_age_days: kind === 'photo' ? 365 : null,
-        max_size_bytes: kind === 'video' ? 10 * 1024 * 1024 : null,
-        include_all: kind === 'audio',
+        max_size_bytes: kind === 'video' ? 10 * MB : null,
+        include_all: kind === 'audio' || kind === 'other',
       },
   );
 }

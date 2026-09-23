@@ -5,11 +5,17 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,7 +46,17 @@ jobs:
       - name: Assemble release APK
         working-directory: apps/android
         run: ./gradlew :app:assembleRelease --no-daemon
-      - uses: actions/upload-artifact@v4
-        with:
-          name: my-drive-apk
-          path: apps/android/app/build/outputs/apk/release/*.apk
+      - id: apk
+        uses: ./.github/actions/upload-named-android-apk
+      - name: Attach APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          apk="${{ steps.apk.outputs.path }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+          else
+            gh release create "$tag" "$apk" --generate-notes --title "$tag"
+          fi

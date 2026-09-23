@@ -52,22 +52,22 @@ import { extractError } from './login.page';
             <label for="changelog">Changelog</label>
             <textarea id="changelog" [(ngModel)]="changelog" rows="3"></textarea>
           </div>
+          <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
+            (change)="onFile(picker.files); picker.value = ''" />
           <div
             class="dropzone"
             [class.active]="dragOver()"
+            tabindex="0"
+            role="button"
+            (click)="picker.click()"
+            (keydown.enter)="picker.click()"
+            (keydown.space)="$event.preventDefault(); picker.click()"
             (dragover)="onDragOver($event)"
             (dragleave)="onDragLeave($event)"
             (drop)="onDrop($event)"
           >
-            <input #picker type="file" accept=".apk,application/vnd.android.package-archive" hidden
-              (change)="onFile(picker.files); picker.value = ''" />
-            <span class="dropzone-copy">
-              <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
-              <span>{{ apk?.name || 'Drag and drop an APK' }}</span>
-            </span>
-            <p-button label="Choose APK" (onClick)="picker.click()">
-              <ng-template #icon><svg lucideIcon="smartphone" aria-hidden="true" /></ng-template>
-            </p-button>
+            <svg lucideIcon="cloud-upload" [size]="20" aria-hidden="true" />
+            <span>{{ apk?.name || 'Drag and drop an APK here, or click to choose' }}</span>
           </div>
           @if (inspecting()) {
             <p class="caption">Reading version from APK…</p>
@@ -157,6 +157,9 @@ export class AppUpdatesPage {
 
   onDragOver(event: DragEvent) {
     event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
     this.dragOver.set(true);
   }
 
