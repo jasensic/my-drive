@@ -31,6 +31,12 @@ fun otherAudio(files: List<LocalFile>): List<LocalFile> =
     files.filter { it.mediaKind == MediaKind.AUDIO && !it.isSong() }
         .sortedBy { it.trackHeadline().lowercase() }
 
+/** Every audio track the device can start: songs first, then other audio, local or streamable. */
+fun playableAudio(files: List<LocalFile>): List<LocalFile> {
+    val songs = files.filter { it.isSong() }.sortedBy { it.trackHeadline().lowercase() }
+    return (songs + otherAudio(files)).filter { it.hasLocalBytes() || !it.remoteUrl.isNullOrBlank() }
+}
+
 fun groupMusicByAlbum(files: List<LocalFile>, albums: List<Album> = emptyList()): List<MusicGroup> {
     val grouped = groupMusic(files) { file ->
         val id = file.albumId?.takeIf { it.isNotBlank() } ?: file.displayAlbum.lowercase()

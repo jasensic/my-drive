@@ -99,6 +99,7 @@ data class ManifestDto(
     @Json(name = "generated_at") val generatedAt: String,
     val files: List<ManifestFileDto> = emptyList(),
     val albums: List<AlbumDto> = emptyList(),
+    val removed: List<String> = emptyList(),
 )
 data class ManifestFileDto(
     val id: String,
@@ -272,6 +273,7 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
                 )
             },
             albums = dto.albums.map { it.toAlbum() },
+            removed = dto.removed,
         )
     }
 

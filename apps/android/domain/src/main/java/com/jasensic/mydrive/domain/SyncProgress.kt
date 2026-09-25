@@ -96,4 +96,7 @@ interface SyncScheduler {
         manualHost: String? = null,
         authAction: AuthAction = AuthAction.LOGIN,
     )
+
+    /** Keep syncing on a schedule while the app is not in the foreground. */
+    fun ensureBackgroundSync() {}
 }

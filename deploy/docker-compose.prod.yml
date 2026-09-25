@@ -18,8 +18,8 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:${MINIO_UPSTREAM_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_UPSTREAM_PORT:-9001}:9001"
 
   musicdl:
     build:
@@ -88,14 +88,52 @@ services:
   web:
     image: ghcr.io/jasensic/my-drive-web:latest
     restart: unless-stopped
-    network_mode: host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # nginx in the image proxies /v1 to 127.0.0.1:8080 when using host network
-      API_UPSTREAM: http://127.0.0.1:8080
+      API_UPSTREAM: http://host.docker.internal:${API_HTTP_PORT:-8080}
     depends_on:
       - api
     ports:
-      - "80:80"
+      - "127.0.0.1:${PORTAL_HTTP_PORT:-8088}:80"
+
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:2
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    depends_on:
+      - api
+      - web
+      - minio
+
+  npm-bootstrap:
+    image: curlimages/curl:8.12.1
+    network_mode: host
+    depends_on:
+      - nginx-proxy-manager
+    environment:
+      NPM_API: http://127.0.0.1:${NPM_ADMIN_PORT:-81}
+      NPM_ADMIN_EMAIL: ${NPM_ADMIN_EMAIL:-admin@example.com}
+      NPM_ADMIN_PASSWORD: ${NPM_ADMIN_PASSWORD:-changeme}
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN:-portal.localhost}
+      API_DOMAIN: ${API_DOMAIN:-api.localhost}
+      MINIO_DOMAIN: ${MINIO_DOMAIN:-s3.localhost}
+      MINIO_CONSOLE_DOMAIN: ${MINIO_CONSOLE_DOMAIN:-console.localhost}
+      PORTAL_UPSTREAM_HOST: 127.0.0.1
+      PORTAL_UPSTREAM_PORT: ${PORTAL_HTTP_PORT:-8088}
+      API_UPSTREAM_HOST: 127.0.0.1
+      API_UPSTREAM_PORT: ${API_HTTP_PORT:-8080}
+      MINIO_UPSTREAM_HOST: 127.0.0.1
+      MINIO_UPSTREAM_PORT: ${MINIO_UPSTREAM_PORT:-9000}
+      MINIO_CONSOLE_UPSTREAM_HOST: 127.0.0.1
+      MINIO_CONSOLE_UPSTREAM_PORT: ${MINIO_CONSOLE_UPSTREAM_PORT:-9001}
+    volumes:
+      - ./npm/bootstrap.sh:/bootstrap.sh:ro
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    restart: "no"
 
   watchtower:
     image: containrrr/watchtower
@@ -110,3 +148,5 @@ volumes:
   pgdata:
   miniodata:
   musicdl-downloads:
+  npm-data:
+  npm-letsencrypt:

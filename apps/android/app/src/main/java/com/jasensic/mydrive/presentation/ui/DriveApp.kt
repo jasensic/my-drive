@@ -7,14 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.MoreVert
@@ -22,7 +18,6 @@ import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,15 +29,14 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.LibrarySource
 import com.jasensic.mydrive.domain.LocalFile
@@ -86,6 +80,9 @@ fun DriveApp(
     onNext: () -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
+    onRemoveQueued: (String) -> Unit,
+    onMoveQueued: (Int, Int) -> Unit,
+    onPlayQueued: (String) -> Unit,
     onPauseAudio: () -> Unit,
     onBack: () -> Boolean,
     onForward: () -> Boolean,
@@ -123,6 +120,9 @@ fun DriveApp(
                 onNext = onNext,
                 onShuffle = onShuffle,
                 onRepeat = onRepeat,
+                onRemoveQueued = onRemoveQueued,
+                onMoveQueued = onMoveQueued,
+                onPlayQueued = onPlayQueued,
             )
         }
         is Screen.Viewer -> {
@@ -222,121 +222,40 @@ private fun HubScreen(
     onLibrarySource: (LibrarySource) -> Unit,
     onSignOut: () -> Unit,
 ) {
-    var settings by rememberSaveable { mutableStateOf(false) }
     var dialog by rememberSaveable { mutableStateOf(HubDialog.None) }
-    val scroll = TopAppBarDefaults.pinnedScrollBehavior()
     val selecting = state.selectedIds.isNotEmpty()
+    val libraryTab = state.tab != HubTab.SETTINGS
     val siloAlbums = albumsInSilo(state.albums, state.tab.silo())
     val currentAlbum = siloAlbums.find { it.id == state.albumId }
-    val title = when {
-        selecting -> "${state.selectedIds.size} selected"
-        currentAlbum != null -> currentAlbum.name
-        state.artistName != null -> state.artistName
-        state.tab == HubTab.MUSIC -> "Music"
-        state.tab == HubTab.PHOTOS -> "Photos"
-        else -> "Files"
-    }
+    val contentPad = PaddingValues(bottom = 12.dp)
     Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(title)
-                            if (!selecting) {
-                                Text(
-                                    when (state.librarySource) {
-                                        LibrarySource.DEVICE -> "${state.files.size} on this device · ${state.serverLabel}"
-                                        LibrarySource.SERVER -> "${state.files.size} on server · ${state.serverLabel}"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        if (selecting) {
-                            IconButton(onClick = onClearSelection) {
-                                Icon(Icons.Outlined.Close, contentDescription = "Clear selection")
-                            }
-                        } else {
-                            IconButton(onClick = { onBack() }, enabled = state.canGoBack) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                            }
-                        }
-                    },
-                    actions = {
-                        if (selecting) {
-                            IconButton(onClick = onShareSelected) {
-                                Icon(Icons.Outlined.Share, contentDescription = "Share")
-                            }
-                            IconButton(onClick = onShareWithAccount) {
-                                Icon(Icons.Outlined.PersonAdd, contentDescription = "Share with account")
-                            }
-                            IconButton(onClick = onTrashSelected) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "Remove from this device")
-                            }
-                            IconButton(onClick = { dialog = HubDialog.Actions }) {
-                                Icon(Icons.Outlined.MoreVert, contentDescription = "Manage")
-                            }
-                        } else {
-                            IconButton(onClick = { onForward() }, enabled = state.canGoForward) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
-                            }
-                            if (currentAlbum != null) {
-                                IconButton(onClick = { dialog = HubDialog.RenameAlbum }) {
-                                    Icon(Icons.Outlined.Edit, contentDescription = "Rename album")
-                                }
-                                IconButton(onClick = onShareWithAccount) {
-                                    Icon(Icons.Outlined.PersonAdd, contentDescription = "Share album")
-                                }
-                            }
-                            IconButton(onClick = { dialog = HubDialog.CreateAlbum }) {
-                                Icon(Icons.Outlined.Add, contentDescription = "New album")
-                            }
-                            IconButton(onClick = onSync, enabled = !state.isBusy) {
-                                Icon(Icons.Outlined.Sync, contentDescription = "Sync")
-                            }
-                            IconButton(onClick = { settings = true }) {
-                                BadgedBox(badge = { if (state.availableUpdate != null) Badge() }) {
-                                    Icon(Icons.Outlined.Settings, contentDescription = "Settings")
-                                }
-                            }
-                        }
-                    },
-                    scrollBehavior = scroll,
-                )
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilterChip(
-                        selected = state.librarySource == LibrarySource.DEVICE,
-                        onClick = { onLibrarySource(LibrarySource.DEVICE) },
-                        label = { Text("On this device") },
-                    )
-                    FilterChip(
-                        selected = state.librarySource == LibrarySource.SERVER,
-                        onClick = { onLibrarySource(LibrarySource.SERVER) },
-                        enabled = state.lanAvailable,
-                        label = { Text("On server") },
-                    )
-                }
-                SyncStatusBar(state, modifier = Modifier.fillMaxWidth())
-                state.error?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                }
-            }
-        },
         bottomBar = {
             Column {
+                if (selecting && libraryTab) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onClearSelection) { Text("Clear") }
+                        Text(
+                            "${state.selectedIds.size} selected",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        IconButton(onClick = onShareSelected) {
+                            Icon(Icons.Outlined.Share, contentDescription = "Share")
+                        }
+                        IconButton(onClick = onShareWithAccount) {
+                            Icon(Icons.Outlined.PersonAdd, contentDescription = "Share with account")
+                        }
+                        IconButton(onClick = onTrashSelected) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Remove from this device")
+                        }
+                        IconButton(onClick = { dialog = HubDialog.Actions }) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "Manage")
+                        }
+                    }
+                }
                 if (playback.isActive) {
                     MiniPlayer(
                         playback = playback,
@@ -364,11 +283,76 @@ private fun HubScreen(
                         icon = { Icon(Icons.Outlined.Folder, contentDescription = null) },
                         label = { Text("Files") },
                     )
+                    NavigationBarItem(
+                        selected = state.tab == HubTab.SETTINGS,
+                        onClick = { onTab(HubTab.SETTINGS) },
+                        icon = {
+                            BadgedBox(badge = { if (state.availableUpdate != null) Badge() }) {
+                                Icon(Icons.Outlined.Settings, contentDescription = null)
+                            }
+                        },
+                        label = { Text("Settings") },
+                    )
                 }
             }
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (libraryTab) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = state.librarySource == LibrarySource.DEVICE,
+                        onClick = { onLibrarySource(LibrarySource.DEVICE) },
+                        label = { Text("On this device") },
+                    )
+                    FilterChip(
+                        selected = state.librarySource == LibrarySource.SERVER,
+                        onClick = { onLibrarySource(LibrarySource.SERVER) },
+                        enabled = state.lanAvailable,
+                        label = { Text("On server") },
+                    )
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when (state.librarySource) {
+                            LibrarySource.DEVICE -> "${state.files.size} on this device · ${state.serverLabel}"
+                            LibrarySource.SERVER -> "${state.files.size} on server · ${state.serverLabel}"
+                        },
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.canGoBack) {
+                        TextButton(onClick = { onBack() }) { Text("Back") }
+                    }
+                    if (state.canGoForward) {
+                        TextButton(onClick = { onForward() }) { Text("Forward") }
+                    }
+                    if (currentAlbum != null) {
+                        TextButton(onClick = { dialog = HubDialog.RenameAlbum }) { Text("Rename") }
+                        TextButton(onClick = onShareWithAccount) { Text("Share") }
+                    }
+                    TextButton(onClick = { dialog = HubDialog.CreateAlbum }) { Text("New album") }
+                }
+                SyncStatusBar(state, modifier = Modifier.fillMaxWidth())
+                state.error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                    )
+                }
+            }
             Box(Modifier.weight(1f)) {
                 when (state.tab) {
                     HubTab.MUSIC -> MusicScreen(
@@ -385,7 +369,7 @@ private fun HubScreen(
                             onSelectOnly(id)
                             dialog = HubDialog.Actions
                         },
-                        contentPadding = padding,
+                        contentPadding = contentPad,
                     )
                     HubTab.PHOTOS -> PhotosScreen(
                         files = state.library.photos,
@@ -399,7 +383,7 @@ private fun HubScreen(
                             onSelectOnly(id)
                             dialog = HubDialog.Actions
                         },
-                        contentPadding = padding,
+                        contentPadding = contentPad,
                     )
                     HubTab.FILES -> FilesScreen(
                         files = state.library.documents,
@@ -413,29 +397,20 @@ private fun HubScreen(
                             onSelectOnly(id)
                             dialog = HubDialog.Actions
                         },
-                        contentPadding = padding,
+                        contentPadding = contentPad,
+                    )
+                    HubTab.SETTINGS -> SettingsPage(
+                        state = state,
+                        themeMode = themeMode,
+                        onTheme = onTheme,
+                        onSync = onSync,
+                        onUpdate = onUpdate,
+                        onConnection = onConnection,
+                        onSignOut = onSignOut,
                     )
                 }
             }
         }
-    }
-    if (settings) {
-        SettingsSheet(
-            state = state,
-            themeMode = themeMode,
-            onDismiss = { settings = false },
-            onTheme = onTheme,
-            onSync = onSync,
-            onUpdate = onUpdate,
-            onConnection = {
-                settings = false
-                onConnection()
-            },
-            onSignOut = {
-                settings = false
-                onSignOut()
-            },
-        )
     }
     when (dialog) {
         HubDialog.None -> Unit

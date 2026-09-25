@@ -151,6 +151,24 @@ async fn setup_upload_and_manifest_flow() {
         .await
         .unwrap();
     assert_eq!(bin.as_array().unwrap().len(), 1);
+    let after_trash: Value = client
+        .post(format!("{base}/v1/sync/manifest"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "device_id": device["id"],
+            "have_file_ids": [file_id]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(after_trash["files"].as_array().unwrap().is_empty());
+    assert_eq!(
+        after_trash["removed"].as_array().unwrap(),
+        &vec![serde_json::json!(file_id)]
+    );
     let restored: Value = client
         .post(format!("{base}/v1/files/{file_id}/restore"))
         .bearer_auth(token)
@@ -161,6 +179,21 @@ async fn setup_upload_and_manifest_flow() {
         .await
         .unwrap();
     assert!(restored["deleted_at"].is_null());
+    let after_restore: Value = client
+        .post(format!("{base}/v1/sync/manifest"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({
+            "device_id": device["id"],
+            "have_file_ids": [file_id]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(after_restore["files"].as_array().unwrap().len(), 1);
+    assert!(after_restore["removed"].as_array().unwrap().is_empty());
 
     let latest = client
         .get(format!("{base}/v1/app/releases/latest"))

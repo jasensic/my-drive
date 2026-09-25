@@ -57,13 +57,13 @@ sealed class Screen {
     data object NowPlaying : Screen()
 }
 
-enum class HubTab { MUSIC, PHOTOS, FILES }
+enum class HubTab { MUSIC, PHOTOS, FILES, SETTINGS }
 
 fun HubTab.silo(): LibrarySilo =
     when (this) {
         HubTab.MUSIC -> LibrarySilo.MUSIC
         HubTab.PHOTOS -> LibrarySilo.PHOTOS
-        HubTab.FILES -> LibrarySilo.FILES
+        HubTab.FILES, HubTab.SETTINGS -> LibrarySilo.FILES
     }
 
 private data class NavFrame(
@@ -171,6 +171,7 @@ class DriveViewModel @Inject constructor(
                 handleSyncProgress(progress)
             }
         }
+        syncScheduler.ensureBackgroundSync()
         viewModelScope.launch {
             paintLocalLibrary()
             if (_ui.value.loggedIn) {
@@ -202,7 +203,7 @@ class DriveViewModel @Inject constructor(
                     syncProgress = progress,
                     error = null,
                     loggedIn = true,
-                    serverLabel = snapshot?.server?.let { "${it.host}:${it.port}" } ?: _ui.value.serverLabel,
+                    serverLabel = snapshot?.server?.label ?: _ui.value.serverLabel,
                     lastSync = snapshot?.lastSync ?: _ui.value.lastSync,
                     albums = if (_ui.value.librarySource == LibrarySource.DEVICE) {
                         library?.albums ?: _ui.value.albums
@@ -604,7 +605,7 @@ class DriveViewModel @Inject constructor(
     private suspend fun paintLocalLibrary() {
         val snapshot = runCatching { loadState.execute() }.getOrNull() ?: return
         _ui.value = _ui.value.copy(
-            serverLabel = snapshot.server?.let { "${it.host}:${it.port}" }
+            serverLabel = snapshot.server?.label
                 ?: if (snapshot.loggedIn) "offline" else "searching…",
             lastSync = snapshot.lastSync,
             albums = snapshot.library.albums,
@@ -625,7 +626,7 @@ class DriveViewModel @Inject constructor(
         _ui.value = _ui.value.copy(
             setupRequired = status.setupRequired,
             lanAvailable = lan.isAvailable(),
-            serverLabel = server?.let { "${it.host}:${it.port}" } ?: _ui.value.serverLabel,
+            serverLabel = server?.label ?: _ui.value.serverLabel,
         )
     }
 

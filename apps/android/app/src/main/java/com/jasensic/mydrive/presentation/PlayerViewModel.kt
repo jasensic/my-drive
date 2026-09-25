@@ -35,4 +35,10 @@ class PlayerViewModel @Inject constructor(
     fun toggleShuffle() = player.toggleShuffle()
 
     fun cycleRepeat() = player.cycleRepeat()
+
+    fun removeFromQueue(fileId: String) = player.removeFromQueue(fileId)
+
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) = player.moveQueueItem(fromIndex, toIndex)
+
+    fun playQueueItem(fileId: String) = player.playQueueItem(fileId)
 }
