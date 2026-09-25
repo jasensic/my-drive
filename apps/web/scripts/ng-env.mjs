@@ -66,6 +66,16 @@ writeFileSync(
 export const CLOUD_IMPORT_ENV = ${JSON.stringify(cloudImport, null, 2)} as const;\n`,
 );
 
+const apiProxy = process.env['API_PROXY_TARGET'];
+if (apiProxy) {
+  const proxy = {
+    '/v1': { target: apiProxy, secure: false },
+    '/api-docs': { target: apiProxy, secure: false },
+    '/health': { target: apiProxy, secure: false },
+  };
+  writeFileSync(join(webRoot, 'proxy.conf.json'), `${JSON.stringify(proxy, null, 2)}\n`);
+}
+
 const ngJs = join(webRoot, 'node_modules', '@angular', 'cli', 'bin', 'ng.js');
 const child = spawn(process.execPath, [ngJs, ...process.argv.slice(2)], {
   stdio: 'inherit',

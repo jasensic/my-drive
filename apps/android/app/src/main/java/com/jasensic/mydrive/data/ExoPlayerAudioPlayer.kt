@@ -12,6 +12,9 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
+import com.jasensic.mydrive.domain.editQueueMove
+import com.jasensic.mydrive.domain.editQueueRemove
+import com.jasensic.mydrive.domain.queueIndexAfterEdit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -142,6 +145,82 @@ class ExoPlayerAudioPlayer @Inject constructor(
             queue = emptyList()
             emitState()
         }
+    }
+
+    override fun removeFromQueue(fileId: String) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val next = editQueueRemove(queue, fileId) ?: return@runWhenReady
+            replaceSession(
+                player,
+                next,
+                player.currentMediaItem?.mediaId,
+                player.currentPosition,
+                player.playWhenReady,
+                player.shuffleModeEnabled,
+            )
+        }
+    }
+
+    override fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val next = editQueueMove(queue, fromIndex, toIndex) ?: return@runWhenReady
+            player.shuffleModeEnabled = false
+            replaceSession(
+                player,
+                next,
+                player.currentMediaItem?.mediaId,
+                player.currentPosition,
+                player.playWhenReady,
+                shuffle = false,
+            )
+        }
+    }
+
+    override fun playQueueItem(fileId: String) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val playlistIndex = queue.indexOfFirst { it.id == fileId }
+            if (playlistIndex < 0) return@runWhenReady
+            var timelineIndex = playlistIndex
+            val count = player.mediaItemCount
+            for (index in 0 until count) {
+                if (player.getMediaItemAt(index).mediaId == fileId) {
+                    timelineIndex = index
+                    break
+                }
+            }
+            player.seekTo(timelineIndex, 0L)
+            player.play()
+            emitState()
+        }
+    }
+
+    private fun replaceSession(
+        player: MediaController,
+        items: List<LocalFile>,
+        currentId: String?,
+        positionMs: Long,
+        playing: Boolean,
+        shuffle: Boolean,
+    ) {
+        queue = items
+        if (items.isEmpty()) {
+            player.stop()
+            player.clearMediaItems()
+            emitState()
+            return
+        }
+        val start = queueIndexAfterEdit(items, currentId).coerceAtLeast(0)
+        val sameTrack = currentId != null && items.getOrNull(start)?.id == currentId
+        val position = if (sameTrack) positionMs.coerceAtLeast(0L) else 0L
+        player.shuffleModeEnabled = false
+        player.setMediaItems(items.map { it.toPlayableMediaItem(context) }, start, position)
+        player.prepare()
+        player.shuffleModeEnabled = shuffle
+        if (playing) player.play() else player.pause()
+        emitState()
     }
 
     private fun runWhenReady(block: () -> Unit) {

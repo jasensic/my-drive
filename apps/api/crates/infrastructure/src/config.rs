@@ -30,7 +30,7 @@ impl Settings {
             api_port: env_or("API_PORT", "8080")
                 .parse()
                 .map_err(|_| DomainError::infra("invalid API_PORT"))?,
-            api_public_url: env_or("API_PUBLIC_URL", "http://localhost:8080"),
+            api_public_url: env_or("API_PUBLIC_URL", "http://api.localhost"),
             minio_endpoint: env_or("MINIO_ENDPOINT", "http://localhost:9000"),
             minio_bucket: env_or("MINIO_BUCKET", "mydrive"),
             minio_region: env_or("MINIO_REGION", "us-east-1"),

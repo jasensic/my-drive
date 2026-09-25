@@ -1,3 +1,4 @@
+use domain::sync::public_base_url_for_discovery;
 use domain::DomainError;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tracing::info;
@@ -9,7 +10,12 @@ pub fn advertise(settings: &Settings) -> Result<ServiceDaemon, DomainError> {
     let service_type = "_mydrive._tcp.local.";
     let instance = settings.mdns_service_name.clone();
     let host = hostname();
-    let properties = [("path", "/v1"), ("api", "/v1")];
+    let advertised = public_base_url_for_discovery(&settings.api_public_url);
+    let path = "/v1";
+    let mut properties = vec![("path", path), ("api", path)];
+    if let Some(url) = advertised.as_deref() {
+        properties.push(("url", url));
+    }
     let info = ServiceInfo::new(
         service_type,
         &instance,

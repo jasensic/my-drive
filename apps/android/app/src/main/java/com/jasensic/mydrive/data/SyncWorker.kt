@@ -17,6 +17,7 @@ import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
 import com.jasensic.mydrive.domain.SyncProgressStore
+import com.jasensic.mydrive.domain.SyncStateRepository
 import com.jasensic.mydrive.domain.WIFI_UNAVAILABLE
 import com.jasensic.mydrive.domain.syncProgressLabel
 import dagger.assisted.Assisted
@@ -31,9 +32,15 @@ class SyncWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val syncFiles: SyncFilesUseCase,
     private val progressStore: SyncProgressStore,
+    private val syncState: SyncStateRepository,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = coroutineScope {
+        val user = inputData.getString(KEY_USERNAME)
+        val pass = inputData.getString(KEY_PASSWORD)
+        if (user.isNullOrBlank() && pass.isNullOrBlank() && syncState.session() == null) {
+            return@coroutineScope Result.success()
+        }
         ensureChannel()
         val updates = launch {
             progressStore.observe().collectLatest { progress ->
@@ -49,8 +56,6 @@ class SyncWorker @AssistedInject constructor(
         }
         try {
             setForeground(foregroundInfo(progressStore.current()))
-            val user = inputData.getString(KEY_USERNAME)
-            val pass = inputData.getString(KEY_PASSWORD)
             val host = inputData.getString(KEY_HOST)
             val action = com.jasensic.mydrive.domain.parseAuthAction(inputData.getString(KEY_AUTH_ACTION))
             syncFiles.execute(user, pass, host, action)
@@ -158,6 +163,7 @@ class SyncWorker @AssistedInject constructor(
 
     companion object {
         const val UNIQUE_NAME = "mydrive-sync"
+        const val PERIODIC_NAME = "mydrive-sync-periodic"
         const val KEY_USERNAME = "username"
         const val KEY_PASSWORD = "password"
         const val KEY_HOST = "host"

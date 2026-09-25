@@ -37,6 +37,7 @@ data class SyncManifest(
     val generatedAt: String,
     val files: List<ManifestFile>,
     val albums: List<Album>,
+    val removed: List<String> = emptyList(),
 )
 
 data class SyncResult(
@@ -56,13 +57,19 @@ data class DiscoveredServer(
     val host: String,
     val port: Int,
     val name: String,
+    /** Absolute origin (`https://api.example.com`) when discovery or the operator supplied a domain. */
+    val advertisedUrl: String? = null,
 ) {
     val baseUrl: String
-        get() {
-            val raw = host.substringBefore('%')
-            val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
-            return "http://$hostPart:$port"
-        }
+        get() = advertisedUrl?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() }
+            ?: run {
+                val raw = host.substringBefore('%')
+                val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
+                "http://$hostPart:$port"
+            }
+
+    val label: String
+        get() = advertisedUrl?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: "$host:$port"
 }
 
 data class AuthSession(
@@ -354,11 +361,58 @@ fun LibrarySilo.wireValue(): String =
     }
 
 fun parseManualServer(input: String): DiscoveredServer {
-    val trimmed = input.trim().removePrefix("http://").removePrefix("https://").trimEnd('/')
+    val trimmed = input.trim().trimEnd('/')
     require(trimmed.isNotBlank()) { "server address is required" }
-    val hostPort = trimmed.substringBefore("/")
-    val host = hostPort.substringBefore(":")
-    val port = hostPort.substringAfter(":", "80").toIntOrNull() ?: 80
+    val absolute = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "http://$trimmed"
+    }
+    val uri = runCatching { java.net.URI(absolute) }.getOrElse { error("server address is required") }
+    val host = uri.host?.trim().orEmpty()
     require(host.isNotBlank()) { "server address is required" }
-    return DiscoveredServer(host, port, host)
+    val scheme = uri.scheme ?: "http"
+    val port = when {
+        uri.port > 0 -> uri.port
+        scheme == "https" -> 443
+        else -> 80
+    }
+    val hostPart = if (host.contains(':')) "[$host]" else host
+    val defaultPort = if (scheme == "https") 443 else 80
+    val advertised = if (port == defaultPort) "$scheme://$hostPart" else "$scheme://$hostPart:$port"
+    return DiscoveredServer(host, port, host, advertisedUrl = advertised)
+}
+
+/**
+ * Prefer an mDNS TXT `url` when it names a real host. Loopback TXT values are ignored so the
+ * phone does not call itself; the resolved LAN address is used instead.
+ */
+fun serverFromDiscovery(name: String, host: String?, port: Int, txtUrl: String?): DiscoveredServer? {
+    val advertised = txtUrl?.trim()?.trimEnd('/')?.takeIf {
+        (it.startsWith("http://") || it.startsWith("https://")) && !isLoopbackHttpUrl(it)
+    }
+    if (advertised != null) {
+        return runCatching {
+            parseManualServer(advertised).copy(name = name.ifBlank { advertised })
+        }.getOrNull()
+    }
+    val rawHost = host
+        ?.trim()
+        ?.substringBefore('%')
+        ?.removePrefix("[")
+        ?.removeSuffix("]")
+        .orEmpty()
+    if (rawHost.isBlank() || port <= 0) return null
+    if (rawHost == "0.0.0.0" || rawHost == "::" || isLoopbackHost(rawHost)) return null
+    return DiscoveredServer(rawHost, port, name.ifBlank { rawHost })
+}
+
+fun isLoopbackHttpUrl(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return false
+    return isLoopbackHost(host)
+}
+
+private fun isLoopbackHost(host: String): Boolean {
+    val value = host.lowercase().removePrefix("[").removeSuffix("]")
+    return value == "localhost" || value == "127.0.0.1" || value == "::1" || value == "0.0.0.0"
 }

@@ -29,6 +29,7 @@ class FakeRemote : RemoteFileSource {
     var failExclusions = false
     var setupRequired = false
     var manifestFiles: List<ManifestFile>? = null
+    var manifestRemoved: List<String> = emptyList()
     val downloadedUrls = mutableListOf<String>()
     val exclusionPuts = mutableListOf<List<String>>()
     val listedSilos = mutableListOf<LibrarySilo?>()
@@ -76,6 +77,7 @@ class FakeRemote : RemoteFileSource {
             generatedAt = "2026-09-15T12:00:00Z",
             files = files.filter { it.id !in haveFileIds },
             albums = listOf(Album("album-1", "Vacation")),
+            removed = manifestRemoved,
         )
     }
 
@@ -242,7 +244,13 @@ class FakeStore : LocalMediaStore {
     override suspend fun assignAlbum(id: String, albumId: String?) = Unit
 
     override suspend fun removeFiles(ids: Collection<String>) {
-        saved.removeAll(ids.toSet())
+        val drop = ids.toSet()
+        drop.forEach { id ->
+            java.io.File(pathFor(id)).delete()
+            java.io.File(artworkPathFor(id)).delete()
+        }
+        saved.removeAll(drop)
+        committed.keys.removeAll(drop)
     }
 }
 
@@ -429,6 +437,61 @@ class SyncFilesUseCaseTest {
         val server = parseManualServer("http://192.168.1.5:8080/v1")
         assertEquals("192.168.1.5", server.host)
         assertEquals(8080, server.port)
+        assertEquals("http://192.168.1.5:8080", server.baseUrl)
+    }
+
+    @Test
+    fun parseManualServerKeepsDomainWithoutAPort() {
+        val server = parseManualServer("https://api.mydrive.lan")
+        assertEquals("api.mydrive.lan", server.host)
+        assertEquals(443, server.port)
+        assertEquals("https://api.mydrive.lan", server.baseUrl)
+        assertEquals("https://api.mydrive.lan", server.label)
+    }
+
+    @Test
+    fun discoveryPrefersAdvertisedDomainOverLanIp() {
+        val server = serverFromDiscovery(
+            name = "my-drive",
+            host = "192.168.1.20",
+            port = 8080,
+            txtUrl = "https://api.mydrive.lan/",
+        )
+        assertEquals("https://api.mydrive.lan", server?.baseUrl)
+        assertEquals("my-drive", server?.name)
+    }
+
+    @Test
+    fun discoveryIgnoresLoopbackTxtAndUsesResolvedHost() {
+        val server = serverFromDiscovery(
+            name = "my-drive",
+            host = "192.168.1.20",
+            port = 8080,
+            txtUrl = "http://localhost:8080",
+        )
+        assertEquals("http://192.168.1.20:8080", server?.baseUrl)
+    }
+
+    @Test
+    fun deletesLocalFilesTheManifestMarksRemoved() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(
+                ManifestFile("keep", "keep.jpg", 3, "image/jpeg", "", "/v1/files/keep/content", MediaKind.PHOTO, null),
+            )
+            manifestRemoved = listOf("gone")
+        }
+        val store = FakeStore().apply {
+            saved += "keep"
+            saved += "gone"
+        }
+        val gone = java.io.File(store.pathFor("gone")).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(9, 9, 9))
+        }
+        val state = FakeState().apply { stored = AuthSession("t", "admin", "dev-1") }
+        useCase(remote, store, state).execute()
+        assertEquals(listOf("keep"), store.saved.distinct())
+        assertTrue(!gone.exists())
     }
 
     @Test

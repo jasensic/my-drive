@@ -1,10 +1,15 @@
 package com.jasensic.mydrive.data
 
 import android.content.Context
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
+import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 import com.jasensic.mydrive.domain.AuthAction
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
@@ -42,6 +47,20 @@ class WorkManagerSyncScheduler @Inject constructor(
         WorkManager.getInstance(context).enqueueUniqueWork(
             SyncWorker.UNIQUE_NAME,
             ExistingWorkPolicy.KEEP,
+            request,
+        )
+    }
+
+    override fun ensureBackgroundSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            SyncWorker.PERIODIC_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }

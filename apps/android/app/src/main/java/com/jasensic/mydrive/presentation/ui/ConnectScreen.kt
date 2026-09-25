@@ -74,13 +74,13 @@ fun ConnectScreen(
                 OutlinedTextField(
                     host,
                     { host = it },
-                    label = { Text("Host (optional, e.g. 192.168.1.10:8080)") },
+                    label = { Text("Server (optional, e.g. api.mydrive.lan)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
                 if (state.loggedIn) {
                     Text(
-                        "Signed in as ${state.username.ifBlank { "this account" }}. Keep the phone on the same Wi-Fi: the app scans `_mydrive._tcp` and syncs without asking for a password again.",
+                        "Signed in as ${state.username.ifBlank { "this account" }}. On the same Wi-Fi the phone finds the server by name (`_mydrive._tcp`) and keeps syncing in the background.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Button(onClick = { onScanLan(host) }, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {

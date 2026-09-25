@@ -21,10 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,6 +41,7 @@ import com.jasensic.mydrive.domain.groupMusicByAlbum
 import com.jasensic.mydrive.domain.groupMusicByArtist
 import com.jasensic.mydrive.domain.isSong
 import com.jasensic.mydrive.domain.otherAudio
+import com.jasensic.mydrive.domain.playableAudio
 import com.jasensic.mydrive.domain.recentMusic
 import com.jasensic.mydrive.domain.songTitle
 import com.jasensic.mydrive.domain.trackHeadline
@@ -66,6 +69,7 @@ fun MusicScreen(
     val groupedAlbums = remember(songs, albums) { groupMusicByAlbum(songs, albums) }
     val artists = remember(songs) { groupMusicByArtist(songs) }
     val recent = remember(songs) { recentMusic(songs) }
+    val playable = remember(tracks) { playableAudio(tracks) }
     val selecting = selectedIds.isNotEmpty()
     val detail = when {
         albumId != null -> groupedAlbums.find { it.id == albumId } ?: MusicGroup(albumId, albums.find { it.id == albumId }?.name ?: "Album", emptyList(), null)
@@ -93,6 +97,13 @@ fun MusicScreen(
                     Text(detail.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${detail.tracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if (detail.tracks.isNotEmpty()) {
+                    TextButton(onClick = { onPlay(detail.tracks, detail.tracks.first().id) }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play")
+                    }
+                }
             }
             TrackList(
                 tracks = detail.tracks,
@@ -112,7 +123,28 @@ fun MusicScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item {
-            Text("Music", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Music", style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "${tracks.size} tracks",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (playable.isNotEmpty()) {
+                    TextButton(onClick = { onPlay(playable, playable.first().id) }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Play all")
+                    }
+                }
+            }
         }
         if (recent.isNotEmpty()) {
             item { SectionLabel("Recently added") }

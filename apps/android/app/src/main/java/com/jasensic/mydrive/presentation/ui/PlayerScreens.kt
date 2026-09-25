@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -104,6 +108,9 @@ fun NowPlayingScreen(
     onNext: () -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
+    onRemoveQueued: (String) -> Unit,
+    onMoveQueued: (Int, Int) -> Unit,
+    onPlayQueued: (String) -> Unit,
 ) {
     val current = playback.current
     var dragging by remember { mutableFloatStateOf(-1f) }
@@ -194,6 +201,84 @@ fun NowPlayingScreen(
                 )
             }
         }
+        Spacer(Modifier.height(28.dp))
+        QueueSection(
+            playback = playback,
+            onRemove = onRemoveQueued,
+            onMove = onMoveQueued,
+            onPlay = onPlayQueued,
+        )
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun QueueSection(
+    playback: PlaybackState,
+    onRemove: (String) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onPlay: (String) -> Unit,
+) {
+    Text("Queue", style = MaterialTheme.typography.titleLarge)
+    Text(
+        if (playback.shuffle) {
+            "Shuffle is on. Reordering turns it off so playback follows this list."
+        } else {
+            "${playback.queue.size} tracks · tap a row to play it"
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    if (playback.queue.isEmpty()) {
+        Text(
+            "Nothing queued",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    playback.queue.forEachIndexed { index, track ->
+        val current = index == playback.currentIndex
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { onPlay(track.id) }
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "${index + 1}",
+                modifier = Modifier.width(24.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    track.trackHeadline(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
+                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    track.trackSubtitle().ifBlank { track.displayArtist },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move up")
+            }
+            IconButton(onClick = { onMove(index, index + 1) }, enabled = index < playback.queue.lastIndex) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move down")
+            }
+            IconButton(onClick = { onRemove(track.id) }) {
+                Icon(Icons.Outlined.Close, contentDescription = "Remove from queue")
+            }
+        }
     }
 }

@@ -104,6 +104,13 @@ fun PhotosScreen(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "title") {
+            Text(
+                "Photos",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+        }
         if (albums.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "albums") {
                 LazyRow(

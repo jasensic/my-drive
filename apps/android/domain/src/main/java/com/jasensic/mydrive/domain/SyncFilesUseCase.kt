@@ -124,6 +124,9 @@ class SyncFilesUseCase(
             val have = localStore.knownIds()
             val lastSync = state.lastSyncAt().takeIf { have.isNotEmpty() }
             val manifest = remote.fetchManifest(base, session.token, deviceId, lastSync, have)
+            if (manifest.removed.isNotEmpty()) {
+                localStore.removeFiles(manifest.removed)
+            }
             localStore.replaceAlbums(manifest.albums)
             val toFetch = manifest.files.filter { it.id !in excluded }
             val total = toFetch.size

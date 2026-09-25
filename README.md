@@ -29,20 +29,36 @@ Servicios:
 
 | Servicio | URL |
 | --- | --- |
-| Portal web | http://localhost |
-| API | http://localhost/v1 (también http://localhost:8080/v1 en compose de desarrollo) |
+| Portal web | http://portal.localhost (directo: http://127.0.0.1:8088) |
+| API | http://api.localhost/v1 (directo: http://127.0.0.1:8080/v1) |
+| Nginx Proxy Manager | http://127.0.0.1:81 |
 | musicdl-export | http://127.0.0.1:8090 (solo localhost; el portal habla con la API) |
-| Salud API | http://localhost:8080/health |
-| OpenAPI | http://localhost:8080/api-docs |
-| MinIO consola | http://localhost:9001 |
+| Salud API | http://api.localhost/health |
+| OpenAPI | http://api.localhost/api-docs |
+| MinIO S3 | http://s3.localhost |
+| MinIO consola | http://console.localhost (directo: http://127.0.0.1:9001) |
 
 El primer acceso abre la pantalla de **setup**: crea el usuario administrador. Después se puede iniciar sesión, subir archivos y definir perfiles de sincronización.
 
+### Dominios (Nginx Proxy Manager)
+
+Los clientes usan hostnames definidos en `.env` (`PORTAL_PUBLIC_URL`, `API_PUBLIC_URL`, `MINIO_PUBLIC_URL`, `MINIO_CONSOLE_PUBLIC_URL`), no direcciones IP sueltas. El compose levanta [Nginx Proxy Manager](https://nginxproxymanager.com/) y un contenedor de arranque que crea los proxy hosts a partir de `PORTAL_DOMAIN`, `API_DOMAIN`, `MINIO_DOMAIN` y `MINIO_CONSOLE_DOMAIN`.
+
+En local, añade al archivo hosts:
+
+```
+127.0.0.1 portal.localhost api.localhost s3.localhost console.localhost
+```
+
+La UI de NPM queda en el puerto `NPM_ADMIN_PORT` (81). El usuario inicial es `NPM_ADMIN_EMAIL` / `NPM_ADMIN_PASSWORD` (el valor por defecto de NPM, `admin@example.com` / `changeme`); cámbialo después del primer arranque. En el compose de producción NPM usa la red del host, así que escucha en 80, 443 y 81.
+
 ### mDNS
 
-El API anuncia `_mydrive._tcp.local`. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API. En macOS/Windows de desarrollo, usa la IP del host o el nombre `host.docker.internal`.
+El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real, el TXT `url` lleva esa base y Android la prefiere al IP resuelto. Las URLs de loopback no se anuncian. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API.
 
-La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el host LAN descubierto. Si mDNS falla, se puede introducir `IP:puerto` a mano (por ejemplo `192.168.1.10:8080`).
+La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el origen descubierto. Si mDNS falla, se puede introducir el dominio a mano (por ejemplo `api.mydrive.lan` o `https://api.mydrive.lan`).
+
+La sincronización en segundo plano usa WorkManager (cada 15 minutos, con red) además del sync manual.
 
 ### Actualizaciones on-premise
 
@@ -62,7 +78,7 @@ Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versio
 4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
 5. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
 6. Manifiesto JSON de archivos faltantes y descarga paralela en Android
-7. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
+7. Android: login único; después el teléfono encuentra el servidor por mDNS (`_mydrive._tcp`, TXT `url` con el dominio) y sigue sincronizando en segundo plano. Un borrado en el portal desaparece del teléfono en el siguiente manifiesto (`removed`).
 8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
 9. Publicación de APKs en el portal y actualización de Android al reconectar
 

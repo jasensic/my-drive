@@ -211,4 +211,46 @@ mod tests {
         assert_eq!(manifest.files.len(), 1);
         assert_eq!(manifest.files[0].id, photo.id);
     }
+
+    #[tokio::test]
+    async fn manifest_tombstones_files_trashed_in_the_backoffice() {
+        let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
+        let mem = TestMem::new();
+        let user_id = mem.add_user("owner").await;
+        let device = domain::model::Device {
+            id: DeviceId::new(),
+            user_id,
+            name: "Phone A".into(),
+            last_sync_at: None,
+            created_at: now,
+        };
+        DeviceRepository::insert(mem.as_ref(), &device).await.unwrap();
+        SyncProfileRepository::upsert(mem.as_ref(), &default_profile(device.id))
+            .await
+            .unwrap();
+        let kept = photo(user_id, now - chrono::Duration::days(3), "kept.jpg");
+        let gone = photo(user_id, now - chrono::Duration::days(3), "gone.jpg");
+        mem.insert_file(kept.clone()).await;
+        mem.insert_file(gone.clone()).await;
+        FileRepository::set_deleted_at(mem.as_ref(), gone.id, Some(now))
+            .await
+            .unwrap();
+
+        let mut have = HashSet::new();
+        have.insert(kept.id);
+        have.insert(gone.id);
+        let deps = deps_from(mem);
+        let manifest = BuildSyncManifestService::new(deps)
+            .execute(ManifestQuery {
+                user_id,
+                device_id: device.id,
+                last_sync_at: None,
+                have_file_ids: have,
+            })
+            .await
+            .unwrap();
+        assert_eq!(manifest.files.len(), 1);
+        assert_eq!(manifest.files[0].id, kept.id);
+        assert_eq!(manifest.removed, vec![gone.id]);
+    }
 }
