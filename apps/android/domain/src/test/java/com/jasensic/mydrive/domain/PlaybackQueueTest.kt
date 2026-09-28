@@ -49,4 +49,11 @@ class PlaybackQueueTest {
         assertEquals(listOf("a", "b", "c"), materializePlayOrder(queue, listOf(0, 9)).map { it.id })
         assertEquals(queue, materializePlayOrder(queue, emptyList()))
     }
+
+    @Test
+    fun shuffleOrderStartsAtTheCurrentTrack() {
+        assertEquals(listOf(2, 0, 1), rotateOrderToCurrent(listOf(0, 1, 2), 2))
+        assertEquals(listOf(0, 1, 2), rotateOrderToCurrent(listOf(0, 1, 2), 0))
+        assertEquals(listOf(0, 1, 2), rotateOrderToCurrent(listOf(0, 1, 2), 9))
+    }
 }

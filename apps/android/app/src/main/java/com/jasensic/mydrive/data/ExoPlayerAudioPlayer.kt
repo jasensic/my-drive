@@ -17,6 +17,7 @@ import com.jasensic.mydrive.domain.editQueueMove
 import com.jasensic.mydrive.domain.editQueueRemove
 import com.jasensic.mydrive.domain.materializePlayOrder
 import com.jasensic.mydrive.domain.queueIndexAfterEdit
+import com.jasensic.mydrive.domain.rotateOrderToCurrent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -247,7 +248,8 @@ class ExoPlayerAudioPlayer @Inject constructor(
                 if (seen.add(window)) order.add(window)
             }
         }
-        return order
+        if (!shuffle) return order
+        return rotateOrderToCurrent(order, player.currentMediaItemIndex)
     }
 
     private fun runWhenReady(block: () -> Unit) {

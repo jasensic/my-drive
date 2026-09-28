@@ -36,3 +36,10 @@ fun materializePlayOrder(playlist: List<LocalFile>, windowOrder: List<Int>): Lis
     val ordered = windowOrder.mapNotNull { playlist.getOrNull(it) }
     return if (ordered.size == playlist.size) ordered else playlist
 }
+
+/** Rotate a shuffle window order so the playing track is first. */
+fun rotateOrderToCurrent(windowOrder: List<Int>, currentWindow: Int): List<Int> {
+    val at = windowOrder.indexOf(currentWindow)
+    if (at <= 0) return windowOrder
+    return windowOrder.subList(at, windowOrder.size) + windowOrder.subList(0, at)
+}

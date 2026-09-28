@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -277,28 +276,6 @@ private fun QueueSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "${index + 1}",
-                    modifier = Modifier.width(24.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        track.trackHeadline(),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
-                        color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        track.trackSubtitle().ifBlank { track.displayArtist },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 Icon(
                     Icons.Filled.DragHandle,
                     contentDescription = "Drag to reorder",
@@ -353,6 +330,22 @@ private fun QueueSection(
                             )
                         },
                 )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        track.trackHeadline(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
+                        color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        track.trackSubtitle().ifBlank { track.displayArtist },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 IconButton(onClick = { onRemove(track.id) }) {
                     Icon(Icons.Outlined.Close, contentDescription = "Remove from queue")
                 }
