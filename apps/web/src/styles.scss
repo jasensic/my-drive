@@ -104,8 +104,10 @@ code {
 }
 
 .shell {
+  height: 100dvh;
   min-height: 100dvh;
   display: flex;
+  overflow: hidden;
   background: var(--md-canvas);
 }
 
@@ -172,8 +174,10 @@ code {
 .shell-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 
 .topbar {
@@ -689,6 +693,9 @@ p-select.full {
   display: flex;
   flex-direction: column;
   gap: var(--md-space-3);
+  max-height: min(36rem, calc(100dvh - 14rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .search-results li {
@@ -698,6 +705,11 @@ p-select.full {
   align-items: center;
   padding: var(--md-space-2) 0;
   border-bottom: 1px solid var(--md-border);
+}
+
+.search-more {
+  justify-content: center;
+  color: var(--md-muted);
 }
 
 .search-cover {

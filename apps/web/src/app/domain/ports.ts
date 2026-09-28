@@ -109,6 +109,7 @@ export interface SpotifyLibraryPort {
 export interface MusicCatalog {
   search(keyword: string): Promise<MusicSearchResult>;
   searchSnapshot(searchId: string): Promise<MusicSearchResult>;
+  cancel(searchId: string): Promise<void>;
   parsePlaylist(url: string): Promise<MusicSearchResult>;
   importTrack(searchId: string, trackId: string): Promise<MediaFile>;
 }

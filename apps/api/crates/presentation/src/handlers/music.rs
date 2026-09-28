@@ -1,4 +1,5 @@
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 
 use crate::dto::{
@@ -63,6 +64,22 @@ pub async fn search_status(
 ) -> Result<Json<MusicSearchResponse>, ApiError> {
     let found = state.services.poll_music_search.execute(&id).await?;
     Ok(Json(search_response(found)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/music/search/{id}/cancel",
+    params(("id" = String, Path, description = "Search id to stop")),
+    responses((status = 204, description = "Search stopped")),
+    security(("bearer" = []))
+)]
+pub async fn cancel_search(
+    State(state): State<AppState>,
+    CurrentUser(_user): CurrentUser,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    state.services.cancel_music_search.execute(&id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

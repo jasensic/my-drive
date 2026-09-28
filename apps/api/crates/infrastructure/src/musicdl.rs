@@ -66,6 +66,20 @@ impl MusicDownloader for HttpMusicDownloader {
         search_from_payload(body)
     }
 
+    async fn cancel(&self, search_id: &str) -> Result<(), DomainError> {
+        let response = self
+            .client
+            .post(self.endpoint(&format!("search/{search_id}/cancel")))
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .map_err(downloader_unreachable)?;
+        if !response.status().is_success() {
+            return Err(error_from_response(response).await);
+        }
+        Ok(())
+    }
+
     async fn download(&self, search_id: &str, track_id: &str) -> Result<DownloadedAudio, DomainError> {
         let response = self
             .client

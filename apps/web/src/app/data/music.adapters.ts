@@ -17,6 +17,12 @@ export class HttpMusicCatalog implements MusicCatalog {
     return firstValueFrom(this.http.get<MusicSearchResult>(`/v1/music/search/${encodeURIComponent(searchId)}`));
   }
 
+  cancel(searchId: string): Promise<void> {
+    return firstValueFrom(
+      this.http.post<void>(`/v1/music/search/${encodeURIComponent(searchId)}/cancel`, {}),
+    );
+  }
+
   parsePlaylist(url: string): Promise<MusicSearchResult> {
     return firstValueFrom(this.http.post<MusicSearchResult>('/v1/music/playlist', { url }));
   }

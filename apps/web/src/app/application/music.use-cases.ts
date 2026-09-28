@@ -15,6 +15,10 @@ export class SearchMusicService implements SearchMusic {
   snapshot(searchId: string): Promise<MusicSearchResult> {
     return this.catalog.searchSnapshot(searchId);
   }
+
+  cancel(searchId: string): Promise<void> {
+    return this.catalog.cancel(searchId);
+  }
 }
 
 @Injectable()

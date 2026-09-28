@@ -1,5 +1,15 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, Inject, output, signal } from '@angular/core';
+import {
+  Component,
+  Directive,
+  ElementRef,
+  Inject,
+  OnDestroy,
+  OnInit,
+  computed,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { Button } from 'primeng/button';
@@ -15,9 +25,66 @@ import type { ImportMusicTrack, ParseSpotifyPlaylist, SearchMusic } from '../app
 import { MusicSearchResult, MusicTrack } from '../domain/music.models';
 import { extractError } from './login.page';
 
+const SEARCH_PAGE_SIZE = 3;
+
+@Directive({ selector: '[appWhenScrolled]' })
+export class WhenScrolled implements OnInit, OnDestroy {
+  readonly reached = output<void>();
+  private userScrolled = false;
+  private intersecting = false;
+  private scroller?: EventTarget;
+  private observer?: IntersectionObserver;
+
+  constructor(private readonly host: ElementRef<HTMLElement>) {}
+
+  ngOnInit() {
+    const root = scrollParent(this.host.nativeElement);
+    this.scroller = root ?? window;
+    this.scroller.addEventListener('scroll', this.onScroll, { passive: true });
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        this.intersecting = entries.some((entry) => entry.isIntersecting);
+        this.tryEmit();
+      },
+      { root },
+    );
+    this.observer.observe(this.host.nativeElement);
+  }
+
+  ngOnDestroy() {
+    this.scroller?.removeEventListener('scroll', this.onScroll);
+    this.observer?.disconnect();
+  }
+
+  private onScroll = () => {
+    this.userScrolled = true;
+    this.tryEmit();
+  };
+
+  private tryEmit() {
+    if (!this.userScrolled || !this.intersecting) {
+      return;
+    }
+    this.userScrolled = false;
+    this.reached.emit();
+  }
+}
+
+function scrollParent(node: HTMLElement): Element | null {
+  let current = node.parentElement;
+  while (current) {
+    const overflow = getComputedStyle(current).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
+
 @Component({
   selector: 'app-music-search',
-  imports: [FormsModule, NgTemplateOutlet, Button, Card, InputText, LucideDynamicIcon],
+  imports: [FormsModule, NgTemplateOutlet, Button, Card, InputText, LucideDynamicIcon, WhenScrolled],
   styles: `
     :host {
       display: flex;
@@ -28,8 +95,7 @@ import { extractError } from './login.page';
   template: `
     <p-card header="Search songs">
       <p class="hint">
-        Searches Migu, NetEase, QQ, Kuwo, and Qianqian. Results appear as each source answers;
-        files under 1 MB are skipped. Download saves the audio into this library.
+        The first 3 matches are shown. Scroll to load more. Download saves the audio into this library.
       </p>
       <form class="search-form" (ngSubmit)="search()">
         <input
@@ -39,14 +105,15 @@ import { extractError } from './login.page';
           [(ngModel)]="keyword"
           [disabled]="busy()"
         />
-        <p-button
-          type="submit"
-          label="Search"
-          [loading]="searching() && mode() === 'search'"
-          [disabled]="busy() || !keyword.trim()"
-        >
-          <ng-template #icon><svg lucideIcon="search" aria-hidden="true" /></ng-template>
-        </p-button>
+        @if (searching() && mode() === 'search') {
+          <p-button type="button" label="Cancel" (onClick)="cancel()">
+            <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
+          </p-button>
+        } @else {
+          <p-button type="submit" label="Search" [disabled]="busy() || !keyword.trim()">
+            <ng-template #icon><svg lucideIcon="search" aria-hidden="true" /></ng-template>
+          </p-button>
+        }
       </form>
 
       @if (mode() === 'search') {
@@ -67,14 +134,15 @@ import { extractError } from './login.page';
           [(ngModel)]="playlistUrl"
           [disabled]="busy()"
         />
-        <p-button
-          type="submit"
-          label="Load playlist"
-          [loading]="searching() && mode() === 'playlist'"
-          [disabled]="busy() || !playlistUrl.trim()"
-        >
-          <ng-template #icon><svg lucideIcon="list-music" aria-hidden="true" /></ng-template>
-        </p-button>
+        @if (searching() && mode() === 'playlist') {
+          <p-button type="button" label="Cancel" (onClick)="cancel()">
+            <ng-template #icon><svg lucideIcon="x" aria-hidden="true" /></ng-template>
+          </p-button>
+        } @else {
+          <p-button type="submit" label="Load playlist" [disabled]="busy() || !playlistUrl.trim()">
+            <ng-template #icon><svg lucideIcon="list-music" aria-hidden="true" /></ng-template>
+          </p-button>
+        }
       </form>
       @if (mode() === 'playlist' && tracks().length && !searching()) {
         <p-button
@@ -115,9 +183,9 @@ import { extractError } from './login.page';
         </p>
       }
 
-      @if (tracks().length) {
-        <ul class="search-results">
-          @for (track of tracks(); track track.id) {
+      @if (visibleTracks().length) {
+        <ul class="search-results" (wheel)="onResultsWheel($event)">
+          @for (track of visibleTracks(); track track.id) {
             <li>
               @if (track.cover_url) {
                 <img class="search-cover" [src]="track.cover_url" [alt]="track.album || track.song_name" />
@@ -152,6 +220,9 @@ import { extractError } from './login.page';
               </p-button>
             </li>
           }
+          @if (hasMore()) {
+            <li class="search-more caption" appWhenScrolled (reached)="showMore()">Scroll for more</li>
+          }
         </ul>
       }
     </ng-template>
@@ -162,6 +233,15 @@ export class MusicSearchPanel {
   keyword = '';
   playlistUrl = '';
   tracks = signal<MusicTrack[]>([]);
+  visibleCount = signal(SEARCH_PAGE_SIZE);
+  visibleTracks = computed(() => {
+    const all = this.tracks();
+    if (this.mode() !== 'search') {
+      return all;
+    }
+    return all.slice(0, this.visibleCount());
+  });
+  hasMore = computed(() => this.mode() === 'search' && this.visibleCount() < this.tracks().length);
   searchId = signal<string | null>(null);
   searching = signal(false);
   searched = signal(false);
@@ -174,6 +254,7 @@ export class MusicSearchPanel {
   readonly musicSourceLabel = musicSourceLabel;
 
   private searchSeq = 0;
+  private moreLock = false;
 
   constructor(
     @Inject(SEARCH_MUSIC) private readonly searchMusic: SearchMusic,
@@ -185,6 +266,21 @@ export class MusicSearchPanel {
     return this.searching() || this.importingId() !== null;
   }
 
+  cancel() {
+    if (!this.searching()) {
+      return;
+    }
+    const searchId = this.searchId();
+    this.searchSeq += 1;
+    this.searching.set(false);
+    if (!this.tracks().length) {
+      this.searched.set(false);
+    }
+    if (searchId) {
+      void this.searchMusic.cancel(searchId).catch(() => undefined);
+    }
+  }
+
   async search() {
     const keyword = this.keyword.trim();
     if (!keyword || this.busy()) {
@@ -194,6 +290,10 @@ export class MusicSearchPanel {
     this.begin('search');
     try {
       const started = await this.searchMusic.start(keyword);
+      if (seq !== this.searchSeq) {
+        void this.searchMusic.cancel(started.search_id).catch(() => undefined);
+        return;
+      }
       await this.follow(seq, started);
     } catch (err) {
       if (seq === this.searchSeq) {
@@ -215,6 +315,10 @@ export class MusicSearchPanel {
     this.begin('playlist');
     try {
       const started = await this.parsePlaylist.start(url);
+      if (seq !== this.searchSeq) {
+        void this.searchMusic.cancel(started.search_id).catch(() => undefined);
+        return;
+      }
       await this.follow(seq, started);
     } catch (err) {
       if (seq === this.searchSeq) {
@@ -285,8 +389,32 @@ export class MusicSearchPanel {
     }
   }
 
+  showMore() {
+    if (!this.hasMore() || this.moreLock) {
+      return;
+    }
+    this.moreLock = true;
+    this.visibleCount.update((count) => count + SEARCH_PAGE_SIZE);
+    setTimeout(() => {
+      this.moreLock = false;
+    }, 200);
+  }
+
+  onResultsWheel(event: WheelEvent) {
+    if (event.deltaY <= 0 || !this.hasMore()) {
+      return;
+    }
+    const list = event.currentTarget as HTMLElement;
+    const remaining = list.scrollHeight - list.scrollTop - list.clientHeight;
+    if (remaining > 8) {
+      return;
+    }
+    this.showMore();
+  }
+
   private begin(mode: 'search' | 'playlist') {
     this.mode.set(mode);
+    this.visibleCount.set(SEARCH_PAGE_SIZE);
     this.searching.set(true);
     this.error.set(null);
     this.tracks.set([]);

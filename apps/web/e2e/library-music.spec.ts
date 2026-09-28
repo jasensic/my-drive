@@ -22,6 +22,21 @@ test.describe('music library', () => {
     await expect(library.error).toContainText('musicdl returned 502');
   });
 
+  test('cancels a search and unlocks the form', async ({ page }) => {
+    const library = new LibraryPage(page);
+    await page.route('**/v1/music/search', async (route) => {
+      await new Promise(() => {});
+    });
+    await library.goto('/music');
+    await library.searchKeyword().fill('stuck query');
+    await page.getByRole('button', { name: 'Search' }).click();
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+    await expect(library.searchKeyword()).toBeDisabled();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled();
+    await expect(library.searchKeyword()).toBeEnabled();
+  });
+
   test('downloads a mocked search result into the library', async ({ page }) => {
     const library = new LibraryPage(page);
     await page.route('**/v1/music/search', async (route) => {
@@ -74,6 +89,40 @@ test.describe('music library', () => {
     await expect(page.getByText('E2E Artist')).toBeVisible();
     await page.getByRole('button', { name: 'Download' }).click();
     await expect(library.ok).toContainText('Saved Mock Track.mp3 to the music library');
+  });
+
+  test('shows the first 3 songs and loads more on scroll', async ({ page }) => {
+    const library = new LibraryPage(page);
+    const tracks = Array.from({ length: 6 }, (_, index) => {
+      const number = String(index + 1).padStart(2, '0');
+      return {
+        id: `track-${number}`,
+        source: 'NeteaseMusicClient',
+        song_name: `Paged Song ${number}`,
+        singers: 'E2E Artist',
+        album: 'E2E Album',
+        duration: '3:00',
+        file_size: '3 MB',
+        ext: 'mp3',
+      };
+    });
+    await page.route('**/v1/music/search', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ search_id: 'paged-e2e', tracks, done: true }),
+      });
+    });
+    await library.goto('/music');
+    await library.searchKeyword().fill('paged song');
+    await page.getByRole('button', { name: 'Search' }).click();
+    await expect(page.getByText('Paged Song 01')).toBeVisible();
+    await expect(page.getByText('Paged Song 03')).toBeVisible();
+    await expect(page.getByText('Paged Song 04')).toHaveCount(0);
+    await page.locator('.search-results').hover();
+    await page.mouse.wheel(0, 400);
+    await expect(page.getByText('Paged Song 04')).toBeVisible();
+    await expect(page.getByText('Paged Song 06')).toBeVisible();
   });
 
   test('loads a Spotify playlist and downloads every track', async ({ page }) => {

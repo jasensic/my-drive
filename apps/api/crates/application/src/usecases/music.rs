@@ -23,6 +23,11 @@ pub trait PollMusicSearch: Send + Sync {
 }
 
 #[async_trait]
+pub trait CancelMusicSearch: Send + Sync {
+    async fn execute(&self, search_id: &str) -> Result<(), AppError>;
+}
+
+#[async_trait]
 pub trait ParseSpotifyPlaylist: Send + Sync {
     async fn execute(&self, url: &str) -> Result<MusicSearch, AppError>;
 }
@@ -81,6 +86,27 @@ impl PollMusicSearch for PollMusicSearchService {
             return Err(AppError::validation("search_id is required"));
         }
         Ok(self.music.search_snapshot(search_id).await?)
+    }
+}
+
+pub struct CancelMusicSearchService {
+    music: Arc<dyn MusicDownloader>,
+}
+
+impl CancelMusicSearchService {
+    pub fn new(music: Arc<dyn MusicDownloader>) -> Self {
+        Self { music }
+    }
+}
+
+#[async_trait]
+impl CancelMusicSearch for CancelMusicSearchService {
+    async fn execute(&self, search_id: &str) -> Result<(), AppError> {
+        let search_id = search_id.trim();
+        if search_id.is_empty() {
+            return Err(AppError::validation("search_id is required"));
+        }
+        Ok(self.music.cancel(search_id).await?)
     }
 }
 
@@ -274,6 +300,10 @@ mod tests {
                 done: false,
                 error: None,
             })
+        }
+
+        async fn cancel(&self, _search_id: &str) -> Result<(), DomainError> {
+            Ok(())
         }
 
         async fn download(

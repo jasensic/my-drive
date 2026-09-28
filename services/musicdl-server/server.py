@@ -4,6 +4,7 @@ Search keeps SongInfo objects in memory. Download uses that cache so the
 portal never sees download URLs or cookies.
 
 POST /search    {"keyword": "..."}
+POST /search/{id}/cancel
 POST /playlist  {"url": "https://open.spotify.com/playlist/..."}
 POST /download  {"search_id": "...", "track_id": "..."}  -> audio bytes
 GET  /search/{id}
@@ -22,7 +23,7 @@ import time
 import traceback
 import uuid
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
@@ -167,6 +168,8 @@ class SearchJob:
         self.songs: dict[str, object] = {}
         self.tracks: list[dict] = []
         self.done = False
+        self.cancelled = False
+        self.cancel_event = threading.Event()
         self.error: str | None = None
 
     def snapshot(self, search_id: str) -> dict:
@@ -209,10 +212,18 @@ class SearchJob:
     def finish(self, error: str | None = None) -> None:
         with self.lock:
             self.done = True
+            if self.cancelled:
+                return
             if error:
                 self.error = error
             elif not self.tracks and not self.error:
                 self.error = "no songs returned; try again or narrow the query"
+
+    def cancel(self) -> None:
+        with self.lock:
+            self.cancelled = True
+            self.done = True
+        self.cancel_event.set()
 
 
 class Catalog:
@@ -288,33 +299,51 @@ class Catalog:
             raise KeyError("search expired; search again")
         return job.snapshot(search_id)
 
+    def cancel(self, search_id: str) -> dict:
+        with self.cache_lock:
+            job = self.searches.get(search_id)
+        if job is None:
+            raise KeyError("search expired; search again")
+        job.cancel()
+        return job.snapshot(search_id)
+
     def _run_search(self, search_id: str, job: SearchJob, keyword: str) -> None:
         started = time.monotonic()
         sources = list(self.client.music_clients)
         pool = ThreadPoolExecutor(max_workers=len(sources) or 1)
         futures = [pool.submit(self._search_source, source, keyword) for source in sources]
+        pending = set(futures)
         skipped = 0
         answered: list[str] = []
+        deadline = time.monotonic() + self.deadline
         try:
-            for future in as_completed(futures, timeout=self.deadline):
-                source, found = future.result()
-                added, source_skipped = job.append_source(found)
-                skipped += source_skipped
-                answered.append(source)
-                print(
-                    f"[musicdl-export] search {keyword!r}: +{added} from {source} "
-                    f"({len(job.snapshot(search_id)['tracks'])} total)"
+            while pending and not job.cancel_event.is_set() and time.monotonic() < deadline:
+                done, pending = wait(
+                    pending,
+                    timeout=min(0.4, max(0.0, deadline - time.monotonic())),
+                    return_when=FIRST_COMPLETED,
                 )
-        except TimeoutError:
-            slow = [source for source in sources if source not in answered]
-            print(
-                f"[musicdl-export] search deadline {int(self.deadline)}s, "
-                f"still waiting on {', '.join(slow)}"
-            )
+                for future in done:
+                    source, found = future.result()
+                    added, source_skipped = job.append_source(found)
+                    skipped += source_skipped
+                    answered.append(source)
+                    print(
+                        f"[musicdl-export] search {keyword!r}: +{added} from {source} "
+                        f"({len(job.snapshot(search_id)['tracks'])} total)"
+                    )
+            if job.cancel_event.is_set():
+                print(f"[musicdl-export] search {keyword!r} cancelled")
+                return
+            if pending:
+                slow = [source for source in sources if source not in answered]
+                print(
+                    f"[musicdl-export] search deadline {int(self.deadline)}s, "
+                    f"still waiting on {', '.join(slow)}"
+                )
         except Exception as err:
             traceback.print_exc()
             job.finish(str(err) or "search failed")
-            pool.shutdown(wait=False, cancel_futures=True)
             return
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
@@ -329,18 +358,23 @@ class Catalog:
 
     def _search_source(self, source: str, keyword: str) -> tuple[str, list]:
         client = self.client.music_clients[source]
+        lock = self.source_locks[source]
+        if not lock.acquire(timeout=2):
+            print(f"[musicdl-export] search {keyword!r}: {source} busy, skipped")
+            return source, []
         try:
-            with self.source_locks[source]:
-                found = client.search(
-                    keyword=keyword,
-                    num_threadings=self.client.clients_threadings.get(source, 2),
-                    request_overrides=self.client.requests_overrides.get(source, {}),
-                    rule=self.client.search_rules.get(source, {}),
-                )
+            found = client.search(
+                keyword=keyword,
+                num_threadings=self.client.clients_threadings.get(source, 2),
+                request_overrides=self.client.requests_overrides.get(source, {}),
+                rule=self.client.search_rules.get(source, {}),
+            )
             return source, found or []
         except Exception:
             traceback.print_exc()
             return source, []
+        finally:
+            lock.release()
 
     def _spotify_client(self) -> musicdl.MusicClient:
         with self.playlist_init_lock:
@@ -367,11 +401,20 @@ class Catalog:
         try:
             client = self._spotify_client()
             spotify = client.music_clients[SPOTIFY_PLAYLIST_SOURCE]
-            with self.source_locks[SPOTIFY_PLAYLIST_SOURCE]:
+            lock = self.source_locks[SPOTIFY_PLAYLIST_SOURCE]
+            if job.cancel_event.is_set() or not lock.acquire(timeout=2):
+                if not job.cancel_event.is_set():
+                    job.finish("playlist is still stopping; try again")
+                return
+            try:
+                if job.cancel_event.is_set():
+                    return
                 found = spotify.parseplaylist(
                     url,
                     request_overrides=client.requests_overrides.get(SPOTIFY_PLAYLIST_SOURCE, {}),
                 )
+            finally:
+                lock.release()
             added, skipped = job.append_source(found or [])
             elapsed = time.monotonic() - started
             print(
@@ -451,6 +494,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/search":
                 assert CATALOG is not None
                 self._json(200, CATALOG.search(str(body.get("keyword", ""))))
+            elif path.startswith("/search/") and path.endswith("/cancel"):
+                assert CATALOG is not None
+                search_id = path[len("/search/") : -len("/cancel")].strip("/")
+                self._json(200, CATALOG.cancel(search_id))
             elif path == "/playlist":
                 assert CATALOG is not None
                 self._json(200, CATALOG.playlist(str(body.get("url", ""))))
