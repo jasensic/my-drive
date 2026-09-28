@@ -3,7 +3,7 @@ package com.jasensic.mydrive.domain
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
-const val LAN_TIMEOUT_MS = 8_000L
+const val LAN_TIMEOUT_MS = 15_000L
 const val WIFI_UNAVAILABLE = "Wi-Fi not available"
 
 class DiscoverServerUseCase(

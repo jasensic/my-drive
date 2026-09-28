@@ -17,19 +17,32 @@ import androidx.core.content.ContextCompat
 import com.jasensic.mydrive.domain.ConnectivityMonitor
 import com.jasensic.mydrive.domain.DiscoveredServer
 import com.jasensic.mydrive.domain.ServerDiscovery
+import com.jasensic.mydrive.domain.lanScanHosts
 import com.jasensic.mydrive.domain.preferredLanHost
 import com.jasensic.mydrive.domain.serverFromDiscovery
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+import kotlin.math.abs
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -68,43 +81,125 @@ class NsdServerDiscovery @Inject constructor(
     private val generation = AtomicInteger(0)
     private var resolveListener: NsdManager.ResolveListener? = null
     private var serviceInfoCallback: Any? = null
+    private var cached: Pair<DiscoveredServer, Long>? = null
 
-    override suspend fun find(timeoutMs: Long): DiscoveredServer? {
+    override suspend fun find(timeoutMs: Long): DiscoveredServer? = gate.withLock {
+        val now = android.os.SystemClock.elapsedRealtime()
+        cached?.let { (server, at) ->
+            if (now - at < CACHE_MS) return@withLock server
+        }
+        val found = coroutineScope {
+            val nsd = async { discoverByNsd(timeoutMs) }
+            val scan = async { discoverBySubnet(timeoutMs) }
+            firstNotNull(nsd, scan)
+        }
+        if (found != null) cached = found to android.os.SystemClock.elapsedRealtime()
+        found
+    }
+
+    private suspend fun discoverByNsd(timeoutMs: Long): DiscoveredServer? {
         if (!hasDiscoveryPermission()) {
-            Log.i(TAG, "discovery skipped; nearby-devices permission is not granted")
+            Log.i(TAG, "mDNS skipped; nearby-devices permission is not granted")
             return null
         }
-        return gate.withLock {
-            val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-            val lock = wifi?.createMulticastLock("mydrive-mdns")?.apply {
-                setReferenceCounted(false)
-                acquire()
-            }
-            try {
-                withContext(Dispatchers.Main) {
-                    // The Wi-Fi multicast filter is not on the instant the lock is acquired.
-                    delay(MULTICAST_WARMUP_MS)
-                    val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
-                    var restrictToLan = true
-                    var attempt = 0
-                    var found: DiscoveredServer? = null
-                    while (attempt < MAX_ATTEMPTS && android.os.SystemClock.elapsedRealtime() < deadline) {
-                        attempt++
-                        val remaining = deadline - android.os.SystemClock.elapsedRealtime()
-                        if (remaining < 400) break
-                        val slice = minOf(remaining, ATTEMPT_SLICE_MS)
-                        found = withTimeoutOrNull(slice) { discoverOnce(restrictToLan) }
-                        if (found != null) break
-                        // The first browse is often empty, and the network-scoped API sometimes
-                        // never starts. The next pass uses the process-wide discovery call.
-                        restrictToLan = false
-                        delay(RETRY_GAP_MS)
-                    }
-                    found
+        val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val lock = wifi?.createMulticastLock("mydrive-mdns")?.apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+        return try {
+            withContext(Dispatchers.Main) {
+                // The Wi-Fi multicast filter is not on the instant the lock is acquired.
+                delay(MULTICAST_WARMUP_MS)
+                val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
+                var restrictToLan = true
+                var attempt = 0
+                var found: DiscoveredServer? = null
+                while (attempt < MAX_ATTEMPTS && android.os.SystemClock.elapsedRealtime() < deadline) {
+                    attempt++
+                    val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+                    if (remaining < 400) break
+                    val slice = minOf(remaining, ATTEMPT_SLICE_MS)
+                    found = withTimeoutOrNull(slice) { discoverOnce(restrictToLan) }
+                    if (found != null) break
+                    // The first browse is often empty, and the network-scoped API sometimes
+                    // never starts. The next pass uses the process-wide discovery call.
+                    restrictToLan = false
+                    delay(RETRY_GAP_MS)
                 }
-            } finally {
-                if (lock?.isHeld == true) lock.release()
+                found
             }
+        } finally {
+            if (lock?.isHeld == true) lock.release()
+        }
+    }
+
+    /**
+     * mDNS from a Docker bridge never reaches the phone. The API port is published on the
+     * host, so ask each address on the Wi-Fi subnet for `/v1/status`.
+     */
+    private suspend fun discoverBySubnet(timeoutMs: Long): DiscoveredServer? = withContext(Dispatchers.IO) {
+        val lan = localLan() ?: run {
+            Log.i(TAG, "subnet scan skipped; no Wi-Fi IPv4")
+            return@withContext null
+        }
+        val hosts = lanScanHosts(lan.ip, lan.prefix).sortedBy { host -> ipv4Distance(lan.ip, host) }
+        if (hosts.isEmpty()) return@withContext null
+        Log.i(TAG, "scanning ${hosts.size} hosts from ${lan.ip}/${lan.prefix} port $API_PORT")
+        val permits = Semaphore(SCAN_PARALLELISM)
+        coroutineScope {
+            val outcome = CompletableDeferred<DiscoveredServer?>()
+            val jobs = hosts.map { host ->
+                launch {
+                    permits.withPermit {
+                        if (!isActive || outcome.isCompleted) return@launch
+                        if (probeMyDrive(lan.network, host, API_PORT)) {
+                            Log.i(TAG, "subnet scan found $host:$API_PORT")
+                            outcome.complete(DiscoveredServer(host, API_PORT, "my-drive"))
+                        }
+                    }
+                }
+            }
+            launch {
+                jobs.forEach { it.join() }
+                outcome.complete(null)
+            }
+            val server = withTimeoutOrNull(timeoutMs) { outcome.await() }
+            jobs.forEach { it.cancel() }
+            if (server == null) Log.i(TAG, "subnet scan finished without a my-drive server")
+            server
+        }
+    }
+
+    private fun localLan(): LocalLan? {
+        val network = lanNetwork(context) ?: return null
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val link = cm.getLinkProperties(network)?.linkAddresses.orEmpty().firstOrNull { address ->
+            address.address is java.net.Inet4Address &&
+                preferredLanHost(listOf(address.address.hostAddress.orEmpty())) != null
+        } ?: return null
+        val ip = link.address.hostAddress?.substringBefore('%') ?: return null
+        return LocalLan(network, ip, link.prefixLength)
+    }
+
+    private fun probeMyDrive(network: Network, host: String, port: Int): Boolean {
+        val url = URL("http://$host:$port/v1/status")
+        val conn = network.openConnection(url) as HttpURLConnection
+        conn.connectTimeout = PROBE_TIMEOUT_MS
+        conn.readTimeout = PROBE_TIMEOUT_MS
+        conn.instanceFollowRedirects = false
+        conn.useCaches = false
+        conn.setRequestProperty("Accept", "application/json")
+        conn.setRequestProperty("Connection", "close")
+        return try {
+            conn.connect()
+            if (conn.responseCode != 200) return false
+            val body = conn.inputStream.bufferedReader().use { it.readText() }
+            body.contains("\"setup_required\"")
+        } catch (_: Exception) {
+            false
+        } finally {
+            conn.disconnect()
         }
     }
 
@@ -338,7 +433,43 @@ class NsdServerDiscovery @Inject constructor(
         const val ATTEMPT_SLICE_MS = 3_500L
         const val RETRY_GAP_MS = 400L
         const val MULTICAST_WARMUP_MS = 300L
+        const val CACHE_MS = 30_000L
+        const val API_PORT = 8080
+        const val SCAN_PARALLELISM = 64
+        const val PROBE_TIMEOUT_MS = 500
     }
+}
+
+private data class LocalLan(val network: Network, val ip: String, val prefix: Int)
+
+private suspend fun firstNotNull(vararg tasks: Deferred<DiscoveredServer?>): DiscoveredServer? {
+    val pending = tasks.toMutableList()
+    try {
+        while (pending.isNotEmpty()) {
+            val (done, value) = select<Pair<Deferred<DiscoveredServer?>, DiscoveredServer?>> {
+                pending.forEach { task -> task.onAwait { task to it } }
+            }
+            pending.remove(done)
+            if (value != null) return value
+        }
+        return null
+    } finally {
+        tasks.forEach { it.cancel() }
+    }
+}
+
+private fun ipv4Distance(left: String, right: String): Long {
+    fun pack(host: String): Long? {
+        val parts = host.split('.')
+        if (parts.size != 4) return null
+        return parts.fold(0L) { acc, octet ->
+            val value = octet.toIntOrNull() ?: return null
+            (acc shl 8) or value.toLong()
+        }
+    }
+    val a = pack(left) ?: return Long.MAX_VALUE
+    val b = pack(right) ?: return Long.MAX_VALUE
+    return abs(a - b)
 }
 
 @Suppress("DEPRECATION")

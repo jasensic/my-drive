@@ -426,6 +426,37 @@ fun preferredLanHost(hosts: List<String>): String? {
     return ranked.minByOrNull { it.second }?.first
 }
 
+/**
+ * Hosts to probe when mDNS never arrives. Prefixes wider than /24 are narrowed to the
+ * phone's own /24 so a home scan stays under a few hundred addresses.
+ */
+fun lanScanHosts(localIp: String, prefixLength: Int): List<String> {
+    val octets = localIp.split('.').map { it.toIntOrNull() ?: return emptyList() }
+    if (octets.size != 4 || octets.any { it !in 0..255 }) return emptyList()
+    val prefix = when {
+        prefixLength < 24 || prefixLength > 30 -> 24
+        else -> prefixLength
+    }
+    val ip = octets.fold(0L) { acc, octet -> (acc shl 8) or octet.toLong() }
+    val mask = (0xFFFFFFFFL shl (32 - prefix)) and 0xFFFFFFFFL
+    val network = ip and mask
+    val broadcast = network or (mask.inv() and 0xFFFFFFFFL)
+    return buildList {
+        var cursor = network + 1
+        while (cursor < broadcast && size < 512) {
+            if (cursor != ip) add(formatIpv4(cursor))
+            cursor++
+        }
+    }
+}
+
+private fun formatIpv4(value: Long): String {
+    val bits = value and 0xFFFFFFFFL
+    return listOf(24, 16, 8, 0).joinToString(".") { shift ->
+        ((bits shr shift) and 0xFF).toString()
+    }
+}
+
 private fun lanHostRank(host: String): Int {
     if (isLoopbackHost(host)) return 100
     if (host.contains(':')) {

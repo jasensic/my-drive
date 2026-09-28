@@ -475,6 +475,26 @@ class SyncFilesUseCaseTest {
     }
 
     @Test
+    fun lanScanHostsCoversTheLocalSubnetExceptItself() {
+        val hosts = lanScanHosts("192.168.1.50", 24)
+        assertEquals(253, hosts.size)
+        assertEquals("192.168.1.1", hosts.first())
+        assertEquals("192.168.1.254", hosts.last())
+        assertTrue("192.168.1.50" !in hosts)
+        assertTrue("192.168.1.0" !in hosts)
+        assertTrue("192.168.1.255" !in hosts)
+    }
+
+    @Test
+    fun lanScanHostsNarrowsAWidePrefixToTheLocal24() {
+        val hosts = lanScanHosts("10.1.2.5", 8)
+        assertEquals(253, hosts.size)
+        assertEquals("10.1.2.1", hosts.first())
+        assertEquals("10.1.2.254", hosts.last())
+        assertTrue("10.1.2.5" !in hosts)
+    }
+
+    @Test
     fun discoveryIgnoresLoopbackTxtAndUsesResolvedHost() {
         val server = serverFromDiscovery(
             name = "my-drive",
