@@ -40,6 +40,10 @@ export interface ListLibrary {
   execute(silo?: LibrarySilo, trash?: boolean): Promise<{ files: MediaFile[]; albums: Album[] }>;
 }
 
+export interface SearchLibrary {
+  execute(): Promise<MediaFile[]>;
+}
+
 export interface GetMedia {
   execute(fileId: string): Promise<MediaFile>;
 }
@@ -197,6 +201,7 @@ export const REGISTER_ACCOUNT = new InjectionToken<RegisterAccount>('REGISTER_AC
 export const LIST_USERS = new InjectionToken<ListUsers>('LIST_USERS');
 export const SESSION_QUERY = new InjectionToken<SessionQuery>('SESSION_QUERY');
 export const LIST_LIBRARY = new InjectionToken<ListLibrary>('LIST_LIBRARY');
+export const SEARCH_LIBRARY = new InjectionToken<SearchLibrary>('SEARCH_LIBRARY');
 export const GET_MEDIA = new InjectionToken<GetMedia>('GET_MEDIA');
 export const UPLOAD_MEDIA = new InjectionToken<UploadMedia>('UPLOAD_MEDIA');
 export const CREATE_ALBUM = new InjectionToken<CreateAlbum>('CREATE_ALBUM');

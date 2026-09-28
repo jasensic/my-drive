@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { LibraryPage } from './pages/library.page';
 import { LoginPage } from './pages/login.page';
 import { ShellPage } from './pages/shell.page';
 import { ADMIN_USERNAME } from './support/credentials';
+import { textFile } from './support/files';
+import { uniqueName } from './support/names';
 
 const NAV = [
   { name: 'Music', url: /\/music/, heading: 'Music' },
@@ -88,5 +91,21 @@ test.describe('shell', () => {
     await expect(shell.navLink('Devices')).toBeVisible();
     await shell.navLink('Devices').click();
     await expect(page).toHaveURL(/\/devices/);
+  });
+
+  test('opens file search with Ctrl+K and jumps to a matching file', async ({ page }) => {
+    const library = new LibraryPage(page);
+    const shell = new ShellPage(page);
+    await library.goto('/files');
+    const note = textFile(`${uniqueName('ctrlk-doc')}.txt`);
+    await library.upload(note);
+    await expect(library.fileLink(note.name)).toBeVisible();
+
+    await shell.openFileSearch();
+    await shell.searchInput.fill(note.name);
+    await expect(shell.searchHit(note.name)).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/player\//);
+    await expect(page.getByText(note.name, { exact: true })).toBeVisible();
   });
 });

@@ -1,4 +1,4 @@
-import { fileMatchesSilo, filesInAlbum, isImagePreviewBlob, ListLibraryService } from './library.use-cases';
+import { fileMatchesSilo, filesInAlbum, isImagePreviewBlob, ListLibraryService, matchLibraryFiles } from './library.use-cases';
 import { MediaFile } from '../domain/models';
 import { AlbumRepository, FileRepository } from '../domain/ports';
 
@@ -135,5 +135,62 @@ describe('ListLibraryService', () => {
     } finally {
       URL.createObjectURL = original;
     }
+  });
+});
+
+describe('matchLibraryFiles', () => {
+  const files: MediaFile[] = [
+    {
+      id: '1',
+      album_id: null,
+      name: 'Holiday.jpg',
+      size: 1,
+      mime: 'image/jpeg',
+      checksum: 'a',
+      media_kind: 'photo',
+      created_at: '',
+      uploaded_at: '2024-01-01T00:00:00Z',
+      content_url: '/1',
+      thumbnail_url: null,
+    },
+    {
+      id: '2',
+      album_id: null,
+      name: 'notes.txt',
+      size: 1,
+      mime: 'text/plain',
+      checksum: 'b',
+      media_kind: 'other',
+      created_at: '',
+      uploaded_at: '2024-06-01T00:00:00Z',
+      content_url: '/2',
+      thumbnail_url: null,
+    },
+    {
+      id: '3',
+      album_id: null,
+      name: 'summer-holiday-mix.mp3',
+      size: 1,
+      mime: 'audio/mpeg',
+      checksum: 'c',
+      media_kind: 'audio',
+      created_at: '',
+      uploaded_at: '2024-03-01T00:00:00Z',
+      content_url: '/3',
+      thumbnail_url: null,
+    },
+  ];
+
+  it('returns recent files when the query is empty', () => {
+    expect(matchLibraryFiles(files, '').map((file) => file.id)).toEqual(['2', '3', '1']);
+  });
+
+  it('ranks prefix matches ahead of substring matches', () => {
+    expect(matchLibraryFiles(files, 'hol').map((file) => file.id)).toEqual(['1', '3']);
+  });
+
+  it('is case-insensitive and ignores files that do not match', () => {
+    expect(matchLibraryFiles(files, 'NOTES').map((file) => file.name)).toEqual(['notes.txt']);
+    expect(matchLibraryFiles(files, 'missing')).toEqual([]);
   });
 });
