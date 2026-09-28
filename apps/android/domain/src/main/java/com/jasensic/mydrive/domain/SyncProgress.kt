@@ -99,4 +99,16 @@ interface SyncScheduler {
 
     /** Keep syncing on a schedule while the app is not in the foreground. */
     fun ensureBackgroundSync() {}
+
+    /** Sync started because the phone joined Wi-Fi, not because the user tapped sync. */
+    fun enqueueBackground() {}
+}
+
+/**
+ * True when a signed-in phone has just joined a Wi-Fi network.
+ * The same network id does not sync again; the hourly job covers staying on that network.
+ */
+fun shouldStartWifiSync(previousNetworkId: String?, networkId: String?, loggedIn: Boolean): Boolean {
+    if (!loggedIn || networkId.isNullOrBlank()) return false
+    return networkId != previousNetworkId
 }

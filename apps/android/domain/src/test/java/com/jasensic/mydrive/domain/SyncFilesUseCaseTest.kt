@@ -572,6 +572,33 @@ class SyncFilesUseCaseTest {
     }
 
     @Test
+    fun quietBackgroundSyncDoesNotStickWhenTheServerIsMissing() = runTest {
+        val progress = InMemorySyncProgressStore()
+        val err = assertFailsWith<IllegalStateException> {
+            SyncFilesUseCase(
+                FakeConnectivity(),
+                DiscoverServerUseCase(FakeConnectivity(), FakeDiscovery(null), FakeState()),
+                FakeRemote(),
+                FakeStore(),
+                FakeState(),
+                "Phone A",
+                progress,
+            ).execute(quietWhenUnreachable = true)
+        }
+        assertEquals("my-drive server not found on LAN", err.message)
+        assertEquals(SyncPhase.IDLE, progress.current().phase)
+    }
+
+    @Test
+    fun wifiSyncStartsOnlyWhenASignedInPhoneJoinsANewNetwork() {
+        assertTrue(shouldStartWifiSync(previousNetworkId = null, networkId = "10", loggedIn = true))
+        assertTrue(shouldStartWifiSync(previousNetworkId = "10", networkId = "11", loggedIn = true))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = "10", networkId = "10", loggedIn = true))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = null, networkId = "10", loggedIn = false))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = "10", networkId = null, loggedIn = true))
+    }
+
+    @Test
     fun discoverServerTimesOutWhenWifiNeverArrives() = runTest {
         val hanging = object : ConnectivityMonitor {
             override suspend fun awaitWifi() = kotlinx.coroutines.awaitCancellation()

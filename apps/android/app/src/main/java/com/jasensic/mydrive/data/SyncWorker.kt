@@ -13,6 +13,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import com.jasensic.mydrive.R
+import com.jasensic.mydrive.domain.ConnectivityMonitor
 import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
@@ -33,12 +34,17 @@ class SyncWorker @AssistedInject constructor(
     private val syncFiles: SyncFilesUseCase,
     private val progressStore: SyncProgressStore,
     private val syncState: SyncStateRepository,
+    private val connectivity: ConnectivityMonitor,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result = coroutineScope {
         val user = inputData.getString(KEY_USERNAME)
         val pass = inputData.getString(KEY_PASSWORD)
+        val background = inputData.getBoolean(KEY_BACKGROUND, false)
         if (user.isNullOrBlank() && pass.isNullOrBlank() && syncState.session() == null) {
+            return@coroutineScope Result.success()
+        }
+        if (background && !connectivity.isOnWifi()) {
             return@coroutineScope Result.success()
         }
         ensureChannel()
@@ -58,14 +64,14 @@ class SyncWorker @AssistedInject constructor(
             setForeground(foregroundInfo(progressStore.current()))
             val host = inputData.getString(KEY_HOST)
             val action = com.jasensic.mydrive.domain.parseAuthAction(inputData.getString(KEY_AUTH_ACTION))
-            syncFiles.execute(user, pass, host, action)
+            syncFiles.execute(user, pass, host, action, quietWhenUnreachable = background)
             Result.success()
         } catch (err: Throwable) {
             val message = err.message.orEmpty()
-            if (message == "login required" ||
-                message == WIFI_UNAVAILABLE ||
-                message.contains("not found on LAN")
-            ) {
+            val unreachable = message == WIFI_UNAVAILABLE || message.contains("not found on LAN")
+            if (background && unreachable) {
+                Result.success()
+            } else if (message == "login required" || unreachable) {
                 Result.failure()
             } else {
                 Result.retry()
@@ -168,6 +174,7 @@ class SyncWorker @AssistedInject constructor(
         const val KEY_PASSWORD = "password"
         const val KEY_HOST = "host"
         const val KEY_AUTH_ACTION = "authAction"
+        const val KEY_BACKGROUND = "background"
         const val CHANNEL_ID = "mydrive_sync"
         const val NOTIFICATION_ID = 42
     }

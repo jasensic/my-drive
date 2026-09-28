@@ -44,7 +44,7 @@ El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real (n
 
 La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el origen descubierto. Si mDNS falla, se puede introducir el host a mano (por ejemplo `192.168.1.10:8080`).
 
-La sincronización en segundo plano usa WorkManager (cada 15 minutos, con red) además del sync manual.
+La sincronización en segundo plano usa WorkManager: al entrar en la Wi-Fi y, mientras sigues en ella, una vez por hora.
 
 ### Actualizaciones on-premise
 

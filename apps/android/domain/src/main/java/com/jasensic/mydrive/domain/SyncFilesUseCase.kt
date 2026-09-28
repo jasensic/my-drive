@@ -89,6 +89,7 @@ class SyncFilesUseCase(
         password: String? = null,
         manualHost: String? = null,
         authAction: AuthAction = AuthAction.LOGIN,
+        quietWhenUnreachable: Boolean = false,
     ): SyncResult {
         progress.publish(
             SyncProgress(
@@ -215,13 +216,19 @@ class SyncFilesUseCase(
                 state.clearSession()
                 localStore.bindUser(null)
             }
-            progress.publish(
-                SyncProgress(
-                    phase = SyncPhase.FAILED,
-                    errorMessage = err.message ?: "Download failed",
-                    message = err.message ?: "Download failed",
-                ),
-            )
+            val message = err.message.orEmpty()
+            val unreachable = message == WIFI_UNAVAILABLE || message.contains("not found on LAN")
+            if (quietWhenUnreachable && unreachable) {
+                progress.publish(SyncProgress())
+            } else {
+                progress.publish(
+                    SyncProgress(
+                        phase = SyncPhase.FAILED,
+                        errorMessage = err.message ?: "Download failed",
+                        message = err.message ?: "Download failed",
+                    ),
+                )
+            }
             throw err
         }
     }
