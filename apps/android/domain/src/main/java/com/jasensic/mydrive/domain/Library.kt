@@ -117,6 +117,59 @@ fun dateSectionKind(epochDay: Long, todayEpochDay: Long): DateSectionKind =
 
 fun localDateFromEpochDay(epochDay: Long): LocalDate = LocalDate.ofEpochDay(epochDay)
 
+/** Blank queries match everything so callers can skip a special-case branch. */
+fun isBlankLibraryQuery(query: String): Boolean = query.trim().isEmpty()
+
+fun LocalFile.matchesLibraryQuery(query: String): Boolean {
+    val needle = query.trim()
+    if (needle.isEmpty()) return true
+    return librarySearchHaystack().any { it.contains(needle, ignoreCase = true) }
+}
+
+fun Album.matchesLibraryQuery(query: String): Boolean {
+    val needle = query.trim()
+    if (needle.isEmpty()) return true
+    return name.contains(needle, ignoreCase = true)
+}
+
+fun filterLibraryFiles(files: List<LocalFile>, query: String): List<LocalFile> {
+    if (isBlankLibraryQuery(query)) return files
+    return files.filter { it.matchesLibraryQuery(query) }
+}
+
+fun filterAlbums(albums: List<Album>, query: String): List<Album> {
+    if (isBlankLibraryQuery(query)) return albums
+    return albums.filter { it.matchesLibraryQuery(query) }
+}
+
+/**
+ * Keeps a group when its name matches, or when at least one track matches.
+ * Name hits keep every track so the user can still open/play the full album or artist.
+ */
+fun filterMusicGroups(groups: List<MusicGroup>, query: String): List<MusicGroup> {
+    if (isBlankLibraryQuery(query)) return groups
+    val needle = query.trim()
+    return groups.mapNotNull { group ->
+        if (group.name.contains(needle, ignoreCase = true)) {
+            group
+        } else {
+            val tracks = group.tracks.filter { it.matchesLibraryQuery(needle) }
+            if (tracks.isEmpty()) null else group.copy(tracks = tracks)
+        }
+    }
+}
+
+private fun LocalFile.librarySearchHaystack(): List<String> = listOfNotNull(
+    name,
+    title,
+    artist,
+    albumArtist,
+    albumName,
+    songTitle().takeIf { mediaKind == MediaKind.AUDIO },
+    trackHeadline().takeIf { mediaKind == MediaKind.AUDIO },
+    collaborations().takeIf { it.isNotBlank() },
+)
+
 private fun dateOf(millis: Long, zone: ZoneId): LocalDate {
     val safe = if (millis > 0L) millis else 0L
     return Instant.ofEpochMilli(safe).atZone(zone).toLocalDate()

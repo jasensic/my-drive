@@ -22,7 +22,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.filesInAlbum
+import com.jasensic.mydrive.domain.filterLibraryFiles
+import com.jasensic.mydrive.domain.isBlankLibraryQuery
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -44,8 +50,11 @@ fun FilesScreen(
     onLongPress: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
     val visible = remember(files, albumId) { filesInAlbum(files, albumId) }
+    val filtered = remember(visible, query) { filterLibraryFiles(visible, query) }
     val selecting = selectedIds.isNotEmpty()
+    val searching = !isBlankLibraryQuery(query)
     if (files.isEmpty() && albums.isEmpty()) {
         EmptyLibrary(
             title = "No files yet",
@@ -67,6 +76,9 @@ fun FilesScreen(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             )
         }
+        item {
+            LibrarySearchField(query = query, onQueryChange = { query = it }, placeholder = "Search files")
+        }
         if (albums.isNotEmpty()) {
             item {
                 LazyRow(
@@ -86,7 +98,17 @@ fun FilesScreen(
                 }
             }
         }
-        items(visible, key = { it.id }) { file ->
+        if (filtered.isEmpty()) {
+            item {
+                EmptyLibrary(
+                    title = if (searching) "No matching files" else "No files here",
+                    body = if (searching) "Try another file name." else "This album has no files yet.",
+                    icon = Icons.Outlined.FolderOpen,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
+            }
+        }
+        items(filtered, key = { it.id }) { file ->
             FileRow(
                 file = file,
                 selected = file.id in selectedIds,
