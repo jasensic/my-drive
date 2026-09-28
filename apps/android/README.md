@@ -56,7 +56,7 @@ The portal **App updates** page publishes that APK. After connect, the phone ins
 - No tag: `0.0.1`, `0.0.2`, … (commit count on the branch).
 - Tag `1.0.0` on a commit: that APK is `1.0.0`. Each later commit is `1.0.1`, `1.0.2`, …
 - Official `versionName` (no suffix) only on `main` / `master` or a `v*` tag. A PR build is `1.0.1-PR42` (the PR number). Other branches get `-PR`.
-- Gradle writes `app/build/outputs/apk/release/my-drive-<versionName>.apk` (for example `my-drive-0.0.16-PR9.apk`). CI uploads that file as the job artifact instead of a generic `my-drive-apk.zip`. Tag builds also attach the same APK to the GitHub Release.
+- Gradle writes `app/build/outputs/apk/release/my-drive-<versionName>.apk` (for example `my-drive-0.0.16-PR9.apk`). CI uploads that APK as a GitHub Actions artifact named `my-drive-<versionName>` (no `.apk` suffix, because Actions always wraps the download in a zip). The file inside the zip is the APK. Tag builds also attach the same APK to the GitHub Release.
 - `versionCode` is `major * 1000000 + minor * 10000 + patch` so a new tag still raises the integer phones compare.
 
 CI clones the full history and tags so the APK matches local `./gradlew :app:assembleRelease`. Override with `-PversionName=1.2.3 -PversionCode=1002003` or `-PprNumber=42` if needed.
