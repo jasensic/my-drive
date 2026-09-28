@@ -18,6 +18,7 @@ import type {
   UpdateAppRelease,
 } from '../application/use-cases.tokens';
 import { AppRelease } from '../domain/models';
+import { formatLocalDateTime } from './datetime';
 import { extractError } from './login.page';
 
 @Component({
@@ -100,7 +101,7 @@ import { extractError } from './login.page';
                   rows="3"
                 ></textarea>
               </div>
-              <p class="caption">{{ formatSize(release.size) }} · {{ release.published_at }}</p>
+              <p class="caption">{{ formatSize(release.size) }} · {{ formatDateTime(release.published_at) }}</p>
               <div class="actions">
                 <p-button label="Save" [text]="true" (onClick)="save(release)">
                   <ng-template #icon><svg lucideIcon="save" aria-hidden="true" /></ng-template>
@@ -274,6 +275,10 @@ export class AppUpdatesPage {
     } catch (err) {
       this.error.set(extractError(err));
     }
+  }
+
+  formatDateTime(value: string) {
+    return formatLocalDateTime(value);
   }
 
   formatSize(size: number) {

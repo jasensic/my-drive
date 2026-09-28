@@ -8,8 +8,12 @@ import { ImportMusicTrack, SearchMusic } from './use-cases.tokens';
 export class SearchMusicService implements SearchMusic {
   constructor(@Inject(MUSIC_CATALOG) private readonly catalog: MusicCatalog) {}
 
-  execute(keyword: string): Promise<MusicSearchResult> {
+  start(keyword: string): Promise<MusicSearchResult> {
     return this.catalog.search(keyword.trim());
+  }
+
+  snapshot(searchId: string): Promise<MusicSearchResult> {
+    return this.catalog.searchSnapshot(searchId);
   }
 }
 

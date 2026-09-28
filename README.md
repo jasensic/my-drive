@@ -29,20 +29,22 @@ Servicios:
 
 | Servicio | URL |
 | --- | --- |
-| Portal web | http://localhost |
-| API | http://localhost/v1 (también http://localhost:8080/v1 en compose de desarrollo) |
+| Portal web | http://127.0.0.1:8088 |
+| API | http://127.0.0.1:8080/v1 |
 | musicdl-export | http://127.0.0.1:8090 (solo localhost; el portal habla con la API) |
-| Salud API | http://localhost:8080/health |
-| OpenAPI | http://localhost:8080/api-docs |
-| MinIO consola | http://localhost:9001 |
+| Salud API | http://127.0.0.1:8080/health |
+| OpenAPI | http://127.0.0.1:8080/api-docs |
+| MinIO consola | http://127.0.0.1:9001 |
 
 El primer acceso abre la pantalla de **setup**: crea el usuario administrador. Después se puede iniciar sesión, subir archivos y definir perfiles de sincronización.
 
 ### mDNS
 
-El API anuncia `_mydrive._tcp.local`. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API. En macOS/Windows de desarrollo, usa la IP del host o el nombre `host.docker.internal`.
+El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real (no loopback), el TXT `url` lleva esa base y Android la prefiere al IP resuelto. Las URLs de loopback no se anuncian. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API.
 
-La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el host LAN descubierto. Si mDNS falla, se puede introducir `IP:puerto` a mano (por ejemplo `192.168.1.10:8080`).
+La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el origen descubierto. Si mDNS falla, se puede introducir el host a mano (por ejemplo `192.168.1.10:8080`).
+
+La sincronización en segundo plano usa WorkManager: al entrar en la Wi-Fi y, mientras sigues en ella, una vez por hora.
 
 ### Actualizaciones on-premise
 
@@ -52,7 +54,7 @@ Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódi
 docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
-Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versionName` desde el último tag semver de la rama (`1.0.0` o `v1.0.0`): el commit del tag es esa versión y cada commit posterior sube el parche (`1.0.1`, `1.0.2`, …). Sin tags, empieza en `0.0.N` según el número de commits. La versión oficial (sin sufijo) solo sale al mergear a `main`; un APK de PR es `1.0.1-PR42`. `versionCode` deriva de esa semver para que las actualizaciones in-app sigan subiendo. Se publica el APK en el portal (**App updates**): el servidor lee esos campos del APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` es mayor, descarga e instala. CI genera `my-drive-<versionName>.apk` (por ejemplo `my-drive-0.0.16-PR9.apk`) en cada push a `main`, PR y tags `v*`.
+Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versionName` desde el último tag semver de la rama (`1.0.0` o `v1.0.0`): el commit del tag es esa versión y cada commit posterior sube el parche (`1.0.1`, `1.0.2`, …). Sin tags, empieza en `0.0.N` según el número de commits. La versión oficial (sin sufijo) solo sale al mergear a `main`; un APK de PR es `1.0.1-PR42`. `versionCode` deriva de esa semver para que las actualizaciones in-app sigan subiendo. Se publica el APK en el portal (**App updates**): el servidor lee esos campos del APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` es mayor, descarga e instala. CI genera `my-drive-<versionName>.apk` (por ejemplo `my-drive-0.0.16-PR9.apk`) en cada push a `main`, PR y tags `v*`. El artefacto de Actions se llama `my-drive-<versionName>` (sin `.apk`): GitHub empaqueta la descarga en zip y el APK va dentro.
 
 ## Funcionalidades principales
 
@@ -62,7 +64,7 @@ Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versio
 4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
 5. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
 6. Manifiesto JSON de archivos faltantes y descarga paralela en Android
-7. Android: login único; después el teléfono encuentra el servidor escaneando la LAN (mDNS `_mydrive._tcp`)
+7. Android: login único; después el teléfono encuentra el servidor por mDNS (`_mydrive._tcp`, TXT `url` con el dominio) y sigue sincronizando en segundo plano. Un borrado en el portal desaparece del teléfono en el siguiente manifiesto (`removed`).
 8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
 9. Publicación de APKs en el portal y actualización de Android al reconectar
 

@@ -16,8 +16,8 @@ import { extractError } from './login.page';
   template: `
     <p-card header="Search songs">
       <p class="hint">
-        Searches Migu, NetEase, QQ, Kuwo, and Qianqian, keeps the sources that answer within a few
-        seconds, and skips files under 1 MB. Download saves the audio into this library.
+        Searches Migu, NetEase, QQ, Kuwo, and Qianqian. Results appear as each source answers;
+        files under 1 MB are skipped. Download saves the audio into this library.
       </p>
       <form class="search-form" (ngSubmit)="search()">
         <input
@@ -46,6 +46,10 @@ import { extractError } from './login.page';
           <svg lucideIcon="search" [size]="28" aria-hidden="true" />
           <p>No songs found.</p>
         </div>
+      }
+
+      @if (searching() && !tracks().length) {
+        <p class="caption">Looking up sources…</p>
       }
 
       @if (tracks().length) {
@@ -101,6 +105,8 @@ export class MusicSearchPanel {
   error = signal<string | null>(null);
   readonly musicSourceLabel = musicSourceLabel;
 
+  private searchSeq = 0;
+
   constructor(
     @Inject(SEARCH_MUSIC) private readonly searchMusic: SearchMusic,
     @Inject(IMPORT_MUSIC_TRACK) private readonly importTrack: ImportMusicTrack,
@@ -111,19 +117,46 @@ export class MusicSearchPanel {
     if (!keyword || this.searching()) {
       return;
     }
+    const seq = ++this.searchSeq;
     this.searching.set(true);
     this.error.set(null);
     this.tracks.set([]);
     this.searchId.set(null);
+    this.searched.set(true);
     try {
-      const result = await this.searchMusic.execute(keyword);
-      this.searchId.set(result.search_id);
-      this.tracks.set(result.tracks);
-      this.searched.set(true);
+      const started = await this.searchMusic.start(keyword);
+      if (seq !== this.searchSeq) {
+        return;
+      }
+      this.searchId.set(started.search_id);
+      this.tracks.set(started.tracks);
+      if (started.error) {
+        this.error.set(started.error);
+      }
+      let done = started.done;
+      while (!done) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        if (seq !== this.searchSeq) {
+          return;
+        }
+        const snap = await this.searchMusic.snapshot(started.search_id);
+        if (seq !== this.searchSeq) {
+          return;
+        }
+        this.tracks.set(snap.tracks);
+        if (snap.error) {
+          this.error.set(snap.error);
+        }
+        done = snap.done;
+      }
     } catch (err) {
-      this.error.set(extractError(err));
+      if (seq === this.searchSeq) {
+        this.error.set(extractError(err));
+      }
     } finally {
-      this.searching.set(false);
+      if (seq === this.searchSeq) {
+        this.searching.set(false);
+      }
     }
   }
 

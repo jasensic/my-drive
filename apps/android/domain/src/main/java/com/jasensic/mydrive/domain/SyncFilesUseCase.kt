@@ -3,7 +3,7 @@ package com.jasensic.mydrive.domain
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
-const val LAN_TIMEOUT_MS = 8_000L
+const val LAN_TIMEOUT_MS = 15_000L
 const val WIFI_UNAVAILABLE = "Wi-Fi not available"
 
 class DiscoverServerUseCase(
@@ -89,6 +89,7 @@ class SyncFilesUseCase(
         password: String? = null,
         manualHost: String? = null,
         authAction: AuthAction = AuthAction.LOGIN,
+        quietWhenUnreachable: Boolean = false,
     ): SyncResult {
         progress.publish(
             SyncProgress(
@@ -124,6 +125,9 @@ class SyncFilesUseCase(
             val have = localStore.knownIds()
             val lastSync = state.lastSyncAt().takeIf { have.isNotEmpty() }
             val manifest = remote.fetchManifest(base, session.token, deviceId, lastSync, have)
+            if (manifest.removed.isNotEmpty()) {
+                localStore.removeFiles(manifest.removed)
+            }
             localStore.replaceAlbums(manifest.albums)
             val toFetch = manifest.files.filter { it.id !in excluded }
             val total = toFetch.size
@@ -212,13 +216,19 @@ class SyncFilesUseCase(
                 state.clearSession()
                 localStore.bindUser(null)
             }
-            progress.publish(
-                SyncProgress(
-                    phase = SyncPhase.FAILED,
-                    errorMessage = err.message ?: "Download failed",
-                    message = err.message ?: "Download failed",
-                ),
-            )
+            val message = err.message.orEmpty()
+            val unreachable = message == WIFI_UNAVAILABLE || message.contains("not found on LAN")
+            if (quietWhenUnreachable && unreachable) {
+                progress.publish(SyncProgress())
+            } else {
+                progress.publish(
+                    SyncProgress(
+                        phase = SyncPhase.FAILED,
+                        errorMessage = err.message ?: "Download failed",
+                        message = err.message ?: "Download failed",
+                    ),
+                )
+            }
             throw err
         }
     }

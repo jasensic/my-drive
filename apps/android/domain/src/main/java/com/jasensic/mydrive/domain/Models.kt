@@ -37,6 +37,7 @@ data class SyncManifest(
     val generatedAt: String,
     val files: List<ManifestFile>,
     val albums: List<Album>,
+    val removed: List<String> = emptyList(),
 )
 
 data class SyncResult(
@@ -56,13 +57,19 @@ data class DiscoveredServer(
     val host: String,
     val port: Int,
     val name: String,
+    /** Absolute origin (`https://api.example.com`) when discovery or the operator supplied a domain. */
+    val advertisedUrl: String? = null,
 ) {
     val baseUrl: String
-        get() {
-            val raw = host.substringBefore('%')
-            val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
-            return "http://$hostPart:$port"
-        }
+        get() = advertisedUrl?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() }
+            ?: run {
+                val raw = host.substringBefore('%')
+                val hostPart = if (raw.contains(':') && !raw.startsWith("[")) "[$raw]" else raw
+                "http://$hostPart:$port"
+            }
+
+    val label: String
+        get() = advertisedUrl?.trim()?.trimEnd('/')?.takeIf { it.isNotBlank() } ?: "$host:$port"
 }
 
 data class AuthSession(
@@ -354,11 +361,123 @@ fun LibrarySilo.wireValue(): String =
     }
 
 fun parseManualServer(input: String): DiscoveredServer {
-    val trimmed = input.trim().removePrefix("http://").removePrefix("https://").trimEnd('/')
+    val trimmed = input.trim().trimEnd('/')
     require(trimmed.isNotBlank()) { "server address is required" }
-    val hostPort = trimmed.substringBefore("/")
-    val host = hostPort.substringBefore(":")
-    val port = hostPort.substringAfter(":", "80").toIntOrNull() ?: 80
+    val absolute = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "http://$trimmed"
+    }
+    val uri = runCatching { java.net.URI(absolute) }.getOrElse { error("server address is required") }
+    val host = uri.host?.trim().orEmpty()
     require(host.isNotBlank()) { "server address is required" }
-    return DiscoveredServer(host, port, host)
+    val scheme = uri.scheme ?: "http"
+    val port = when {
+        uri.port > 0 -> uri.port
+        scheme == "https" -> 443
+        else -> 80
+    }
+    val hostPart = if (host.contains(':')) "[$host]" else host
+    val defaultPort = if (scheme == "https") 443 else 80
+    val advertised = if (port == defaultPort) "$scheme://$hostPart" else "$scheme://$hostPart:$port"
+    return DiscoveredServer(host, port, host, advertisedUrl = advertised)
+}
+
+/**
+ * Prefer an mDNS TXT `url` when it names a real host. Loopback TXT values are ignored so the
+ * phone does not call itself; the resolved LAN address is used instead.
+ */
+fun serverFromDiscovery(name: String, host: String?, port: Int, txtUrl: String?): DiscoveredServer? {
+    val advertised = txtUrl?.trim()?.trimEnd('/')?.takeIf {
+        (it.startsWith("http://") || it.startsWith("https://")) && !isLoopbackHttpUrl(it)
+    }
+    if (advertised != null) {
+        return runCatching {
+            parseManualServer(advertised).copy(name = name.ifBlank { advertised })
+        }.getOrNull()
+    }
+    val rawHost = host
+        ?.trim()
+        ?.substringBefore('%')
+        ?.removePrefix("[")
+        ?.removeSuffix("]")
+        .orEmpty()
+    if (rawHost.isBlank() || port <= 0) return null
+    if (rawHost == "0.0.0.0" || rawHost == "::" || isLoopbackHost(rawHost)) return null
+    return DiscoveredServer(rawHost, port, name.ifBlank { rawHost })
+}
+
+fun isLoopbackHttpUrl(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return false
+    return isLoopbackHost(host)
+}
+
+/**
+ * Picks the address a phone can actually route to. Docker bridges and loopback often appear
+ * first in an mDNS response and are unreachable from another device.
+ */
+fun preferredLanHost(hosts: List<String>): String? {
+    val ranked = hosts.mapNotNull { raw ->
+        val host = raw.trim().substringBefore('%').removePrefix("[").removeSuffix("]")
+        if (host.isBlank()) return@mapNotNull null
+        val rank = lanHostRank(host)
+        if (rank >= 100) null else host to rank
+    }
+    return ranked.minByOrNull { it.second }?.first
+}
+
+/**
+ * Hosts to probe when mDNS never arrives. Prefixes wider than /24 are narrowed to the
+ * phone's own /24 so a home scan stays under a few hundred addresses.
+ */
+fun lanScanHosts(localIp: String, prefixLength: Int): List<String> {
+    val octets = localIp.split('.').map { it.toIntOrNull() ?: return emptyList() }
+    if (octets.size != 4 || octets.any { it !in 0..255 }) return emptyList()
+    val prefix = when {
+        prefixLength < 24 || prefixLength > 30 -> 24
+        else -> prefixLength
+    }
+    val ip = octets.fold(0L) { acc, octet -> (acc shl 8) or octet.toLong() }
+    val mask = (0xFFFFFFFFL shl (32 - prefix)) and 0xFFFFFFFFL
+    val network = ip and mask
+    val broadcast = network or (mask.inv() and 0xFFFFFFFFL)
+    return buildList {
+        var cursor = network + 1
+        while (cursor < broadcast && size < 512) {
+            if (cursor != ip) add(formatIpv4(cursor))
+            cursor++
+        }
+    }
+}
+
+private fun formatIpv4(value: Long): String {
+    val bits = value and 0xFFFFFFFFL
+    return listOf(24, 16, 8, 0).joinToString(".") { shift ->
+        ((bits shr shift) and 0xFF).toString()
+    }
+}
+
+private fun lanHostRank(host: String): Int {
+    if (isLoopbackHost(host)) return 100
+    if (host.contains(':')) {
+        return if (host.lowercase().startsWith("fe80")) 100 else 40
+    }
+    val parts = host.split('.')
+    if (parts.size != 4) return 50
+    val numbers = parts.map { it.toIntOrNull() ?: return 100 }
+    val first = numbers[0]
+    val second = numbers[1]
+    if (first == 169 && second == 254) return 100
+    if (first >= 224) return 100
+    if (first == 192 && second == 168) return 0
+    if (first == 10) return 1
+    if (first == 172 && second in 16..31) {
+        return if (second == 17 || second == 18) 30 else 2
+    }
+    return 20
+}
+
+private fun isLoopbackHost(host: String): Boolean {
+    val value = host.lowercase().removePrefix("[").removeSuffix("]")
+    return value == "localhost" || value == "127.0.0.1" || value == "::1" || value == "0.0.0.0"
 }

@@ -28,13 +28,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,7 +66,9 @@ import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.filesInAlbum
+import com.jasensic.mydrive.domain.filterLibraryFiles
 import com.jasensic.mydrive.domain.groupVisualMediaByDay
+import com.jasensic.mydrive.domain.isBlankLibraryQuery
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
@@ -85,8 +86,11 @@ fun PhotosScreen(
     onLongPress: (String) -> Unit,
     contentPadding: PaddingValues,
 ) {
+    var query by rememberSaveable { mutableStateOf("") }
     val visible = remember(files, albumId) { filesInAlbum(files, albumId) }
+    val filtered = remember(visible, query) { filterLibraryFiles(visible, query) }
     val selecting = selectedIds.isNotEmpty()
+    val searching = !isBlankLibraryQuery(query)
     if (files.isEmpty() && albums.isEmpty()) {
         EmptyLibrary(
             title = "No photos or videos",
@@ -97,13 +101,23 @@ fun PhotosScreen(
         return
     }
     val zone = remember { ZoneId.systemDefault().id }
-    val groups = remember(visible, zone) { groupVisualMediaByDay(visible, zone) }
+    val groups = remember(filtered, zone) { groupVisualMediaByDay(filtered, zone) }
     val today = remember { LocalDate.now(ZoneId.systemDefault()).toEpochDay() }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(118.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
+        item(span = { GridItemSpan(maxLineSpan) }, key = "title") {
+            Text(
+                "Photos",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }, key = "search") {
+            LibrarySearchField(query = query, onQueryChange = { query = it }, placeholder = "Search photos")
+        }
         if (albums.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "albums") {
                 LazyRow(
@@ -125,6 +139,16 @@ fun PhotosScreen(
                         )
                     }
                 }
+            }
+        }
+        if (groups.isEmpty()) {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "empty") {
+                EmptyLibrary(
+                    title = if (searching) "No matching photos" else "No photos here",
+                    body = if (searching) "Try another file name." else "This album has no photos or videos yet.",
+                    icon = Icons.Outlined.PhotoLibrary,
+                    modifier = Modifier.padding(vertical = 24.dp),
+                )
             }
         }
         groups.forEach { group ->
@@ -211,7 +235,6 @@ fun MediaViewerScreen(
     files: List<LocalFile>,
     currentId: String,
     authToken: String?,
-    onBack: () -> Unit,
     onPage: (String) -> Unit,
     onPauseAudio: () -> Unit,
 ) {
@@ -242,12 +265,9 @@ fun MediaViewerScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
             val current = files.getOrNull(pager.currentPage)
             Column(Modifier.weight(1f)) {
                 Text(current?.name.orEmpty(), color = Color.White, style = MaterialTheme.typography.titleSmall)

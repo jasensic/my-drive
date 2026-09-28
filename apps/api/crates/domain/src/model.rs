@@ -202,6 +202,9 @@ pub struct SyncManifest {
     pub generated_at: DateTime<Utc>,
     pub files: Vec<ManifestEntry>,
     pub albums: Vec<Album>,
+    /// File ids the device reported and must delete locally (trash, purge, or device exclusion).
+    #[serde(default)]
+    pub removed: Vec<FileId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

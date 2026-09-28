@@ -1,9 +1,12 @@
 name: Upload named Android APK
-description: Publish the versioned my-drive APK as a single-file GitHub Actions artifact
+description: Publish the versioned my-drive APK as a GitHub Actions artifact (zip of the APK)
 outputs:
   name:
     description: APK file name, e.g. my-drive-0.0.16-PR9.apk
     value: ${{ steps.apk.outputs.name }}
+  artifact:
+    description: Actions artifact name without .apk (GitHub always wraps uploads in a zip)
+    value: ${{ steps.apk.outputs.artifact }}
   path:
     description: Workspace-relative path to the APK
     value: ${{ steps.apk.outputs.path }}
@@ -21,13 +24,15 @@ runs:
           ls -la apps/android/app/build/outputs/apk/release || true
           exit 1
         fi
+        file="$(basename "${apks[0]}")"
         {
           echo "path=${apks[0]}"
-          echo "name=$(basename "${apks[0]}")"
+          echo "name=${file}"
+          echo "artifact=${file%.apk}"
         } >> "$GITHUB_OUTPUT"
     - uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.apk.outputs.name }}
+        name: ${{ steps.apk.outputs.artifact }}
         path: ${{ steps.apk.outputs.path }}
         if-no-files-found: error
         compression-level: 0

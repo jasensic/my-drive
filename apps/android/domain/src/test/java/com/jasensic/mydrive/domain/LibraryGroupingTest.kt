@@ -153,6 +153,44 @@ class LibraryGroupingTest {
         assertEquals("Soto Asa - Las 12", tagged.trackHeadline())
         assertEquals("Las 12", tagged.trackSubtitle())
     }
+
+    @Test
+    fun blankQueryKeepsEveryFile() {
+        val files = listOf(trackA, pdf, photoToday)
+        assertEquals(files, filterLibraryFiles(files, "  "))
+        assertTrue(trackA.matchesLibraryQuery(""))
+    }
+
+    @Test
+    fun musicQueryMatchesTitleArtistAndAlbum() {
+        val files = listOf(trackA, trackC, pdf)
+        assertEquals(listOf("a1"), filterLibraryFiles(files, "debut").map { it.id })
+        assertEquals(listOf("a1"), filterLibraryFiles(files, "ADA").map { it.id })
+        assertEquals(listOf("a1"), filterLibraryFiles(files, "song a").map { it.id })
+    }
+
+    @Test
+    fun photoAndFileQueryMatchesName() {
+        assertEquals(listOf("p1"), filterLibraryFiles(listOf(photoToday, pdf), "today").map { it.id })
+        assertEquals(listOf("d1"), filterLibraryFiles(listOf(photoToday, pdf), "NOTES").map { it.id })
+        assertTrue(filterLibraryFiles(listOf(photoToday), "missing").isEmpty())
+    }
+
+    @Test
+    fun filtersAlbumsByName() {
+        val albums = listOf(Album("al-1", "Debut", LibrarySilo.MUSIC), Album("al-2", "Jazz", LibrarySilo.MUSIC))
+        assertEquals(listOf("Jazz"), filterAlbums(albums, "jaz").map { it.name })
+    }
+
+    @Test
+    fun musicGroupsKeepFullAlbumOnNameHit() {
+        val groups = groupMusicByAlbum(listOf(trackA, trackB))
+        val byAlbum = filterMusicGroups(groups, "debut")
+        assertEquals(listOf("a1", "a2"), byAlbum.single().tracks.map { it.id })
+        val byTrack = filterMusicGroups(groups, "song b")
+        assertEquals(listOf("a2"), byTrack.single().tracks.map { it.id })
+        assertTrue(filterMusicGroups(groups, "nope").isEmpty())
+    }
 }
 
 class OpenLocalFileUseCaseTest {

@@ -50,6 +50,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/files", get(files::list).post(files::upload))
         .route("/v1/music/search", post(music::search))
+        .route("/v1/music/search/{id}", get(music::search_status))
         .route("/v1/music/import", post(music::import))
         .route(
             "/v1/files/trash",

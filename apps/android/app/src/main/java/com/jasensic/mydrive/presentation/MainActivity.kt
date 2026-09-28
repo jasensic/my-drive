@@ -24,10 +24,17 @@ import dagger.hilt.android.AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val vm: DriveViewModel by viewModels()
     private val player: PlayerViewModel by viewModels()
-    private var askedForNotifications = false
-    private val requestNotifications = registerForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { }
+    private var askedForPermissions = false
+    private val requestPermissions = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        val nearby = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            granted[Manifest.permission.NEARBY_WIFI_DEVICES] == true
+        } else {
+            granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        }
+        if (nearby) vm.onLanPermissionGranted()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -37,14 +44,28 @@ class MainActivity : ComponentActivity() {
             val themeMode by vm.themeMode.collectAsState()
             val playback by player.playback.collectAsState()
             LaunchedEffect(Unit) {
-                if (askedForNotifications) return@LaunchedEffect
-                askedForNotifications = true
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) !=
-                    PackageManager.PERMISSION_GRANTED
-                ) {
-                    requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                if (askedForPermissions) return@LaunchedEffect
+                askedForPermissions = true
+                val needed = buildList {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        add(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.NEARBY_WIFI_DEVICES) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+                        ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.ACCESS_FINE_LOCATION) !=
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        add(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
                 }
+                if (needed.isNotEmpty()) requestPermissions.launch(needed.toTypedArray())
             }
             MyDriveTheme(themeMode) {
                 Surface(Modifier.fillMaxSize()) {
@@ -75,9 +96,11 @@ class MainActivity : ComponentActivity() {
                         onNext = player::skipNext,
                         onShuffle = player::toggleShuffle,
                         onRepeat = player::cycleRepeat,
+                        onRemoveQueued = player::removeFromQueue,
+                        onMoveQueued = player::moveQueueItem,
+                        onPlayQueued = player::playQueueItem,
                         onPauseAudio = player::pause,
                         onBack = vm::goBack,
-                        onForward = vm::goForward,
                         onOpenAlbum = vm::openAlbum,
                         onOpenArtist = vm::openArtist,
                         onToggleSelect = vm::toggleSelect,

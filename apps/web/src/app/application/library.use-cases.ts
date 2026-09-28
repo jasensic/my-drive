@@ -6,7 +6,7 @@ import {
   FILE_REPOSITORY,
   FileRepository,
 } from '../domain/ports';
-import { AssignFileAlbum, CreateAlbum, DeleteAlbum, EmptyTrash, GetMedia, ListLibrary, LoadMediaBlob, PurgeMedia, RenameAlbum, RenameMedia, RestoreMedia, ShareMedia, TrashMedia, UploadMedia } from './use-cases.tokens';
+import { AssignFileAlbum, CreateAlbum, DeleteAlbum, EmptyTrash, GetMedia, ListLibrary, LoadMediaBlob, PurgeMedia, RenameAlbum, RenameMedia, RestoreMedia, SearchLibrary, ShareMedia, TrashMedia, UploadMedia } from './use-cases.tokens';
 
 @Injectable()
 export class ListLibraryService implements ListLibrary {
@@ -44,6 +44,42 @@ export class ListLibraryService implements ListLibrary {
       return file;
     }
   }
+}
+
+@Injectable()
+export class SearchLibraryService implements SearchLibrary {
+  constructor(@Inject(FILE_REPOSITORY) private readonly files: FileRepository) {}
+
+  execute(): Promise<MediaFile[]> {
+    return this.files.list();
+  }
+}
+
+export function matchLibraryFiles(files: MediaFile[], query: string, limit = 25): MediaFile[] {
+  const q = query.trim().toLowerCase();
+  const ranked = files
+    .map((file) => {
+      const name = file.name.toLowerCase();
+      let rank = 2;
+      if (q) {
+        if (name.startsWith(q)) {
+          rank = 0;
+        } else if (name.includes(q)) {
+          rank = 1;
+        } else {
+          rank = -1;
+        }
+      }
+      return { file, rank };
+    })
+    .filter((item) => item.rank >= 0);
+  ranked.sort((a, b) => {
+    if (a.rank !== b.rank) {
+      return a.rank - b.rank;
+    }
+    return (b.file.uploaded_at || '').localeCompare(a.file.uploaded_at || '');
+  });
+  return ranked.slice(0, limit).map((item) => item.file);
 }
 
 @Injectable()

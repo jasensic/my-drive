@@ -119,6 +119,60 @@ def flatten(song):
         yield episode
 
 
+class SearchJob:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.songs: dict[str, object] = {}
+        self.tracks: list[dict] = []
+        self.done = False
+        self.error: str | None = None
+
+    def snapshot(self, search_id: str) -> dict:
+        with self.lock:
+            return {
+                "search_id": search_id,
+                "tracks": list(self.tracks),
+                "done": self.done,
+                "error": self.error,
+            }
+
+    def append_source(self, found: list) -> tuple[int, int]:
+        added = 0
+        skipped = 0
+        with self.lock:
+            for song in found or []:
+                for item in flatten(song):
+                    if not is_full_track(item):
+                        skipped += 1
+                        continue
+                    track_id = str(len(self.songs))
+                    self.songs[track_id] = item
+                    ext = text(item.ext).lstrip(".").lower()
+                    self.tracks.append(
+                        {
+                            "id": track_id,
+                            "source": text(item.source),
+                            "song_name": text(item.song_name),
+                            "singers": text(item.singers),
+                            "album": text(item.album),
+                            "duration": text(item.duration),
+                            "file_size": text(item.file_size),
+                            "ext": ext,
+                            "cover_url": http_url(getattr(item, "cover_url", "")),
+                        }
+                    )
+                    added += 1
+        return added, skipped
+
+    def finish(self, error: str | None = None) -> None:
+        with self.lock:
+            self.done = True
+            if error:
+                self.error = error
+            elif not self.tracks and not self.error:
+                self.error = "no songs returned; try again or narrow the query"
+
+
 class Catalog:
     def __init__(self) -> None:
         sources = sources_from_env()
@@ -141,7 +195,7 @@ class Catalog:
         self.cache_lock = threading.Lock()
         self.source_locks = {source: threading.Lock() for source in self.client.music_clients}
         self.deadline = search_deadline()
-        self.searches: OrderedDict[str, dict[str, object]] = OrderedDict()
+        self.searches: OrderedDict[str, SearchJob] = OrderedDict()
 
     def search(self, keyword: str) -> dict:
         keyword = keyword.strip()
@@ -149,66 +203,67 @@ class Catalog:
             raise ValueError("keyword is required")
         if len(keyword) > MAX_KEYWORD:
             raise ValueError(f"keyword must be at most {MAX_KEYWORD} characters")
-        started = time.monotonic()
-        grouped = self._search_sources(keyword)
-        songs: dict[str, object] = {}
-        tracks = []
-        skipped = 0
-        for per_source in grouped.values():
-            for song in per_source or []:
-                for item in flatten(song):
-                    if not is_full_track(item):
-                        skipped += 1
-                        continue
-                    track_id = str(len(songs))
-                    songs[track_id] = item
-                    ext = text(item.ext).lstrip(".").lower()
-                    tracks.append(
-                        {
-                            "id": track_id,
-                            "source": text(item.source),
-                            "song_name": text(item.song_name),
-                            "singers": text(item.singers),
-                            "album": text(item.album),
-                            "duration": text(item.duration),
-                            "file_size": text(item.file_size),
-                            "ext": ext,
-                            "cover_url": http_url(getattr(item, "cover_url", "")),
-                        }
-                    )
-        elapsed = time.monotonic() - started
-        print(
-            f"[musicdl-export] search {keyword!r}: {len(tracks)} tracks "
-            f"({skipped} under 1MB skipped) "
-            f"from {', '.join(grouped) or 'no source'} in {elapsed:.1f}s"
-        )
-        if not tracks:
-            raise RuntimeError(
-                f"no songs returned within {int(self.deadline)}s; try again or narrow the query"
-            )
+        job = SearchJob()
         search_id = uuid.uuid4().hex
         with self.cache_lock:
-            self.searches[search_id] = songs
+            self.searches[search_id] = job
             self.searches.move_to_end(search_id)
             while len(self.searches) > MAX_SEARCHES:
                 self.searches.popitem(last=False)
-        return {"search_id": search_id, "tracks": tracks}
+        thread = threading.Thread(
+            target=self._run_search,
+            args=(search_id, job, keyword),
+            daemon=True,
+            name=f"musicdl-search-{search_id[:8]}",
+        )
+        thread.start()
+        return job.snapshot(search_id)
 
-    def _search_sources(self, keyword: str) -> dict:
+    def snapshot(self, search_id: str) -> dict:
+        with self.cache_lock:
+            job = self.searches.get(search_id)
+        if job is None:
+            raise KeyError("search expired; search again")
+        return job.snapshot(search_id)
+
+    def _run_search(self, search_id: str, job: SearchJob, keyword: str) -> None:
+        started = time.monotonic()
         sources = list(self.client.music_clients)
-        grouped: dict[str, list] = {}
-        pool = ThreadPoolExecutor(max_workers=len(sources))
+        pool = ThreadPoolExecutor(max_workers=len(sources) or 1)
         futures = [pool.submit(self._search_source, source, keyword) for source in sources]
+        skipped = 0
+        answered: list[str] = []
         try:
             for future in as_completed(futures, timeout=self.deadline):
                 source, found = future.result()
-                grouped[source] = found
+                added, source_skipped = job.append_source(found)
+                skipped += source_skipped
+                answered.append(source)
+                print(
+                    f"[musicdl-export] search {keyword!r}: +{added} from {source} "
+                    f"({len(job.snapshot(search_id)['tracks'])} total)"
+                )
         except TimeoutError:
-            slow = [source for source in sources if source not in grouped]
-            print(f"[musicdl-export] search deadline {int(self.deadline)}s, still waiting on {', '.join(slow)}")
+            slow = [source for source in sources if source not in answered]
+            print(
+                f"[musicdl-export] search deadline {int(self.deadline)}s, "
+                f"still waiting on {', '.join(slow)}"
+            )
+        except Exception as err:
+            traceback.print_exc()
+            job.finish(str(err) or "search failed")
+            pool.shutdown(wait=False, cancel_futures=True)
+            return
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
-        return grouped
+        elapsed = time.monotonic() - started
+        print(
+            f"[musicdl-export] search {keyword!r}: "
+            f"{len(job.snapshot(search_id)['tracks'])} tracks "
+            f"({skipped} under 1MB skipped) "
+            f"from {', '.join(answered) or 'no source'} in {elapsed:.1f}s"
+        )
+        job.finish()
 
     def _search_source(self, source: str, keyword: str) -> tuple[str, list]:
         client = self.client.music_clients[source]
@@ -227,12 +282,13 @@ class Catalog:
 
     def download(self, search_id: str, track_id: str) -> tuple[bytes, str, str]:
         with self.cache_lock:
-            songs = self.searches.get(search_id)
-            if songs is None:
-                raise KeyError("search expired; search again")
-            song = songs.get(str(track_id))
-            if song is None:
-                raise KeyError("track not found in that search")
+            job = self.searches.get(search_id)
+        if job is None:
+            raise KeyError("search expired; search again")
+        with job.lock:
+            song = job.songs.get(str(track_id))
+        if song is None:
+            raise KeyError("track not found in that search")
         source_lock = self.source_locks.get(text(getattr(song, "source", "")))
         if source_lock is None:
             downloaded = self.client.download([song]) or []
@@ -261,8 +317,18 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[musicdl-export] {self.address_string()} {fmt % args}")
 
     def do_GET(self) -> None:
-        if self.path.split("?", 1)[0] == "/health":
+        path = self.path.split("?", 1)[0]
+        if path == "/health":
             self._json(200, {"status": "ok"})
+            return
+        if path.startswith("/search/"):
+            search_id = path[len("/search/") :].strip("/")
+            try:
+                assert CATALOG is not None
+                self._json(200, CATALOG.snapshot(search_id))
+            except KeyError as err:
+                message = err.args[0] if err.args and isinstance(err.args[0], str) else "not found"
+                self._json(404, {"error": message})
             return
         self._json(404, {"error": "not found"})
 

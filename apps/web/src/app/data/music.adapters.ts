@@ -13,6 +13,10 @@ export class HttpMusicCatalog implements MusicCatalog {
     return firstValueFrom(this.http.post<MusicSearchResult>('/v1/music/search', { keyword }));
   }
 
+  searchSnapshot(searchId: string): Promise<MusicSearchResult> {
+    return firstValueFrom(this.http.get<MusicSearchResult>(`/v1/music/search/${encodeURIComponent(searchId)}`));
+  }
+
   importTrack(searchId: string, trackId: string): Promise<MediaFile> {
     return firstValueFrom(
       this.http.post<MediaFile>('/v1/music/import', { search_id: searchId, track_id: trackId }),

@@ -129,6 +129,9 @@ interface AudioPlayer {
     fun cycleRepeat()
     fun pause()
     fun stop()
+    fun removeFromQueue(fileId: String) {}
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {}
+    fun playQueueItem(fileId: String) {}
 }
 
 interface ExternalFileOpener {

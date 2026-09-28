@@ -304,6 +304,8 @@ pub struct ManifestResponse {
     pub generated_at: DateTime<Utc>,
     pub files: Vec<ManifestFileDto>,
     pub albums: Vec<AlbumDto>,
+    /// Device-local copies to delete. Empty when the client sent no `have_file_ids`.
+    pub removed: Vec<Uuid>,
 }
 
 impl ManifestResponse {
@@ -316,6 +318,7 @@ impl ManifestResponse {
                 .map(ManifestFileDto::from_entry)
                 .collect(),
             albums: manifest.albums.into_iter().map(Into::into).collect(),
+            removed: manifest.removed.into_iter().map(|id| id.0).collect(),
         }
     }
 }
@@ -389,6 +392,9 @@ pub struct MusicTrackDto {
 pub struct MusicSearchResponse {
     pub search_id: String,
     pub tracks: Vec<MusicTrackDto>,
+    pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

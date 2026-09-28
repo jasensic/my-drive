@@ -42,6 +42,7 @@ test.describe('music library', () => {
               ext: 'mp3',
             },
           ],
+          done: true,
         }),
       });
     });

@@ -29,6 +29,7 @@ class FakeRemote : RemoteFileSource {
     var failExclusions = false
     var setupRequired = false
     var manifestFiles: List<ManifestFile>? = null
+    var manifestRemoved: List<String> = emptyList()
     val downloadedUrls = mutableListOf<String>()
     val exclusionPuts = mutableListOf<List<String>>()
     val listedSilos = mutableListOf<LibrarySilo?>()
@@ -76,6 +77,7 @@ class FakeRemote : RemoteFileSource {
             generatedAt = "2026-09-15T12:00:00Z",
             files = files.filter { it.id !in haveFileIds },
             albums = listOf(Album("album-1", "Vacation")),
+            removed = manifestRemoved,
         )
     }
 
@@ -242,7 +244,13 @@ class FakeStore : LocalMediaStore {
     override suspend fun assignAlbum(id: String, albumId: String?) = Unit
 
     override suspend fun removeFiles(ids: Collection<String>) {
-        saved.removeAll(ids.toSet())
+        val drop = ids.toSet()
+        drop.forEach { id ->
+            java.io.File(pathFor(id)).delete()
+            java.io.File(artworkPathFor(id)).delete()
+        }
+        saved.removeAll(drop)
+        committed.keys.removeAll(drop)
     }
 }
 
@@ -429,6 +437,94 @@ class SyncFilesUseCaseTest {
         val server = parseManualServer("http://192.168.1.5:8080/v1")
         assertEquals("192.168.1.5", server.host)
         assertEquals(8080, server.port)
+        assertEquals("http://192.168.1.5:8080", server.baseUrl)
+    }
+
+    @Test
+    fun parseManualServerKeepsDomainWithoutAPort() {
+        val server = parseManualServer("https://api.mydrive.lan")
+        assertEquals("api.mydrive.lan", server.host)
+        assertEquals(443, server.port)
+        assertEquals("https://api.mydrive.lan", server.baseUrl)
+        assertEquals("https://api.mydrive.lan", server.label)
+    }
+
+    @Test
+    fun discoveryPrefersAdvertisedDomainOverLanIp() {
+        val server = serverFromDiscovery(
+            name = "my-drive",
+            host = "192.168.1.20",
+            port = 8080,
+            txtUrl = "https://api.mydrive.lan/",
+        )
+        assertEquals("https://api.mydrive.lan", server?.baseUrl)
+        assertEquals("my-drive", server?.name)
+    }
+
+    @Test
+    fun preferredLanHostSkipsDockerBridgeWhenAHomeAddressExists() {
+        assertEquals(
+            "192.168.1.20",
+            preferredLanHost(listOf("172.17.0.2", "192.168.1.20", "127.0.0.1")),
+        )
+    }
+
+    @Test
+    fun preferredLanHostIgnoresLoopbackAndLinkLocal() {
+        assertNull(preferredLanHost(listOf("127.0.0.1", "fe80::1%wlan0", "0.0.0.0")))
+    }
+
+    @Test
+    fun lanScanHostsCoversTheLocalSubnetExceptItself() {
+        val hosts = lanScanHosts("192.168.1.50", 24)
+        assertEquals(253, hosts.size)
+        assertEquals("192.168.1.1", hosts.first())
+        assertEquals("192.168.1.254", hosts.last())
+        assertTrue("192.168.1.50" !in hosts)
+        assertTrue("192.168.1.0" !in hosts)
+        assertTrue("192.168.1.255" !in hosts)
+    }
+
+    @Test
+    fun lanScanHostsNarrowsAWidePrefixToTheLocal24() {
+        val hosts = lanScanHosts("10.1.2.5", 8)
+        assertEquals(253, hosts.size)
+        assertEquals("10.1.2.1", hosts.first())
+        assertEquals("10.1.2.254", hosts.last())
+        assertTrue("10.1.2.5" !in hosts)
+    }
+
+    @Test
+    fun discoveryIgnoresLoopbackTxtAndUsesResolvedHost() {
+        val server = serverFromDiscovery(
+            name = "my-drive",
+            host = "192.168.1.20",
+            port = 8080,
+            txtUrl = "http://localhost:8080",
+        )
+        assertEquals("http://192.168.1.20:8080", server?.baseUrl)
+    }
+
+    @Test
+    fun deletesLocalFilesTheManifestMarksRemoved() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(
+                ManifestFile("keep", "keep.jpg", 3, "image/jpeg", "", "/v1/files/keep/content", MediaKind.PHOTO, null),
+            )
+            manifestRemoved = listOf("gone")
+        }
+        val store = FakeStore().apply {
+            saved += "keep"
+            saved += "gone"
+        }
+        val gone = java.io.File(store.pathFor("gone")).apply {
+            parentFile?.mkdirs()
+            writeBytes(byteArrayOf(9, 9, 9))
+        }
+        val state = FakeState().apply { stored = AuthSession("t", "admin", "dev-1") }
+        useCase(remote, store, state).execute()
+        assertEquals(listOf("keep"), store.saved.distinct())
+        assertTrue(!gone.exists())
     }
 
     @Test
@@ -473,6 +569,33 @@ class SyncFilesUseCaseTest {
         assertEquals(WIFI_UNAVAILABLE, err.message)
         assertEquals(SyncPhase.FAILED, progress.current().phase)
         assertEquals(WIFI_UNAVAILABLE, progress.current().errorMessage)
+    }
+
+    @Test
+    fun quietBackgroundSyncDoesNotStickWhenTheServerIsMissing() = runTest {
+        val progress = InMemorySyncProgressStore()
+        val err = assertFailsWith<IllegalStateException> {
+            SyncFilesUseCase(
+                FakeConnectivity(),
+                DiscoverServerUseCase(FakeConnectivity(), FakeDiscovery(null), FakeState()),
+                FakeRemote(),
+                FakeStore(),
+                FakeState(),
+                "Phone A",
+                progress,
+            ).execute(quietWhenUnreachable = true)
+        }
+        assertEquals("my-drive server not found on LAN", err.message)
+        assertEquals(SyncPhase.IDLE, progress.current().phase)
+    }
+
+    @Test
+    fun wifiSyncStartsOnlyWhenASignedInPhoneJoinsANewNetwork() {
+        assertTrue(shouldStartWifiSync(previousNetworkId = null, networkId = "10", loggedIn = true))
+        assertTrue(shouldStartWifiSync(previousNetworkId = "10", networkId = "11", loggedIn = true))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = "10", networkId = "10", loggedIn = true))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = null, networkId = "10", loggedIn = false))
+        assertTrue(!shouldStartWifiSync(previousNetworkId = "10", networkId = null, loggedIn = true))
     }
 
     @Test

@@ -453,6 +453,7 @@ class DataStoreSyncState @Inject constructor(
     private val hostKey = stringPreferencesKey("serverHost")
     private val portKey = intPreferencesKey("serverPort")
     private val serverNameKey = stringPreferencesKey("serverName")
+    private val baseUrlKey = stringPreferencesKey("serverBaseUrl")
 
     @Volatile private var tokenCache: String? = null
 
@@ -520,6 +521,7 @@ class DataStoreSyncState @Inject constructor(
             it[hostKey] = server.host
             it[portKey] = server.port
             it[serverNameKey] = server.name
+            it[baseUrlKey] = server.baseUrl
         }
     }
 
@@ -527,7 +529,12 @@ class DataStoreSyncState @Inject constructor(
         val prefs = context.dataStore.data.first()
         val host = prefs[hostKey] ?: return null
         val port = prefs[portKey] ?: return null
-        return DiscoveredServer(host, port, prefs[serverNameKey] ?: host)
+        return DiscoveredServer(
+            host,
+            port,
+            prefs[serverNameKey] ?: host,
+            advertisedUrl = prefs[baseUrlKey],
+        )
     }
 
     override suspend fun clearSession() {

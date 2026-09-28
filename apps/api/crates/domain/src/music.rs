@@ -17,6 +17,8 @@ pub struct MusicTrack {
 pub struct MusicSearch {
     pub search_id: String,
     pub tracks: Vec<MusicTrack>,
+    pub done: bool,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone)]

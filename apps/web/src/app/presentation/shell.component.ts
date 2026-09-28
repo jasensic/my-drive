@@ -1,18 +1,20 @@
-import { Component, Inject, signal } from '@angular/core';
+import { Component, Inject, ViewChild, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { Toast } from 'primeng/toast';
 import { SESSION_QUERY } from '../application/use-cases.tokens';
 import type { SessionQuery } from '../application/use-cases.tokens';
+import { FileSearchDialog } from './file-search.dialog';
 import { MusicPlaybackService } from './music-playback.service';
 import { NowPlayingBar } from './now-playing-bar';
 import { ThemeModeService } from './theme.service';
 
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, Toast, LucideDynamicIcon, NowPlayingBar],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, Toast, LucideDynamicIcon, NowPlayingBar, FileSearchDialog],
   template: `
     <p-toast />
+    <app-file-search />
     <div class="shell" [class.playing]="playback.current()" [class.nav-open]="navOpen()">
       <div class="nav-backdrop" (click)="navOpen.set(false)"></div>
       <aside class="sidebar">
@@ -47,6 +49,11 @@ import { ThemeModeService } from './theme.service';
             <svg [lucideIcon]="navOpen() ? 'x' : 'menu'" aria-hidden="true" />
           </button>
           <div class="topbar-end">
+            <button type="button" class="ghost-btn search-trigger" (click)="openSearch()">
+              <svg lucideIcon="search" aria-hidden="true" />
+              Search
+              <kbd>{{ searchShortcut }}</kbd>
+            </button>
             <button type="button" class="ghost-btn" (click)="theme.toggle()">
               <svg [lucideIcon]="theme.mode() === 'dark' ? 'sun' : 'moon'" aria-hidden="true" />
               {{ theme.mode() === 'dark' ? 'Light mode' : 'Dark mode' }}
@@ -67,7 +74,10 @@ import { ThemeModeService } from './theme.service';
   `,
 })
 export class ShellComponent {
+  @ViewChild(FileSearchDialog) private fileSearch?: FileSearchDialog;
+
   navOpen = signal(false);
+  readonly searchShortcut = navigator.platform.toLowerCase().includes('mac') ? '⌘K' : 'Ctrl K';
   readonly nav = [
     { label: 'Music', routerLink: '/music', icon: 'music' },
     { label: 'Photos & videos', routerLink: '/photos', icon: 'images' },
@@ -83,6 +93,10 @@ export class ShellComponent {
     readonly theme: ThemeModeService,
     private readonly router: Router,
   ) {}
+
+  openSearch() {
+    void this.fileSearch?.show();
+  }
 
   logout() {
     this.playback.stop();

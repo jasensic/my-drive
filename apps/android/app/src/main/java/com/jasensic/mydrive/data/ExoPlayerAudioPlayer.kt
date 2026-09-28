@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -12,6 +13,11 @@ import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
+import com.jasensic.mydrive.domain.editQueueMove
+import com.jasensic.mydrive.domain.editQueueRemove
+import com.jasensic.mydrive.domain.materializePlayOrder
+import com.jasensic.mydrive.domain.queueIndexAfterEdit
+import com.jasensic.mydrive.domain.rotateOrderToCurrent
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -144,6 +150,108 @@ class ExoPlayerAudioPlayer @Inject constructor(
         }
     }
 
+    override fun removeFromQueue(fileId: String) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val next = editQueueRemove(queue, fileId) ?: return@runWhenReady
+            replaceSession(
+                player,
+                next,
+                player.currentMediaItem?.mediaId,
+                player.currentPosition,
+                player.playWhenReady,
+                player.shuffleModeEnabled,
+            )
+        }
+    }
+
+    override fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val displayed = displayedQueue(player)
+            val next = editQueueMove(displayed, fromIndex, toIndex) ?: return@runWhenReady
+            replaceSession(
+                player,
+                next,
+                player.currentMediaItem?.mediaId,
+                player.currentPosition,
+                player.playWhenReady,
+                shuffle = false,
+            )
+        }
+    }
+
+    override fun playQueueItem(fileId: String) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val playlistIndex = queue.indexOfFirst { it.id == fileId }
+            if (playlistIndex < 0) return@runWhenReady
+            var timelineIndex = playlistIndex
+            val count = player.mediaItemCount
+            for (index in 0 until count) {
+                if (player.getMediaItemAt(index).mediaId == fileId) {
+                    timelineIndex = index
+                    break
+                }
+            }
+            player.seekTo(timelineIndex, 0L)
+            player.play()
+            emitState()
+        }
+    }
+
+    private fun replaceSession(
+        player: MediaController,
+        items: List<LocalFile>,
+        currentId: String?,
+        positionMs: Long,
+        playing: Boolean,
+        shuffle: Boolean,
+    ) {
+        queue = items
+        if (items.isEmpty()) {
+            player.stop()
+            player.clearMediaItems()
+            emitState()
+            return
+        }
+        val start = queueIndexAfterEdit(items, currentId).coerceAtLeast(0)
+        val sameTrack = currentId != null && items.getOrNull(start)?.id == currentId
+        val position = if (sameTrack) positionMs.coerceAtLeast(0L) else 0L
+        player.shuffleModeEnabled = false
+        player.setMediaItems(items.map { it.toPlayableMediaItem(context) }, start, position)
+        player.prepare()
+        player.shuffleModeEnabled = shuffle
+        if (playing) player.play() else player.pause()
+        emitState()
+    }
+
+    private fun displayedQueue(player: Player): List<LocalFile> {
+        if (queue.isEmpty()) return emptyList()
+        return materializePlayOrder(queue, playOrderIndices(player))
+    }
+
+    private fun playOrderIndices(player: Player): List<Int> {
+        val timeline = player.currentTimeline
+        val count = timeline.windowCount
+        if (count <= 0) return queue.indices.toList()
+        val shuffle = player.shuffleModeEnabled
+        val order = ArrayList<Int>(count)
+        val seen = HashSet<Int>()
+        var index = timeline.getFirstWindowIndex(shuffle)
+        while (index != C.INDEX_UNSET && seen.add(index)) {
+            order.add(index)
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffle)
+        }
+        if (order.size != count) {
+            for (window in 0 until count) {
+                if (seen.add(window)) order.add(window)
+            }
+        }
+        if (!shuffle) return order
+        return rotateOrderToCurrent(order, player.currentMediaItemIndex)
+    }
+
     private fun runWhenReady(block: () -> Unit) {
         scope.launch {
             if (controller != null) {
@@ -187,11 +295,11 @@ class ExoPlayerAudioPlayer @Inject constructor(
         val player = controller ?: return
         try {
             val mediaId = player.currentMediaItem?.mediaId
-            val resolved = mediaId?.let { id -> queue.indexOfFirst { it.id == id } } ?: -1
+            val displayed = displayedQueue(player)
+            val resolved = mediaId?.let { id -> displayed.indexOfFirst { it.id == id } } ?: -1
             val index = when {
-                queue.isEmpty() -> -1
+                displayed.isEmpty() -> -1
                 resolved >= 0 -> resolved
-                player.currentMediaItemIndex in queue.indices -> player.currentMediaItemIndex
                 else -> -1
             }
             val reported = player.currentPosition.coerceAtLeast(0L)
@@ -203,11 +311,11 @@ class ExoPlayerAudioPlayer @Inject constructor(
                 reported
             }
             _state.value = PlaybackState(
-                queue = queue,
+                queue = displayed,
                 currentIndex = index,
                 playing = player.isPlaying,
                 positionMs = position,
-                durationMs = player.duration.takeIf { it > 0 } ?: queue.getOrNull(index)?.durationMs ?: 0L,
+                durationMs = player.duration.takeIf { it > 0 } ?: displayed.getOrNull(index)?.durationMs ?: 0L,
                 shuffle = player.shuffleModeEnabled,
                 repeat = when (player.repeatMode) {
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE
