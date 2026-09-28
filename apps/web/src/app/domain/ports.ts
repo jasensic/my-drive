@@ -105,10 +105,11 @@ export interface SpotifyLibraryPort {
   listPlaylistTracks(playlistId: string): Promise<SpotifyTrack[]>;
 }
 
-/** musicdl-export search. Download URLs stay on the sidecar; import only sends ids. */
+/** musicdl-export search and Spotify playlist parse. Download URLs stay on the sidecar; import only sends ids. */
 export interface MusicCatalog {
   search(keyword: string): Promise<MusicSearchResult>;
   searchSnapshot(searchId: string): Promise<MusicSearchResult>;
+  parsePlaylist(url: string): Promise<MusicSearchResult>;
   importTrack(searchId: string, trackId: string): Promise<MediaFile>;
 }
 

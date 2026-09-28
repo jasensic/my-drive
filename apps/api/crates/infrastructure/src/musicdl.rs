@@ -40,28 +40,7 @@ impl MusicDownloader for HttpMusicDownloader {
             .await
             .map_err(downloader_unreachable)?;
         let body = read_ok(response).await?;
-        let parsed: SearchPayload = serde_json::from_slice(&body)
-            .map_err(|err| DomainError::validation(format!("music search response: {err}")))?;
-        Ok(MusicSearch {
-            search_id: parsed.search_id,
-            tracks: parsed
-                .tracks
-                .into_iter()
-                .map(|track| MusicTrack {
-                    id: track.id,
-                    source: track.source,
-                    song_name: track.song_name,
-                    singers: track.singers,
-                    album: track.album,
-                    duration: track.duration,
-                    file_size: track.file_size,
-                    ext: track.ext,
-                    cover_url: public_cover(&track.cover_url),
-                })
-                .collect(),
-            done: parsed.done,
-            error: parsed.error,
-        })
+        search_from_payload(body)
     }
 
     async fn search_snapshot(&self, search_id: &str) -> Result<MusicSearch, DomainError> {
@@ -72,28 +51,19 @@ impl MusicDownloader for HttpMusicDownloader {
             .await
             .map_err(downloader_unreachable)?;
         let body = read_ok(response).await?;
-        let parsed: SearchPayload = serde_json::from_slice(&body)
-            .map_err(|err| DomainError::validation(format!("music search response: {err}")))?;
-        Ok(MusicSearch {
-            search_id: parsed.search_id,
-            tracks: parsed
-                .tracks
-                .into_iter()
-                .map(|track| MusicTrack {
-                    id: track.id,
-                    source: track.source,
-                    song_name: track.song_name,
-                    singers: track.singers,
-                    album: track.album,
-                    duration: track.duration,
-                    file_size: track.file_size,
-                    ext: track.ext,
-                    cover_url: public_cover(&track.cover_url),
-                })
-                .collect(),
-            done: parsed.done,
-            error: parsed.error,
-        })
+        search_from_payload(body)
+    }
+
+    async fn parse_playlist(&self, url: &str) -> Result<MusicSearch, DomainError> {
+        let response = self
+            .client
+            .post(self.endpoint("playlist"))
+            .json(&serde_json::json!({ "url": url }))
+            .send()
+            .await
+            .map_err(downloader_unreachable)?;
+        let body = read_ok(response).await?;
+        search_from_payload(body)
     }
 
     async fn download(&self, search_id: &str, track_id: &str) -> Result<DownloadedAudio, DomainError> {
@@ -197,6 +167,31 @@ async fn error_from_response(response: reqwest::Response) -> DomainError {
         400 => DomainError::validation(message),
         _ => DomainError::validation(message),
     }
+}
+
+fn search_from_payload(body: Bytes) -> Result<MusicSearch, DomainError> {
+    let parsed: SearchPayload = serde_json::from_slice(&body)
+        .map_err(|err| DomainError::validation(format!("music search response: {err}")))?;
+    Ok(MusicSearch {
+        search_id: parsed.search_id,
+        tracks: parsed
+            .tracks
+            .into_iter()
+            .map(|track| MusicTrack {
+                id: track.id,
+                source: track.source,
+                song_name: track.song_name,
+                singers: track.singers,
+                album: track.album,
+                duration: track.duration,
+                file_size: track.file_size,
+                ext: track.ext,
+                cover_url: public_cover(&track.cover_url),
+            })
+            .collect(),
+        done: parsed.done,
+        error: parsed.error,
+    })
 }
 
 fn public_cover(raw: &str) -> String {

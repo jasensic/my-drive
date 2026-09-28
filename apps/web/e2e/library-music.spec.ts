@@ -76,6 +76,76 @@ test.describe('music library', () => {
     await expect(library.ok).toContainText('Saved Mock Track.mp3 to the music library');
   });
 
+  test('loads a Spotify playlist and downloads every track', async ({ page }) => {
+    const library = new LibraryPage(page);
+    let imports = 0;
+    await page.route('**/v1/music/playlist', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          search_id: 'playlist-e2e',
+          tracks: [
+            {
+              id: 'pl-1',
+              source: 'SpotifyMusicClient',
+              song_name: 'Playlist One',
+              singers: 'Playlist Artist',
+              album: 'Playlist Album',
+              duration: '2:00',
+              file_size: '4 MB',
+              ext: 'mp3',
+            },
+            {
+              id: 'pl-2',
+              source: 'SpotifyMusicClient',
+              song_name: 'Playlist Two',
+              singers: 'Playlist Artist',
+              album: 'Playlist Album',
+              duration: '2:30',
+              file_size: '4 MB',
+              ext: 'mp3',
+            },
+          ],
+          done: true,
+        }),
+      });
+    });
+    await page.route('**/v1/music/import', async (route) => {
+      imports += 1;
+      const body = route.request().postDataJSON() as { track_id: string };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: '22222222-2222-2222-2222-222222222222',
+          album_id: null,
+          name: `${body.track_id}.mp3`,
+          size: 2048,
+          mime: 'audio/mpeg',
+          checksum: 'abc',
+          media_kind: 'audio',
+          created_at: '2026-01-01T00:00:00Z',
+          uploaded_at: '2026-01-01T00:00:00Z',
+          deleted_at: null,
+          purge_at: null,
+          content_url: '/v1/files/22222222-2222-2222-2222-222222222222/content',
+          thumbnail_url: null,
+        }),
+      });
+    });
+    await library.goto('/music');
+    await page.getByPlaceholder('Spotify playlist URL').fill(
+      'https://open.spotify.com/playlist/37i9dQZF1E8NWHOpySOxQd',
+    );
+    await page.getByRole('button', { name: 'Load playlist' }).click();
+    await expect(page.getByText('Playlist One')).toBeVisible();
+    await expect(page.getByText('Playlist Two')).toBeVisible();
+    await page.getByRole('button', { name: 'Download all' }).click();
+    await expect(library.ok).toContainText('Saved 2 tracks to the music library');
+    expect(imports).toBe(2);
+  });
+
   test('plays an uploaded track in the now-playing bar', async ({ page }) => {
     const library = new LibraryPage(page);
     await library.goto('/music');

@@ -106,6 +106,9 @@ impl MusicDownloader for NoMusic {
     async fn search_snapshot(&self, _search_id: &str) -> Result<domain::music::MusicSearch, DomainError> {
         Err(DomainError::infra("unused"))
     }
+    async fn parse_playlist(&self, _url: &str) -> Result<domain::music::MusicSearch, DomainError> {
+        Err(DomainError::infra("unused"))
+    }
     async fn download(
         &self,
         _search_id: &str,

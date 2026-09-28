@@ -1,7 +1,10 @@
 use axum::extract::{Path, State};
 use axum::Json;
 
-use crate::dto::{FileDto, ImportMusicRequest, MusicSearchRequest, MusicSearchResponse, MusicTrackDto};
+use crate::dto::{
+    FileDto, ImportMusicRequest, MusicSearchRequest, MusicSearchResponse, MusicTrackDto,
+    SpotifyPlaylistRequest,
+};
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
 use crate::state::AppState;
@@ -59,6 +62,26 @@ pub async fn search_status(
     Path(id): Path<String>,
 ) -> Result<Json<MusicSearchResponse>, ApiError> {
     let found = state.services.poll_music_search.execute(&id).await?;
+    Ok(Json(search_response(found)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/v1/music/playlist",
+    request_body = SpotifyPlaylistRequest,
+    responses((status = 200, body = MusicSearchResponse)),
+    security(("bearer" = []))
+)]
+pub async fn playlist(
+    State(state): State<AppState>,
+    CurrentUser(_user): CurrentUser,
+    Json(body): Json<SpotifyPlaylistRequest>,
+) -> Result<Json<MusicSearchResponse>, ApiError> {
+    let found = state
+        .services
+        .parse_spotify_playlist
+        .execute(&body.url)
+        .await?;
     Ok(Json(search_response(found)))
 }
 

@@ -42,7 +42,11 @@ import {
   ListSpotifyPlaylistTracksService,
   ListSpotifyPlaylistsService,
 } from './application/cloud-import.use-cases';
-import { ImportMusicTrackService, SearchMusicService } from './application/music.use-cases';
+import {
+  ImportMusicTrackService,
+  ParseSpotifyPlaylistService,
+  SearchMusicService,
+} from './application/music.use-cases';
 import {
   AssignFileAlbumService,
   CreateAlbumService,
@@ -87,6 +91,7 @@ import {
   LIST_SPOTIFY_PLAYLISTS,
   LIST_SPOTIFY_PLAYLIST_TRACKS,
   SEARCH_MUSIC,
+  PARSE_SPOTIFY_PLAYLIST,
   IMPORT_MUSIC_TRACK,
   LOAD_MEDIA_BLOB,
   LOAD_SYNC_PROFILE,
@@ -175,6 +180,7 @@ export const appConfig: ApplicationConfig = {
     { provide: LIST_SPOTIFY_PLAYLISTS, useClass: ListSpotifyPlaylistsService },
     { provide: LIST_SPOTIFY_PLAYLIST_TRACKS, useClass: ListSpotifyPlaylistTracksService },
     { provide: SEARCH_MUSIC, useClass: SearchMusicService },
+    { provide: PARSE_SPOTIFY_PLAYLIST, useClass: ParseSpotifyPlaylistService },
     { provide: IMPORT_MUSIC_TRACK, useClass: ImportMusicTrackService },
   ],
 };

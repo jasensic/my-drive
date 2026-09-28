@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, Inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -5,14 +6,25 @@ import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
 import { musicSourceLabel } from '../application/music.mapping';
-import { IMPORT_MUSIC_TRACK, SEARCH_MUSIC } from '../application/use-cases.tokens';
-import type { ImportMusicTrack, SearchMusic } from '../application/use-cases.tokens';
-import { MusicTrack } from '../domain/music.models';
+import {
+  IMPORT_MUSIC_TRACK,
+  PARSE_SPOTIFY_PLAYLIST,
+  SEARCH_MUSIC,
+} from '../application/use-cases.tokens';
+import type { ImportMusicTrack, ParseSpotifyPlaylist, SearchMusic } from '../application/use-cases.tokens';
+import { MusicSearchResult, MusicTrack } from '../domain/music.models';
 import { extractError } from './login.page';
 
 @Component({
   selector: 'app-music-search',
-  imports: [FormsModule, Button, Card, InputText, LucideDynamicIcon],
+  imports: [FormsModule, NgTemplateOutlet, Button, Card, InputText, LucideDynamicIcon],
+  styles: `
+    :host {
+      display: flex;
+      flex-direction: column;
+      gap: var(--md-space-4);
+    }
+  `,
   template: `
     <p-card header="Search songs">
       <p class="hint">
@@ -25,31 +37,82 @@ import { extractError } from './login.page';
           name="keyword"
           placeholder="Artist or song"
           [(ngModel)]="keyword"
-          [disabled]="searching()"
+          [disabled]="busy()"
         />
         <p-button
           type="submit"
           label="Search"
-          [loading]="searching()"
-          [disabled]="!keyword.trim()"
+          [loading]="searching() && mode() === 'search'"
+          [disabled]="busy() || !keyword.trim()"
         >
           <ng-template #icon><svg lucideIcon="search" aria-hidden="true" /></ng-template>
         </p-button>
       </form>
 
+      @if (mode() === 'search') {
+        <ng-container [ngTemplateOutlet]="results" />
+      }
+    </p-card>
+
+    <p-card header="Spotify playlist">
+      <p class="hint">
+        Paste an open.spotify.com playlist link. musicdl reads the tracks, then Download all saves
+        them into this library.
+      </p>
+      <form class="search-form" (ngSubmit)="loadPlaylist()">
+        <input
+          pInputText
+          name="playlistUrl"
+          placeholder="Spotify playlist URL"
+          [(ngModel)]="playlistUrl"
+          [disabled]="busy()"
+        />
+        <p-button
+          type="submit"
+          label="Load playlist"
+          [loading]="searching() && mode() === 'playlist'"
+          [disabled]="busy() || !playlistUrl.trim()"
+        >
+          <ng-template #icon><svg lucideIcon="list-music" aria-hidden="true" /></ng-template>
+        </p-button>
+      </form>
+      @if (mode() === 'playlist' && tracks().length && !searching()) {
+        <p-button
+          type="button"
+          label="Download all"
+          [loading]="importingAll()"
+          [disabled]="importingId() !== null"
+          (onClick)="downloadAll()"
+        >
+          <ng-template #icon><svg lucideIcon="download" aria-hidden="true" /></ng-template>
+        </p-button>
+      }
+
+      @if (mode() === 'playlist' && importingAll()) {
+        <p class="caption">Saving {{ saveDone() }} of {{ saveTotal() }}</p>
+      }
+
+      @if (mode() === 'playlist') {
+        <ng-container [ngTemplateOutlet]="results" />
+      }
+    </p-card>
+
+    <ng-template #results>
       @if (error()) {
         <p class="banner error">{{ error() }}</p>
       }
 
-      @if (searched() && !tracks().length && !searching()) {
+      @if (searched() && !tracks().length && !searching() && !error()) {
         <div class="empty-state">
           <svg lucideIcon="search" [size]="28" aria-hidden="true" />
-          <p>No songs found.</p>
+          <p>{{ mode() === 'playlist' ? 'No downloadable tracks in this playlist.' : 'No songs found.' }}</p>
         </div>
       }
 
       @if (searching() && !tracks().length) {
-        <p class="caption">Looking up sources…</p>
+        <p class="caption">
+          {{ mode() === 'playlist' ? 'Reading the Spotify playlist…' : 'Looking up sources…' }}
+        </p>
       }
 
       @if (tracks().length) {
@@ -91,17 +154,22 @@ import { extractError } from './login.page';
           }
         </ul>
       }
-    </p-card>
+    </ng-template>
   `,
 })
 export class MusicSearchPanel {
   imported = output<string>();
   keyword = '';
+  playlistUrl = '';
   tracks = signal<MusicTrack[]>([]);
   searchId = signal<string | null>(null);
   searching = signal(false);
   searched = signal(false);
+  mode = signal<'search' | 'playlist' | null>(null);
   importingId = signal<string | null>(null);
+  importingAll = signal(false);
+  saveDone = signal(0);
+  saveTotal = signal(0);
   error = signal<string | null>(null);
   readonly musicSourceLabel = musicSourceLabel;
 
@@ -109,46 +177,45 @@ export class MusicSearchPanel {
 
   constructor(
     @Inject(SEARCH_MUSIC) private readonly searchMusic: SearchMusic,
+    @Inject(PARSE_SPOTIFY_PLAYLIST) private readonly parsePlaylist: ParseSpotifyPlaylist,
     @Inject(IMPORT_MUSIC_TRACK) private readonly importTrack: ImportMusicTrack,
   ) {}
 
+  busy(): boolean {
+    return this.searching() || this.importingId() !== null;
+  }
+
   async search() {
     const keyword = this.keyword.trim();
-    if (!keyword || this.searching()) {
+    if (!keyword || this.busy()) {
       return;
     }
     const seq = ++this.searchSeq;
-    this.searching.set(true);
-    this.error.set(null);
-    this.tracks.set([]);
-    this.searchId.set(null);
-    this.searched.set(true);
+    this.begin('search');
     try {
       const started = await this.searchMusic.start(keyword);
-      if (seq !== this.searchSeq) {
-        return;
+      await this.follow(seq, started);
+    } catch (err) {
+      if (seq === this.searchSeq) {
+        this.error.set(extractError(err));
       }
-      this.searchId.set(started.search_id);
-      this.tracks.set(started.tracks);
-      if (started.error) {
-        this.error.set(started.error);
+    } finally {
+      if (seq === this.searchSeq) {
+        this.searching.set(false);
       }
-      let done = started.done;
-      while (!done) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        if (seq !== this.searchSeq) {
-          return;
-        }
-        const snap = await this.searchMusic.snapshot(started.search_id);
-        if (seq !== this.searchSeq) {
-          return;
-        }
-        this.tracks.set(snap.tracks);
-        if (snap.error) {
-          this.error.set(snap.error);
-        }
-        done = snap.done;
-      }
+    }
+  }
+
+  async loadPlaylist() {
+    const url = this.playlistUrl.trim();
+    if (!url || this.busy()) {
+      return;
+    }
+    const seq = ++this.searchSeq;
+    this.begin('playlist');
+    try {
+      const started = await this.parsePlaylist.start(url);
+      await this.follow(seq, started);
     } catch (err) {
       if (seq === this.searchSeq) {
         this.error.set(extractError(err));
@@ -174,6 +241,85 @@ export class MusicSearchPanel {
       this.error.set(extractError(err));
     } finally {
       this.importingId.set(null);
+    }
+  }
+
+  async downloadAll() {
+    const searchId = this.searchId();
+    const tracks = this.tracks();
+    if (!searchId || !tracks.length || this.importingId() || this.searching()) {
+      return;
+    }
+    this.importingAll.set(true);
+    this.saveTotal.set(tracks.length);
+    this.saveDone.set(0);
+    this.error.set(null);
+    const failed: string[] = [];
+    let saved = 0;
+    let lastName = '';
+    try {
+      for (const track of tracks) {
+        this.importingId.set(track.id);
+        try {
+          const file = await this.importTrack.execute(searchId, track.id);
+          saved += 1;
+          lastName = file.name;
+        } catch {
+          failed.push(track.song_name || track.id);
+        }
+        this.saveDone.update((count) => count + 1);
+      }
+    } finally {
+      this.importingId.set(null);
+      this.importingAll.set(false);
+    }
+    if (failed.length) {
+      const names = failed.slice(0, 5).join(', ');
+      const extra = failed.length > 5 ? ` and ${failed.length - 5} more` : '';
+      this.error.set(`Saved ${saved} of ${tracks.length}. Failed: ${names}${extra}`);
+    }
+    if (saved === 1) {
+      this.imported.emit(lastName);
+    } else if (saved > 1) {
+      this.imported.emit(`${saved} tracks`);
+    }
+  }
+
+  private begin(mode: 'search' | 'playlist') {
+    this.mode.set(mode);
+    this.searching.set(true);
+    this.error.set(null);
+    this.tracks.set([]);
+    this.searchId.set(null);
+    this.searched.set(true);
+    this.saveDone.set(0);
+    this.saveTotal.set(0);
+  }
+
+  private async follow(seq: number, started: MusicSearchResult) {
+    if (seq !== this.searchSeq) {
+      return;
+    }
+    this.searchId.set(started.search_id);
+    this.tracks.set(started.tracks);
+    if (started.error) {
+      this.error.set(started.error);
+    }
+    let done = started.done;
+    while (!done) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      if (seq !== this.searchSeq) {
+        return;
+      }
+      const snap = await this.searchMusic.snapshot(started.search_id);
+      if (seq !== this.searchSeq) {
+        return;
+      }
+      this.tracks.set(snap.tracks);
+      if (snap.error) {
+        this.error.set(snap.error);
+      }
+      done = snap.done;
     }
   }
 }
