@@ -15,7 +15,7 @@ export class ShellPage {
     this.themeToggle = page.getByRole('button', { name: /^(Dark mode|Light mode)/ });
     this.menuButton = page.getByRole('button', { name: /Open menu|Close menu/ });
     this.brand = page.locator('a.brand');
-    this.searchButton = page.getByRole('button', { name: /Search/ });
+    this.searchButton = page.locator('button.search-trigger');
     this.searchInput = page.getByPlaceholder('Search by file name');
   }
 

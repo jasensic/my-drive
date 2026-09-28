@@ -93,6 +93,10 @@ export class LibraryPage {
     return this.page.getByPlaceholder('Artist or song');
   }
 
+  musicSearchButton(): Locator {
+    return this.page.getByRole('button', { name: 'Search', exact: true });
+  }
+
   nowPlaying(): Locator {
     return this.page.locator('.now-playing');
   }

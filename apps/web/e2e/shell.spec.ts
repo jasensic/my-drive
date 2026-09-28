@@ -106,6 +106,7 @@ test.describe('shell', () => {
     await expect(shell.searchHit(note.name)).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/player\//);
-    await expect(page.getByText(note.name, { exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Search files' })).toBeHidden();
+    await expect(page.getByRole('main').getByText(note.name, { exact: true })).toBeVisible();
   });
 });

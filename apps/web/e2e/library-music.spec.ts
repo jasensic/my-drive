@@ -16,9 +16,9 @@ test.describe('music library', () => {
     await library.goto('/music');
     await expect(page.getByRole('heading', { name: 'Music' })).toBeVisible();
     await expect(page.getByText('Search songs')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Search' })).toBeDisabled();
+    await expect(library.musicSearchButton()).toBeDisabled();
     await library.searchKeyword().fill('e2e keyword');
-    await page.getByRole('button', { name: 'Search' }).click();
+    await library.musicSearchButton().click();
     await expect(library.error).toContainText('musicdl returned 502');
   });
 
@@ -69,7 +69,7 @@ test.describe('music library', () => {
     });
     await library.goto('/music');
     await library.searchKeyword().fill('mock song');
-    await page.getByRole('button', { name: 'Search' }).click();
+    await library.musicSearchButton().click();
     await expect(page.getByText('Mock Track')).toBeVisible();
     await expect(page.getByText('E2E Artist')).toBeVisible();
     await page.getByRole('button', { name: 'Download' }).click();
