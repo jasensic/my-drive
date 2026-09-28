@@ -574,6 +574,13 @@ class DriveViewModel @Inject constructor(
         connect(null, null, manualHost.ifBlank { null }, AuthAction.LOGIN)
     }
 
+    /** The first probe often runs before the user allows nearby-device discovery. */
+    fun onLanPermissionGranted() {
+        viewModelScope.launch {
+            if (_ui.value.loggedIn) syncExisting() else probeServerStatus()
+        }
+    }
+
     private fun connect(username: String?, password: String?, manualHost: String?, authAction: AuthAction) {
         _ui.value = _ui.value.copy(error = null)
         syncScheduler.enqueue(

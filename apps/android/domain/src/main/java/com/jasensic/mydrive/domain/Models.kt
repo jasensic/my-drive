@@ -412,6 +412,40 @@ fun isLoopbackHttpUrl(url: String): Boolean {
     return isLoopbackHost(host)
 }
 
+/**
+ * Picks the address a phone can actually route to. Docker bridges and loopback often appear
+ * first in an mDNS response and are unreachable from another device.
+ */
+fun preferredLanHost(hosts: List<String>): String? {
+    val ranked = hosts.mapNotNull { raw ->
+        val host = raw.trim().substringBefore('%').removePrefix("[").removeSuffix("]")
+        if (host.isBlank()) return@mapNotNull null
+        val rank = lanHostRank(host)
+        if (rank >= 100) null else host to rank
+    }
+    return ranked.minByOrNull { it.second }?.first
+}
+
+private fun lanHostRank(host: String): Int {
+    if (isLoopbackHost(host)) return 100
+    if (host.contains(':')) {
+        return if (host.lowercase().startsWith("fe80")) 100 else 40
+    }
+    val parts = host.split('.')
+    if (parts.size != 4) return 50
+    val numbers = parts.map { it.toIntOrNull() ?: return 100 }
+    val first = numbers[0]
+    val second = numbers[1]
+    if (first == 169 && second == 254) return 100
+    if (first >= 224) return 100
+    if (first == 192 && second == 168) return 0
+    if (first == 10) return 1
+    if (first == 172 && second in 16..31) {
+        return if (second == 17 || second == 18) 30 else 2
+    }
+    return 20
+}
+
 private fun isLoopbackHost(host: String): Boolean {
     val value = host.lowercase().removePrefix("[").removeSuffix("]")
     return value == "localhost" || value == "127.0.0.1" || value == "::1" || value == "0.0.0.0"

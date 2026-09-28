@@ -462,6 +462,19 @@ class SyncFilesUseCaseTest {
     }
 
     @Test
+    fun preferredLanHostSkipsDockerBridgeWhenAHomeAddressExists() {
+        assertEquals(
+            "192.168.1.20",
+            preferredLanHost(listOf("172.17.0.2", "192.168.1.20", "127.0.0.1")),
+        )
+    }
+
+    @Test
+    fun preferredLanHostIgnoresLoopbackAndLinkLocal() {
+        assertNull(preferredLanHost(listOf("127.0.0.1", "fe80::1%wlan0", "0.0.0.0")))
+    }
+
+    @Test
     fun discoveryIgnoresLoopbackTxtAndUsesResolvedHost() {
         val server = serverFromDiscovery(
             name = "my-drive",

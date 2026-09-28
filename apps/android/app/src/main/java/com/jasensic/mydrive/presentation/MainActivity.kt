@@ -27,7 +27,14 @@ class MainActivity : ComponentActivity() {
     private var askedForPermissions = false
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { }
+    ) { granted ->
+        val nearby = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            granted[Manifest.permission.NEARBY_WIFI_DEVICES] == true
+        } else {
+            granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        }
+        if (nearby) vm.onLanPermissionGranted()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
