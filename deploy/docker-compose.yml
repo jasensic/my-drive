@@ -29,9 +29,9 @@ services:
 
   musicdl:
     build:
-      context: ../services/musicdl-export
+      context: ../services
       dockerfile: Dockerfile
-    image: musicdl-export:local
+    image: musicdl-server:local
     init: true
     stdin_open: true
     tty: true
@@ -48,7 +48,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,mode=1777,size=512m
       - /home/musicdl:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=128m
     environment:
-      MUSICDL_SOURCES: ${MUSICDL_SOURCES:-MiguMusicClient,NeteaseMusicClient,QQMusicClient,KuwoMusicClient,QianqianMusicClient}
+      MUSICDL_SOURCES: ${MUSICDL_SOURCES:-AppleMusicClient,AudiusMusicClient,DeezerMusicClient,ITunesMusicClient,SpotifyMusicClient,YouTubeMusicClient}
       MUSICDL_SEARCH_SIZE: ${MUSICDL_SEARCH_SIZE:-3}
       MUSICDL_SEARCH_DEADLINE: ${MUSICDL_SEARCH_DEADLINE:-20}
     volumes:

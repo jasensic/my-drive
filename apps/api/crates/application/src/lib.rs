@@ -84,6 +84,8 @@ pub struct Services {
     pub delete_app_release: Arc<dyn DeleteAppRelease>,
     pub search_music: Arc<dyn SearchMusic>,
     pub poll_music_search: Arc<dyn PollMusicSearch>,
+    pub cancel_music_search: Arc<dyn CancelMusicSearch>,
+    pub parse_spotify_playlist: Arc<dyn ParseSpotifyPlaylist>,
     pub import_music: Arc<dyn ImportMusic>,
 }
 
@@ -130,6 +132,8 @@ impl Services {
             delete_app_release: Arc::new(DeleteAppReleaseService::new(deps.clone())),
             search_music: Arc::new(SearchMusicService::new(deps.music.clone())),
             poll_music_search: Arc::new(PollMusicSearchService::new(deps.music.clone())),
+            cancel_music_search: Arc::new(CancelMusicSearchService::new(deps.music.clone())),
+            parse_spotify_playlist: Arc::new(ParseSpotifyPlaylistService::new(deps.music.clone())),
             import_music: Arc::new(ImportMusicService::new(
                 deps.music.clone(),
                 Arc::new(UploadFileService::new(deps)),

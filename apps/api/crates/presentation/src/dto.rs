@@ -375,6 +375,11 @@ pub struct MusicSearchRequest {
     pub keyword: String,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct SpotifyPlaylistRequest {
+    pub url: String,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct MusicTrackDto {
     pub id: String,

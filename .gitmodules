@@ -1,0 +1,3 @@
+[submodule "services/musicdl"]
+	path = services/musicdl
+	url = https://github.com/CharlesPikachu/musicdl

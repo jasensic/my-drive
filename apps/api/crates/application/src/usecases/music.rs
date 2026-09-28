@@ -10,6 +10,7 @@ use super::files::{UploadCommand, UploadFile};
 use crate::AppError;
 
 const MAX_KEYWORD: usize = 200;
+const MAX_PLAYLIST_URL: usize = 500;
 
 #[async_trait]
 pub trait SearchMusic: Send + Sync {
@@ -19,6 +20,16 @@ pub trait SearchMusic: Send + Sync {
 #[async_trait]
 pub trait PollMusicSearch: Send + Sync {
     async fn execute(&self, search_id: &str) -> Result<MusicSearch, AppError>;
+}
+
+#[async_trait]
+pub trait CancelMusicSearch: Send + Sync {
+    async fn execute(&self, search_id: &str) -> Result<(), AppError>;
+}
+
+#[async_trait]
+pub trait ParseSpotifyPlaylist: Send + Sync {
+    async fn execute(&self, url: &str) -> Result<MusicSearch, AppError>;
 }
 
 #[async_trait]
@@ -75,6 +86,109 @@ impl PollMusicSearch for PollMusicSearchService {
             return Err(AppError::validation("search_id is required"));
         }
         Ok(self.music.search_snapshot(search_id).await?)
+    }
+}
+
+pub struct CancelMusicSearchService {
+    music: Arc<dyn MusicDownloader>,
+}
+
+impl CancelMusicSearchService {
+    pub fn new(music: Arc<dyn MusicDownloader>) -> Self {
+        Self { music }
+    }
+}
+
+#[async_trait]
+impl CancelMusicSearch for CancelMusicSearchService {
+    async fn execute(&self, search_id: &str) -> Result<(), AppError> {
+        let search_id = search_id.trim();
+        if search_id.is_empty() {
+            return Err(AppError::validation("search_id is required"));
+        }
+        Ok(self.music.cancel(search_id).await?)
+    }
+}
+
+pub struct ParseSpotifyPlaylistService {
+    music: Arc<dyn MusicDownloader>,
+}
+
+impl ParseSpotifyPlaylistService {
+    pub fn new(music: Arc<dyn MusicDownloader>) -> Self {
+        Self { music }
+    }
+}
+
+#[async_trait]
+impl ParseSpotifyPlaylist for ParseSpotifyPlaylistService {
+    async fn execute(&self, url: &str) -> Result<MusicSearch, AppError> {
+        let url = normalize_spotify_playlist_url(url)?;
+        Ok(self.music.parse_playlist(&url).await?)
+    }
+}
+
+fn normalize_spotify_playlist_url(raw: &str) -> Result<String, AppError> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Err(AppError::validation("A Spotify playlist link is required"));
+    }
+    if raw.chars().count() > MAX_PLAYLIST_URL {
+        return Err(AppError::validation(format!(
+            "playlist url must be at most {MAX_PLAYLIST_URL} characters"
+        )));
+    }
+    if let Some(id) = raw.strip_prefix("spotify:playlist:") {
+        let id = id.split(['?', '&']).next().unwrap_or("").trim();
+        require_playlist_id(id)?;
+        return Ok(format!("https://open.spotify.com/playlist/{id}"));
+    }
+    let rest = raw
+        .strip_prefix("https://")
+        .or_else(|| raw.strip_prefix("http://"))
+        .ok_or_else(|| AppError::validation("A Spotify playlist link is required"))?;
+    let without_fragment = rest.split('#').next().unwrap_or(rest);
+    let (host_and_path, query) = without_fragment
+        .split_once('?')
+        .unwrap_or((without_fragment, ""));
+    let (host_raw, path) = host_and_path.split_once('/').unwrap_or((host_and_path, ""));
+    let host_raw = host_raw.rsplit('@').next().unwrap_or(host_raw);
+    let host = host_raw
+        .split(':')
+        .next()
+        .unwrap_or(host_raw)
+        .to_ascii_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    match host {
+        "spotify.link" => {
+            if path.is_empty() {
+                return Err(AppError::validation("A Spotify playlist link is required"));
+            }
+            let query = if query.is_empty() {
+                String::new()
+            } else {
+                format!("?{query}")
+            };
+            Ok(format!("https://{host_raw}/{path}{query}"))
+        }
+        "open.spotify.com" | "play.spotify.com" | "spotify.com" => {
+            let id = path
+                .split('/')
+                .skip_while(|part| *part != "playlist")
+                .nth(1)
+                .unwrap_or("");
+            require_playlist_id(id)?;
+            Ok(format!("https://open.spotify.com/playlist/{id}"))
+        }
+        _ => Err(AppError::validation("A Spotify playlist link is required")),
+    }
+}
+
+fn require_playlist_id(id: &str) -> Result<(), AppError> {
+    if (10..=32).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Ok(())
+    } else {
+        Err(AppError::validation("A Spotify playlist link is required"))
     }
 }
 
@@ -169,6 +283,29 @@ mod tests {
             self.search(search_id).await
         }
 
+        async fn parse_playlist(&self, url: &str) -> Result<MusicSearch, DomainError> {
+            Ok(MusicSearch {
+                search_id: "playlist".into(),
+                tracks: vec![MusicTrack {
+                    id: "0".into(),
+                    source: "SpotifyMusicClient".into(),
+                    song_name: url.into(),
+                    singers: "Artist".into(),
+                    album: "Album".into(),
+                    duration: "1:00".into(),
+                    file_size: "3MB".into(),
+                    ext: "mp3".into(),
+                    cover_url: String::new(),
+                }],
+                done: false,
+                error: None,
+            })
+        }
+
+        async fn cancel(&self, _search_id: &str) -> Result<(), DomainError> {
+            Ok(())
+        }
+
         async fn download(
             &self,
             _search_id: &str,
@@ -233,6 +370,67 @@ mod tests {
         }));
         let err = svc.execute("  ").await.unwrap_err();
         assert!(err.to_string().contains("search_id"));
+    }
+
+    #[test]
+    fn playlist_url_accepts_spotify_playlist_links() {
+        let canonical = "https://open.spotify.com/playlist/37i9dQZF1E8NWHOpySOxQd";
+        assert_eq!(
+            normalize_spotify_playlist_url(canonical).unwrap(),
+            canonical
+        );
+        assert_eq!(
+            normalize_spotify_playlist_url(
+                "https://open.spotify.com/intl-es/playlist/37i9dQZF1E8NWHOpySOxQd?si=abc"
+            )
+            .unwrap(),
+            canonical
+        );
+        assert_eq!(
+            normalize_spotify_playlist_url(
+                "https://open.spotify.com/embed/playlist/37i9dQZF1E8NWHOpySOxQd"
+            )
+            .unwrap(),
+            canonical
+        );
+        assert_eq!(
+            normalize_spotify_playlist_url("spotify:playlist:37i9dQZF1E8NWHOpySOxQd").unwrap(),
+            canonical
+        );
+        assert_eq!(
+            normalize_spotify_playlist_url("https://spotify.link/abcDEF123").unwrap(),
+            "https://spotify.link/abcDEF123"
+        );
+    }
+
+    #[test]
+    fn playlist_url_rejects_other_links() {
+        for raw in [
+            "",
+            "   ",
+            "https://open.spotify.com/track/37i9dQZF1E8NWHOpySOxQd",
+            "https://music.163.com/#/playlist?id=1",
+            "https://evil.example/playlist/37i9dQZF1E8NWHOpySOxQd",
+            "spotify:playlist:short",
+        ] {
+            assert!(normalize_spotify_playlist_url(raw).is_err(), "{raw}");
+        }
+    }
+
+    #[tokio::test]
+    async fn playlist_sends_the_canonical_url() {
+        let svc = ParseSpotifyPlaylistService::new(Arc::new(FakeMusic {
+            bytes: Bytes::from_static(b"mp3"),
+        }));
+        let found = svc
+            .execute("https://open.spotify.com/playlist/37i9dQZF1E8NWHOpySOxQd?si=1")
+            .await
+            .unwrap();
+        assert_eq!(found.search_id, "playlist");
+        assert_eq!(
+            found.tracks[0].song_name,
+            "https://open.spotify.com/playlist/37i9dQZF1E8NWHOpySOxQd"
+        );
     }
 
     #[tokio::test]

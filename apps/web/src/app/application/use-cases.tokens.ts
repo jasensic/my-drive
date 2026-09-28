@@ -188,6 +188,11 @@ export interface ListSpotifyPlaylistTracks {
 export interface SearchMusic {
   start(keyword: string): Promise<MusicSearchResult>;
   snapshot(searchId: string): Promise<MusicSearchResult>;
+  cancel(searchId: string): Promise<void>;
+}
+
+export interface ParseSpotifyPlaylist {
+  start(url: string): Promise<MusicSearchResult>;
 }
 
 export interface ImportMusicTrack {
@@ -241,4 +246,5 @@ export const LIST_SPOTIFY_PLAYLIST_TRACKS = new InjectionToken<ListSpotifyPlayli
   'LIST_SPOTIFY_PLAYLIST_TRACKS',
 );
 export const SEARCH_MUSIC = new InjectionToken<SearchMusic>('SEARCH_MUSIC');
+export const PARSE_SPOTIFY_PLAYLIST = new InjectionToken<ParseSpotifyPlaylist>('PARSE_SPOTIFY_PLAYLIST');
 export const IMPORT_MUSIC_TRACK = new InjectionToken<ImportMusicTrack>('IMPORT_MUSIC_TRACK');
