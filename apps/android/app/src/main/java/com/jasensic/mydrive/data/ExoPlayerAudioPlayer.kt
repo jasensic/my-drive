@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -14,6 +15,7 @@ import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
 import com.jasensic.mydrive.domain.editQueueMove
 import com.jasensic.mydrive.domain.editQueueRemove
+import com.jasensic.mydrive.domain.materializePlayOrder
 import com.jasensic.mydrive.domain.queueIndexAfterEdit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -165,8 +167,8 @@ class ExoPlayerAudioPlayer @Inject constructor(
     override fun moveQueueItem(fromIndex: Int, toIndex: Int) {
         runWhenReady {
             val player = controller ?: return@runWhenReady
-            val next = editQueueMove(queue, fromIndex, toIndex) ?: return@runWhenReady
-            player.shuffleModeEnabled = false
+            val displayed = displayedQueue(player)
+            val next = editQueueMove(displayed, fromIndex, toIndex) ?: return@runWhenReady
             replaceSession(
                 player,
                 next,
@@ -223,6 +225,31 @@ class ExoPlayerAudioPlayer @Inject constructor(
         emitState()
     }
 
+    private fun displayedQueue(player: Player): List<LocalFile> {
+        if (queue.isEmpty()) return emptyList()
+        return materializePlayOrder(queue, playOrderIndices(player))
+    }
+
+    private fun playOrderIndices(player: Player): List<Int> {
+        val timeline = player.currentTimeline
+        val count = timeline.windowCount
+        if (count <= 0) return queue.indices.toList()
+        val shuffle = player.shuffleModeEnabled
+        val order = ArrayList<Int>(count)
+        val seen = HashSet<Int>()
+        var index = timeline.getFirstWindowIndex(shuffle)
+        while (index != C.INDEX_UNSET && seen.add(index)) {
+            order.add(index)
+            index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, shuffle)
+        }
+        if (order.size != count) {
+            for (window in 0 until count) {
+                if (seen.add(window)) order.add(window)
+            }
+        }
+        return order
+    }
+
     private fun runWhenReady(block: () -> Unit) {
         scope.launch {
             if (controller != null) {
@@ -266,11 +293,11 @@ class ExoPlayerAudioPlayer @Inject constructor(
         val player = controller ?: return
         try {
             val mediaId = player.currentMediaItem?.mediaId
-            val resolved = mediaId?.let { id -> queue.indexOfFirst { it.id == id } } ?: -1
+            val displayed = displayedQueue(player)
+            val resolved = mediaId?.let { id -> displayed.indexOfFirst { it.id == id } } ?: -1
             val index = when {
-                queue.isEmpty() -> -1
+                displayed.isEmpty() -> -1
                 resolved >= 0 -> resolved
-                player.currentMediaItemIndex in queue.indices -> player.currentMediaItemIndex
                 else -> -1
             }
             val reported = player.currentPosition.coerceAtLeast(0L)
@@ -282,11 +309,11 @@ class ExoPlayerAudioPlayer @Inject constructor(
                 reported
             }
             _state.value = PlaybackState(
-                queue = queue,
+                queue = displayed,
                 currentIndex = index,
                 playing = player.isPlaying,
                 positionMs = position,
-                durationMs = player.duration.takeIf { it > 0 } ?: queue.getOrNull(index)?.durationMs ?: 0L,
+                durationMs = player.duration.takeIf { it > 0 } ?: displayed.getOrNull(index)?.durationMs ?: 0L,
                 shuffle = player.shuffleModeEnabled,
                 repeat = when (player.repeatMode) {
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE

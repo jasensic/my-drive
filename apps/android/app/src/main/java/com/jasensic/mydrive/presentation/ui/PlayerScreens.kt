@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -216,7 +217,7 @@ private fun QueueSection(
     Text("Queue", style = MaterialTheme.typography.titleLarge)
     Text(
         if (playback.shuffle) {
-            "Shuffle is on. Reordering turns it off so playback follows this list."
+            "Shuffle is on. This list is the play order; moving a row turns shuffle off."
         } else {
             "${playback.queue.size} tracks · tap a row to play it"
         },
@@ -233,6 +234,7 @@ private fun QueueSection(
         return
     }
     playback.queue.forEachIndexed { index, track ->
+        key(track.id) {
         val current = index == playback.currentIndex
         Row(
             Modifier
@@ -273,6 +275,7 @@ private fun QueueSection(
             IconButton(onClick = { onRemove(track.id) }) {
                 Icon(Icons.Outlined.Close, contentDescription = "Remove from queue")
             }
+        }
         }
     }
 }

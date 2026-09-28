@@ -41,4 +41,12 @@ class PlaybackQueueTest {
         assertEquals(0, queueIndexAfterEdit(queue, "missing"))
         assertEquals(-1, queueIndexAfterEdit(emptyList(), "a"))
     }
+
+    @Test
+    fun playOrderFollowsWindowIndices() {
+        val queue = listOf(track("a"), track("b"), track("c"))
+        assertEquals(listOf("c", "a", "b"), materializePlayOrder(queue, listOf(2, 0, 1)).map { it.id })
+        assertEquals(listOf("a", "b", "c"), materializePlayOrder(queue, listOf(0, 9)).map { it.id })
+        assertEquals(queue, materializePlayOrder(queue, emptyList()))
+    }
 }
