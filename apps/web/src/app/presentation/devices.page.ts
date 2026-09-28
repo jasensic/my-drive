@@ -19,6 +19,7 @@ import type {
   SaveSyncProfile,
 } from '../application/use-cases.tokens';
 import { Device, MediaKind, SyncProfile, SyncRule } from '../domain/models';
+import { formatLocalDateTime } from './datetime';
 import { extractError } from './login.page';
 
 @Component({
@@ -52,7 +53,7 @@ import { extractError } from './login.page';
 
       <div class="card-list">
         @for (device of devices(); track device.id) {
-          <p-card [header]="device.name" [subheader]="device.last_sync_at ? 'Last sync ' + device.last_sync_at : 'Never synced'">
+          <p-card [header]="device.name" [subheader]="device.last_sync_at ? 'Last sync ' + formatDateTime(device.last_sync_at) : 'Never synced'">
             @if (editing()?.device_id === device.id) {
               <div class="stack-form">
                 <h2 class="section-title">Sync rules</h2>
@@ -118,6 +119,7 @@ export class DevicesPage {
   profileName = '';
   newName = '';
   error = signal<string | null>(null);
+  readonly formatDateTime = formatLocalDateTime;
 
   constructor(
     @Inject(LIST_DEVICES) private readonly listDevices: ListDevices,

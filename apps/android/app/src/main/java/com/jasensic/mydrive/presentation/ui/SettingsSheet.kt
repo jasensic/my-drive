@@ -44,7 +44,7 @@ fun SettingsPage(
         if (state.username.isNotBlank()) {
             Text("Signed in as ${state.username}", style = MaterialTheme.typography.bodySmall)
         }
-        Text("App ${state.appVersion} · last sync ${state.lastSync ?: "never"}", style = MaterialTheme.typography.bodySmall)
+        Text("App ${state.appVersion} · last sync ${formatLocalInstant(state.lastSync).ifBlank { "never" }}", style = MaterialTheme.typography.bodySmall)
         Text(
             "Sync runs in the background on this Wi-Fi. You can also start it now.",
             style = MaterialTheme.typography.bodySmall,

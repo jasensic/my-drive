@@ -12,8 +12,17 @@ import com.jasensic.mydrive.domain.DateSectionKind
 import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.dateSectionKind
 import com.jasensic.mydrive.domain.localDateFromEpochDay
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private val spanish = Locale.Builder().setLanguage("es").setRegion("ES").build()
+private val localDateTime = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", spanish)
+private val localLongDate = DateTimeFormatter.ofPattern("d 'de' MMMM 'de' yyyy", spanish)
 
 fun formatDuration(ms: Long?): String {
     if (ms == null || ms <= 0L) return "--:--"
@@ -39,17 +48,27 @@ fun formatSize(bytes: Long): String {
 
 fun formatModified(millis: Long): String {
     if (millis <= 0L) return ""
-    val date = java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneId.systemDefault())
-    return date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
+    return Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(localDateTime)
+}
+
+fun formatLocalInstant(value: String?): String {
+    if (value.isNullOrBlank()) return ""
+    val instant = parseInstant(value) ?: return value
+    return instant.atZone(ZoneId.systemDefault()).format(localDateTime)
 }
 
 fun formatDateHeader(epochDay: Long, todayEpochDay: Long): String {
     return when (dateSectionKind(epochDay, todayEpochDay)) {
-        DateSectionKind.TODAY -> "Today"
-        DateSectionKind.YESTERDAY -> "Yesterday"
-        DateSectionKind.DATE -> localDateFromEpochDay(epochDay)
-            .format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
+        DateSectionKind.TODAY -> "Hoy"
+        DateSectionKind.YESTERDAY -> "Ayer"
+        DateSectionKind.DATE -> localDateFromEpochDay(epochDay).format(localLongDate)
     }
+}
+
+private fun parseInstant(value: String): Instant? {
+    return runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: runCatching { LocalDateTime.parse(value).toInstant(ZoneOffset.UTC) }.getOrNull()
 }
 
 fun fileTypeIcon(file: LocalFile): ImageVector {

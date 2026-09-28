@@ -52,6 +52,7 @@ import type {
   UploadMedia,
 } from '../application/use-cases.tokens';
 import { Album, LibrarySilo, MediaFile, ShareGrant, SharePermission, UserProfile, isLibraryOwner } from '../domain/models';
+import { formatLocalDateTime } from './datetime';
 import { extractError } from './login.page';
 import { MusicPlaybackService } from './music-playback.service';
 import { MusicSearchPanel } from './music-search.panel';
@@ -973,6 +974,6 @@ export class LibraryPage {
   }
 
   formatDate(value: string) {
-    return new Date(value).toLocaleDateString();
+    return formatLocalDateTime(value);
   }
 }

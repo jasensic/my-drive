@@ -69,7 +69,7 @@ fun ConnectScreen(
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Server: ${state.serverLabel}", style = MaterialTheme.typography.bodyMedium)
-                Text("Last sync: ${state.lastSync ?: "never"}", style = MaterialTheme.typography.bodySmall)
+                Text("Last sync: ${formatLocalInstant(state.lastSync).ifBlank { "never" }}", style = MaterialTheme.typography.bodySmall)
                 Text("App ${state.appVersion}", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     host,
