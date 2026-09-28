@@ -23,9 +23,9 @@ services:
 
   musicdl:
     build:
-      context: ../services/musicdl-export
+      context: ../services
       dockerfile: Dockerfile
-    image: musicdl-export:local
+    image: musicdl-server:local
     restart: unless-stopped
     init: true
     stdin_open: true

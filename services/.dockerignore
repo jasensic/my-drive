@@ -1,0 +1,11 @@
+musicdl/.git
+musicdl/.github
+musicdl/docs
+musicdl/examples
+musicdl/mcp
+musicdl/scripts
+musicdl/**/__pycache__
+musicdl/**/*.py[cod]
+musicdl/**/*.egg-info
+musicdl-server/**/__pycache__
+musicdl-server/**/*.py[cod]
