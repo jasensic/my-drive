@@ -94,7 +94,6 @@ class MainActivity : ComponentActivity() {
                         onPlayQueued = player::playQueueItem,
                         onPauseAudio = player::pause,
                         onBack = vm::goBack,
-                        onForward = vm::goForward,
                         onOpenAlbum = vm::openAlbum,
                         onOpenArtist = vm::openArtist,
                         onToggleSelect = vm::toggleSelect,

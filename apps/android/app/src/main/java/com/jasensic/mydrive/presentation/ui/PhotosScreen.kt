@@ -28,13 +28,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -218,7 +216,6 @@ fun MediaViewerScreen(
     files: List<LocalFile>,
     currentId: String,
     authToken: String?,
-    onBack: () -> Unit,
     onPage: (String) -> Unit,
     onPauseAudio: () -> Unit,
 ) {
@@ -249,12 +246,9 @@ fun MediaViewerScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
             val current = files.getOrNull(pager.currentPage)
             Column(Modifier.weight(1f)) {
                 Text(current?.name.orEmpty(), color = Color.White, style = MaterialTheme.typography.titleSmall)

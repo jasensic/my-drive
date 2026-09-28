@@ -85,7 +85,6 @@ fun DriveApp(
     onPlayQueued: (String) -> Unit,
     onPauseAudio: () -> Unit,
     onBack: () -> Boolean,
-    onForward: () -> Boolean,
     onOpenAlbum: (String?) -> Unit,
     onOpenArtist: (String?) -> Unit,
     onToggleSelect: (String) -> Unit,
@@ -106,14 +105,17 @@ fun DriveApp(
     onSignOut: () -> Unit,
 ) {
     BackHandler(enabled = state.canGoBack || state.selectedIds.isNotEmpty() || state.screen is Screen.Viewer || state.screen is Screen.NowPlaying) {
-        onBack()
+        when (state.screen) {
+            Screen.NowPlaying -> onCloseNowPlaying()
+            is Screen.Viewer -> onCloseViewer()
+            else -> onBack()
+        }
     }
     when (val screen = state.screen) {
         Screen.Connect -> ConnectScreen(state, onSignIn, onRegister, onSetup, onScanLan, onOpenLibrary)
         Screen.NowPlaying -> {
             NowPlayingScreen(
                 playback = playback,
-                onBack = onCloseNowPlaying,
                 onPlayPause = onPlayPause,
                 onSeek = onSeek,
                 onPrev = onPrev,
@@ -135,7 +137,6 @@ fun DriveApp(
                 files = photos,
                 currentId = screen.fileId,
                 authToken = state.authToken,
-                onBack = onCloseViewer,
                 onPage = onViewerPage,
                 onPauseAudio = onPauseAudio,
             )
@@ -155,8 +156,6 @@ fun DriveApp(
             onOpenNowPlaying = onOpenNowPlaying,
             onPlayPause = onPlayPause,
             onNext = onNext,
-            onBack = onBack,
-            onForward = onForward,
             onOpenAlbum = onOpenAlbum,
             onOpenArtist = onOpenArtist,
             onToggleSelect = onToggleSelect,
@@ -204,8 +203,6 @@ private fun HubScreen(
     onOpenNowPlaying: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
-    onBack: () -> Boolean,
-    onForward: () -> Boolean,
     onOpenAlbum: (String?) -> Unit,
     onOpenArtist: (String?) -> Unit,
     onToggleSelect: (String) -> Unit,
@@ -331,12 +328,6 @@ private fun HubScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (state.canGoBack) {
-                        TextButton(onClick = { onBack() }) { Text("Back") }
-                    }
-                    if (state.canGoForward) {
-                        TextButton(onClick = { onForward() }) { Text("Forward") }
-                    }
                     if (currentAlbum != null) {
                         TextButton(onClick = { dialog = HubDialog.RenameAlbum }) { Text("Rename") }
                         TextButton(onClick = onShareWithAccount) { Text("Share") }

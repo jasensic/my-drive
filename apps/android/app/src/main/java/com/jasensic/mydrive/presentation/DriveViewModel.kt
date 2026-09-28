@@ -249,11 +249,11 @@ class DriveViewModel @Inject constructor(
     }
 
     fun goBack(): Boolean {
+        if (_ui.value.selectedIds.isNotEmpty()) {
+            clearSelection()
+            return true
+        }
         if (backStack.isEmpty()) {
-            if (_ui.value.selectedIds.isNotEmpty()) {
-                clearSelection()
-                return true
-            }
             return false
         }
         forwardStack.addLast(currentFrame())
