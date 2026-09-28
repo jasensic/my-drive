@@ -1,6 +1,7 @@
 package com.jasensic.mydrive.presentation.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,14 +10,14 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -35,19 +36,29 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
+import com.jasensic.mydrive.domain.LocalFile
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.RepeatMode
 import com.jasensic.mydrive.domain.trackHeadline
 import com.jasensic.mydrive.domain.trackSubtitle
+import kotlin.math.roundToInt
 
 @Composable
 fun MiniPlayer(
@@ -113,12 +124,13 @@ fun NowPlayingScreen(
 ) {
     val current = playback.current
     var dragging by remember { mutableFloatStateOf(-1f) }
+    var queueDragging by remember { mutableStateOf(false) }
     val duration = playback.durationMs.coerceAtLeast(1L).toFloat()
     val position = if (dragging >= 0f) dragging else playback.positionMs.toFloat().coerceIn(0f, duration)
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rememberScrollState(), enabled = !queueDragging)
             .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         Artwork(
@@ -202,6 +214,7 @@ fun NowPlayingScreen(
             onRemove = onRemoveQueued,
             onMove = onMoveQueued,
             onPlay = onPlayQueued,
+            onDragging = { queueDragging = it },
         )
         Spacer(Modifier.height(24.dp))
     }
@@ -213,19 +226,33 @@ private fun QueueSection(
     onRemove: (String) -> Unit,
     onMove: (Int, Int) -> Unit,
     onPlay: (String) -> Unit,
+    onDragging: (Boolean) -> Unit,
 ) {
+    val items = remember { mutableStateListOf<LocalFile>() }
+    val queueKey = playback.queue.joinToString { it.id }
+    var draggingIndex by remember { mutableIntStateOf(-1) }
+    var originIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var rowHeight by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(queueKey) {
+        if (draggingIndex >= 0) return@LaunchedEffect
+        items.clear()
+        items.addAll(playback.queue)
+    }
+
     Text("Queue", style = MaterialTheme.typography.titleLarge)
     Text(
         if (playback.shuffle) {
-            "Shuffle is on. This list is the play order; moving a row turns shuffle off."
+            "Shuffle is on. Drag a row to change the play order (turns shuffle off)."
         } else {
-            "${playback.queue.size} tracks · tap a row to play it"
+            "${playback.queue.size} tracks · drag the handle to reorder"
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(Modifier.height(8.dp))
-    if (playback.queue.isEmpty()) {
+    if (items.isEmpty()) {
         Text(
             "Nothing queued",
             style = MaterialTheme.typography.bodyMedium,
@@ -233,49 +260,103 @@ private fun QueueSection(
         )
         return
     }
-    playback.queue.forEachIndexed { index, track ->
+    items.forEachIndexed { index, track ->
         key(track.id) {
-        val current = index == playback.currentIndex
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clickable { onPlay(track.id) }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                "${index + 1}",
-                modifier = Modifier.width(24.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Column(Modifier.weight(1f)) {
+            val current = track.id == playback.current?.id
+            val dragging = index == draggingIndex
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .zIndex(if (dragging) 1f else 0f)
+                    .offset { IntOffset(0, if (dragging) dragOffset.roundToInt() else 0) }
+                    .onGloballyPositioned { coords ->
+                        if (coords.size.height > 0) rowHeight = coords.size.height.toFloat()
+                    }
+                    .clickable(enabled = !dragging) { onPlay(track.id) }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
-                    track.trackHeadline(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
-                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    "${index + 1}",
+                    modifier = Modifier.width(24.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(
-                    track.trackSubtitle().ifBlank { track.displayArtist },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        track.trackHeadline(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = if (current) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyLarge,
+                        color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        track.trackSubtitle().ifBlank { track.displayArtist },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    Icons.Filled.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .pointerInput(track.id) {
+                            detectDragGestures(
+                                onDragStart = {
+                                    val start = items.indexOfFirst { it.id == track.id }
+                                    originIndex = start
+                                    draggingIndex = start
+                                    dragOffset = 0f
+                                    onDragging(true)
+                                },
+                                onDragCancel = {
+                                    draggingIndex = -1
+                                    originIndex = -1
+                                    dragOffset = 0f
+                                    onDragging(false)
+                                },
+                                onDragEnd = {
+                                    val from = originIndex
+                                    val to = draggingIndex
+                                    draggingIndex = -1
+                                    originIndex = -1
+                                    dragOffset = 0f
+                                    onDragging(false)
+                                    if (from >= 0 && to >= 0 && from != to) onMove(from, to)
+                                },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    if (rowHeight <= 0f) {
+                                        dragOffset += amount.y
+                                        return@detectDragGestures
+                                    }
+                                    dragOffset += amount.y
+                                    val from = draggingIndex
+                                    if (from < 0) return@detectDragGestures
+                                    val target = when {
+                                        dragOffset > rowHeight * 0.5f -> (from + 1).coerceAtMost(items.lastIndex)
+                                        dragOffset < -rowHeight * 0.5f -> (from - 1).coerceAtLeast(0)
+                                        else -> from
+                                    }
+                                    if (target != from) {
+                                        val moved = items.removeAt(from)
+                                        items.add(target, moved)
+                                        draggingIndex = target
+                                        dragOffset -= (target - from) * rowHeight
+                                    }
+                                },
+                            )
+                        },
                 )
+                IconButton(onClick = { onRemove(track.id) }) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Remove from queue")
+                }
             }
-            IconButton(onClick = { onMove(index, index - 1) }, enabled = index > 0) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move up")
-            }
-            IconButton(onClick = { onMove(index, index + 1) }, enabled = index < playback.queue.lastIndex) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move down")
-            }
-            IconButton(onClick = { onRemove(track.id) }) {
-                Icon(Icons.Outlined.Close, contentDescription = "Remove from queue")
-            }
-        }
         }
     }
 }
