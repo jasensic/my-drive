@@ -158,5 +158,6 @@ pub trait AudioTranscoder: Send + Sync {
 #[async_trait::async_trait]
 pub trait MusicDownloader: Send + Sync {
     async fn search(&self, keyword: &str) -> Result<MusicSearch, DomainError>;
+    async fn search_snapshot(&self, search_id: &str) -> Result<MusicSearch, DomainError>;
     async fn download(&self, search_id: &str, track_id: &str) -> Result<DownloadedAudio, DomainError>;
 }

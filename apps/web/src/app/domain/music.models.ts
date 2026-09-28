@@ -13,4 +13,6 @@ export interface MusicTrack {
 export interface MusicSearchResult {
   search_id: string;
   tracks: MusicTrack[];
+  done: boolean;
+  error?: string | null;
 }

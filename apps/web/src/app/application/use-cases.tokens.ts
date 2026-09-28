@@ -182,7 +182,8 @@ export interface ListSpotifyPlaylistTracks {
 }
 
 export interface SearchMusic {
-  execute(keyword: string): Promise<MusicSearchResult>;
+  start(keyword: string): Promise<MusicSearchResult>;
+  snapshot(searchId: string): Promise<MusicSearchResult>;
 }
 
 export interface ImportMusicTrack {

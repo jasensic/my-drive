@@ -17,6 +17,11 @@ pub trait SearchMusic: Send + Sync {
 }
 
 #[async_trait]
+pub trait PollMusicSearch: Send + Sync {
+    async fn execute(&self, search_id: &str) -> Result<MusicSearch, AppError>;
+}
+
+#[async_trait]
 pub trait ImportMusic: Send + Sync {
     async fn execute(
         &self,
@@ -49,6 +54,27 @@ impl SearchMusic for SearchMusicService {
             )));
         }
         Ok(self.music.search(keyword).await?)
+    }
+}
+
+pub struct PollMusicSearchService {
+    music: Arc<dyn MusicDownloader>,
+}
+
+impl PollMusicSearchService {
+    pub fn new(music: Arc<dyn MusicDownloader>) -> Self {
+        Self { music }
+    }
+}
+
+#[async_trait]
+impl PollMusicSearch for PollMusicSearchService {
+    async fn execute(&self, search_id: &str) -> Result<MusicSearch, AppError> {
+        let search_id = search_id.trim();
+        if search_id.is_empty() {
+            return Err(AppError::validation("search_id is required"));
+        }
+        Ok(self.music.search_snapshot(search_id).await?)
     }
 }
 
@@ -134,7 +160,13 @@ mod tests {
                     ext: "mp3".into(),
                     cover_url: String::new(),
                 }],
+                done: true,
+                error: None,
             })
+        }
+
+        async fn search_snapshot(&self, search_id: &str) -> Result<MusicSearch, DomainError> {
+            self.search(search_id).await
         }
 
         async fn download(
@@ -192,6 +224,15 @@ mod tests {
         }));
         let err = svc.execute("   ").await.unwrap_err();
         assert!(err.to_string().contains("keyword"));
+    }
+
+    #[tokio::test]
+    async fn poll_rejects_a_blank_search_id() {
+        let svc = PollMusicSearchService::new(Arc::new(FakeMusic {
+            bytes: Bytes::from_static(b"mp3"),
+        }));
+        let err = svc.execute("  ").await.unwrap_err();
+        assert!(err.to_string().contains("search_id"));
     }
 
     #[tokio::test]

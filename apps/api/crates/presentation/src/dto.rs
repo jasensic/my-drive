@@ -392,6 +392,9 @@ pub struct MusicTrackDto {
 pub struct MusicSearchResponse {
     pub search_id: String,
     pub tracks: Vec<MusicTrackDto>,
+    pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

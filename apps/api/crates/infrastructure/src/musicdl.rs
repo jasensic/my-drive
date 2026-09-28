@@ -59,6 +59,40 @@ impl MusicDownloader for HttpMusicDownloader {
                     cover_url: public_cover(&track.cover_url),
                 })
                 .collect(),
+            done: parsed.done,
+            error: parsed.error,
+        })
+    }
+
+    async fn search_snapshot(&self, search_id: &str) -> Result<MusicSearch, DomainError> {
+        let response = self
+            .client
+            .get(self.endpoint(&format!("search/{search_id}")))
+            .send()
+            .await
+            .map_err(downloader_unreachable)?;
+        let body = read_ok(response).await?;
+        let parsed: SearchPayload = serde_json::from_slice(&body)
+            .map_err(|err| DomainError::validation(format!("music search response: {err}")))?;
+        Ok(MusicSearch {
+            search_id: parsed.search_id,
+            tracks: parsed
+                .tracks
+                .into_iter()
+                .map(|track| MusicTrack {
+                    id: track.id,
+                    source: track.source,
+                    song_name: track.song_name,
+                    singers: track.singers,
+                    album: track.album,
+                    duration: track.duration,
+                    file_size: track.file_size,
+                    ext: track.ext,
+                    cover_url: public_cover(&track.cover_url),
+                })
+                .collect(),
+            done: parsed.done,
+            error: parsed.error,
         })
     }
 
@@ -104,6 +138,10 @@ impl MusicDownloader for HttpMusicDownloader {
 struct SearchPayload {
     search_id: String,
     tracks: Vec<TrackPayload>,
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -225,6 +263,7 @@ mod tests {
         let parsed: SearchPayload = serde_json::from_str(body).unwrap();
         assert_eq!(parsed.search_id, "abc");
         assert_eq!(parsed.tracks[0].song_name, "A");
+        assert!(!parsed.done);
     }
 
     #[test]
