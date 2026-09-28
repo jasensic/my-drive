@@ -302,8 +302,8 @@ mod tests {
             Some("https://api.mydrive.lan".into())
         );
         assert_eq!(
-            public_base_url_for_discovery("http://api.localhost"),
-            Some("http://api.localhost".into())
+            public_base_url_for_discovery("http://files.lan"),
+            Some("http://files.lan".into())
         );
     }
 
