@@ -206,36 +206,25 @@ pub(crate) async fn owned_device(
     Ok(device)
 }
 
+/// Full NAS mirror: a new device downloads everything it can access.
 pub fn default_profile(device_id: DeviceId) -> SyncProfile {
     SyncProfile {
         id: SyncProfileId::new(),
         device_id,
         name: "default".into(),
-        rules: vec![
-            SyncRule {
-                media_kind: MediaKind::Photo,
-                max_age_days: Some(365),
-                max_size_bytes: None,
-                include_all: false,
-            },
-            SyncRule {
-                media_kind: MediaKind::Video,
-                max_age_days: None,
-                max_size_bytes: Some(10 * 1024 * 1024),
-                include_all: false,
-            },
-            SyncRule {
-                media_kind: MediaKind::Audio,
-                max_age_days: None,
-                max_size_bytes: None,
-                include_all: true,
-            },
-            SyncRule {
-                media_kind: MediaKind::Other,
-                max_age_days: None,
-                max_size_bytes: None,
-                include_all: true,
-            },
-        ],
+        rules: [
+            MediaKind::Photo,
+            MediaKind::Video,
+            MediaKind::Audio,
+            MediaKind::Other,
+        ]
+        .into_iter()
+        .map(|media_kind| SyncRule {
+            media_kind,
+            max_age_days: None,
+            max_size_bytes: None,
+            include_all: true,
+        })
+        .collect(),
     }
 }

@@ -58,7 +58,7 @@ Los APK no van en el compose. Gradle calcula `versionName` desde el último tag 
 2. Subida de fotos, vídeos y música a MinIO (prefijos `images/`, `videos/`, `music/`, `other/`; miniaturas en `images/thumbs/`) con metadatos en PostgreSQL
 3. Búsqueda y descarga de canciones desde **Music** con la imagen `musicdl-export` (clientes por defecto de musicdl: Migu, NetEase, QQ, Kuwo y Qianqian). El audio queda en la biblioteca.
 4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
-5. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
+5. Por defecto cada dispositivo se descarga toda la biblioteca; el perfil de sync de un dispositivo puede limitarlo (ej. fotos del último año, vídeos &lt; 10 MB)
 6. Manifiesto JSON de archivos faltantes y descarga en Android
 7. Android: login único; después el teléfono encuentra el servidor por mDNS (`_mydrive._tcp`, TXT `url` con el dominio) y sigue sincronizando en segundo plano. Un borrado en el portal desaparece del teléfono en el siguiente manifiesto (`removed`).
 8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
