@@ -12,17 +12,19 @@ export interface TokenStore {
   get(): string | null;
   username(): string | null;
   userId(): string | null;
-  set(token: string, username: string, userId?: string): void;
+  isAdmin(): boolean;
+  set(token: string, username: string, userId?: string, isAdmin?: boolean): void;
   clear(): void;
 }
 
 export interface AuthRepository {
   status(): Promise<{ setup_required: boolean }>;
   setup(username: string, password: string): Promise<AuthSession>;
-  register(username: string, password: string): Promise<AuthSession>;
   login(username: string, password: string): Promise<AuthSession>;
-  me(): Promise<{ id: string; username: string }>;
+  me(): Promise<UserProfile>;
   listUsers(): Promise<UserProfile[]>;
+  /** Admin only. There is no self sign-up. */
+  createUser(username: string, password: string): Promise<UserProfile>;
 }
 
 export interface AlbumRepository {
@@ -49,6 +51,8 @@ export interface FileRepository {
 export interface DeviceRepository {
   list(): Promise<Device[]>;
   register(name: string): Promise<Device>;
+  /** Forget a device: it must sign in again and its sync profile is gone. */
+  remove(deviceId: string): Promise<void>;
   getProfile(deviceId: string): Promise<SyncProfile>;
   saveProfile(deviceId: string, name: string, rules: SyncRule[]): Promise<SyncProfile>;
 }

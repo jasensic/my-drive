@@ -38,7 +38,9 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --build
 | Salud / OpenAPI | `http://<nas>:8080/health` · `http://<nas>:8080/api-docs` |
 | PostgreSQL, MinIO (`:9000`, consola `:9001`), musicdl (`:8090`) | solo `127.0.0.1` del NAS (usa un túnel SSH para la consola de MinIO) |
 
-El primer acceso al portal abre la pantalla de **setup**: crea el primer usuario. Después se puede iniciar sesión, subir archivos y definir perfiles de sincronización.
+El API no arranca sin un `JWT_SECRET` aleatorio de al menos 32 caracteres (`openssl rand -hex 32`).
+
+El primer acceso al portal abre la pantalla de **setup**: crea el usuario administrador. No hay registro abierto: el admin da de alta al resto de la familia en **Users**. Cada móvil recibe al conectarse un token de dispositivo para seguir sincronizando sin volver a pedir la contraseña; desde **Devices** se puede olvidar un móvil y revocar ese acceso.
 
 ### mDNS
 
@@ -54,7 +56,7 @@ Los APK no van en el compose. Gradle calcula `versionName` desde el último tag 
 
 ## Funcionalidades principales
 
-1. Setup inicial e inicio de sesión (JWT)
+1. Setup del administrador, alta de usuarios por el admin, JWT y token de refresco por dispositivo
 2. Subida de fotos, vídeos y música a MinIO (prefijos `images/`, `videos/`, `music/`, `other/`; miniaturas en `images/thumbs/`) con metadatos en PostgreSQL
 3. Búsqueda y descarga de canciones desde **Music** con la imagen `musicdl-export` (clientes por defecto de musicdl: Migu, NetEase, QQ, Kuwo y Qianqian). El audio queda en la biblioteca.
 4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
@@ -62,7 +64,7 @@ Los APK no van en el compose. Gradle calcula `versionName` desde el último tag 
 6. Manifiesto JSON de archivos faltantes y descarga en Android
 7. Android: login único; después el teléfono encuentra el servidor por mDNS (`_mydrive._tcp`, TXT `url` con el dominio) y sigue sincronizando en segundo plano. Un borrado en el portal desaparece del teléfono en el siguiente manifiesto (`removed`).
 8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
-9. Publicación de APKs en el portal y actualización de Android al reconectar
+9. Publicación de APKs en el portal (solo el admin) y actualización de Android al reconectar
 
 ## Desarrollo (en el PC)
 

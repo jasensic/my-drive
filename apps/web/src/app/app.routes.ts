@@ -8,6 +8,7 @@ import { LoginPage } from './presentation/login.page';
 import { PlayerPage } from './presentation/player.page';
 import { ShellComponent } from './presentation/shell.component';
 import { SpotifyCallbackPage } from './presentation/spotify-callback.page';
+import { UsersPage } from './presentation/users.page';
 
 export const routes: Routes = [
   { path: 'login', component: LoginPage, canActivate: [setupGuard] },
@@ -26,6 +27,7 @@ export const routes: Routes = [
       { path: 'player/:id', component: PlayerPage },
       { path: 'devices', component: DevicesPage },
       { path: 'app-updates', component: AppUpdatesPage },
+      { path: 'users', component: UsersPage },
     ],
   },
 ];

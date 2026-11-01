@@ -77,6 +77,11 @@ pub trait DeviceRepository: Send + Sync {
     async fn list_by_user(&self, user_id: UserId) -> Result<Vec<Device>, DomainError>;
     async fn find_by_id(&self, id: DeviceId) -> Result<Option<Device>, DomainError>;
     async fn touch_sync(&self, id: DeviceId, at: DateTime<Utc>) -> Result<(), DomainError>;
+    /// Stores the SHA-256 of the device's refresh token, replacing any previous one.
+    async fn set_token_hash(&self, id: DeviceId, token_hash: &str) -> Result<(), DomainError>;
+    async fn token_hash(&self, id: DeviceId) -> Result<Option<String>, DomainError>;
+    /// Removes the device with its sync profile, exclusions, and refresh token.
+    async fn delete(&self, id: DeviceId) -> Result<(), DomainError>;
 }
 
 #[async_trait::async_trait]

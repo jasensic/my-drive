@@ -449,6 +449,7 @@ class DataStoreSyncState @Inject constructor(
     private val userKey = stringPreferencesKey("username")
     private val userIdKey = stringPreferencesKey("userId")
     private val deviceKey = stringPreferencesKey("deviceId")
+    private val deviceTokenKey = stringPreferencesKey("deviceToken")
     private val syncKey = stringPreferencesKey("lastSync")
     private val hostKey = stringPreferencesKey("serverHost")
     private val portKey = intPreferencesKey("serverPort")
@@ -485,6 +486,8 @@ class DataStoreSyncState @Inject constructor(
         context.dataStore.edit {
             it[tokenKey] = session.token
             it[userKey] = session.username
+            val deviceToken = session.deviceToken
+            if (deviceToken != null) it[deviceTokenKey] = deviceToken else it.remove(deviceTokenKey)
             if (!userId.isNullOrBlank()) {
                 it[userIdKey] = userId
                 if (deviceId != null) {
@@ -510,7 +513,7 @@ class DataStoreSyncState @Inject constructor(
         tokenCache = token
         val userId = prefs[userIdKey]
         val device = prefs[deviceKey] ?: userId?.let { prefs[stringPreferencesKey("device_$it")] }
-        return AuthSession(token, prefs[userKey] ?: "", device, userId)
+        return AuthSession(token, prefs[userKey] ?: "", device, userId, prefs[deviceTokenKey])
     }
 
     override suspend fun rememberedDeviceId(userId: String): String? =
@@ -544,6 +547,7 @@ class DataStoreSyncState @Inject constructor(
             it.remove(userKey)
             it.remove(deviceKey)
             it.remove(userIdKey)
+            it.remove(deviceTokenKey)
         }
     }
 }

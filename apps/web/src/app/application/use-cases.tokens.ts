@@ -21,8 +21,9 @@ export interface Login {
   execute(username: string, password: string): Promise<AuthSession>;
 }
 
-export interface RegisterAccount {
-  execute(username: string, password: string): Promise<AuthSession>;
+/** Admin adds a person to the NAS. The new user signs in with these credentials. */
+export interface CreateUser {
+  execute(username: string, password: string): Promise<UserProfile>;
 }
 
 export interface ListUsers {
@@ -33,6 +34,9 @@ export interface SessionQuery {
   hasSession(): boolean;
   username(): string | null;
   userId(): string | null;
+  isAdmin(): boolean;
+  /** Re-read the signed-in user from the server (e.g. admin flag after an upgrade). */
+  refreshProfile(): Promise<void>;
   logout(): void;
 }
 
@@ -121,6 +125,10 @@ export interface RegisterDevice {
   execute(name: string): Promise<Device>;
 }
 
+export interface DeleteDevice {
+  execute(deviceId: string): Promise<void>;
+}
+
 export interface LoadSyncProfile {
   execute(deviceId: string): Promise<SyncProfile>;
 }
@@ -202,7 +210,7 @@ export interface ImportMusicTrack {
 export const CHECK_SETUP = new InjectionToken<CheckSetup>('CHECK_SETUP');
 export const SETUP_ADMIN = new InjectionToken<SetupAdmin>('SETUP_ADMIN');
 export const LOGIN = new InjectionToken<Login>('LOGIN');
-export const REGISTER_ACCOUNT = new InjectionToken<RegisterAccount>('REGISTER_ACCOUNT');
+export const CREATE_USER = new InjectionToken<CreateUser>('CREATE_USER');
 export const LIST_USERS = new InjectionToken<ListUsers>('LIST_USERS');
 export const SESSION_QUERY = new InjectionToken<SessionQuery>('SESSION_QUERY');
 export const LIST_LIBRARY = new InjectionToken<ListLibrary>('LIST_LIBRARY');
@@ -225,6 +233,7 @@ export const EMPTY_TRASH = new InjectionToken<EmptyTrash>('EMPTY_TRASH');
 export const LOAD_MEDIA_BLOB = new InjectionToken<LoadMediaBlob>('LOAD_MEDIA_BLOB');
 export const LIST_DEVICES = new InjectionToken<ListDevices>('LIST_DEVICES');
 export const REGISTER_DEVICE = new InjectionToken<RegisterDevice>('REGISTER_DEVICE');
+export const DELETE_DEVICE = new InjectionToken<DeleteDevice>('DELETE_DEVICE');
 export const LOAD_SYNC_PROFILE = new InjectionToken<LoadSyncProfile>('LOAD_SYNC_PROFILE');
 export const SAVE_SYNC_PROFILE = new InjectionToken<SaveSyncProfile>('SAVE_SYNC_PROFILE');
 export const LIST_APP_RELEASES = new InjectionToken<ListAppReleases>('LIST_APP_RELEASES');

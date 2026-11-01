@@ -5,6 +5,7 @@ import com.jasensic.mydrive.domain.AppRelease
 import com.jasensic.mydrive.domain.AuthSession
 import com.jasensic.mydrive.domain.ManifestFile
 import com.jasensic.mydrive.domain.RemoteFile
+import com.jasensic.mydrive.domain.RegisteredDevice
 import com.jasensic.mydrive.domain.RemoteFileSource
 import com.jasensic.mydrive.domain.ServerStatus
 import com.jasensic.mydrive.domain.ShareGrant
@@ -50,7 +51,16 @@ data class CredentialsDto(val username: String, val password: String)
 data class AuthDto(val token: String, val user: UserDto)
 data class UserDto(val id: String, val username: String)
 data class NameDto(val name: String)
-data class DeviceDto(val id: String, val name: String)
+data class DeviceDto(
+    val id: String,
+    val name: String,
+    @Json(name = "device_token") val deviceToken: String? = null,
+)
+data class RefreshDto(
+    @Json(name = "device_id") val deviceId: String,
+    @Json(name = "device_token") val deviceToken: String,
+)
+data class DeviceTokenDto(@Json(name = "device_token") val deviceToken: String)
 data class DeviceExclusionsRequestDto(@Json(name = "file_ids") val fileIds: List<String>)
 data class DeviceExclusionsDto(@Json(name = "file_ids") val fileIds: List<String> = emptyList())
 data class ManifestRequestDto(
@@ -128,11 +138,11 @@ interface DriveApi {
     @POST("/v1/setup")
     suspend fun setup(@Body body: CredentialsDto): AuthDto
 
-    @POST("/v1/register")
-    suspend fun register(@Body body: CredentialsDto): AuthDto
-
     @POST("/v1/login")
     suspend fun login(@Body body: CredentialsDto): AuthDto
+
+    @POST("/v1/auth/refresh")
+    suspend fun refresh(@Body body: RefreshDto): AuthDto
 
     @GET("/v1/users")
     suspend fun listUsers(@Header("Authorization") authorization: String): List<UserDto>
@@ -142,6 +152,12 @@ interface DriveApi {
         @Header("Authorization") authorization: String,
         @Body body: NameDto,
     ): DeviceDto
+
+    @POST("/v1/devices/{id}/token")
+    suspend fun issueDeviceToken(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): DeviceTokenDto
 
     @PUT("/v1/devices/{id}/exclusions")
     suspend fun putExclusions(
@@ -235,17 +251,27 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
     override suspend fun setup(baseUrl: String, username: String, password: String): AuthSession =
         wrapAuth { api(baseUrl).setup(CredentialsDto(username, password)).toSession() }
 
-    override suspend fun register(baseUrl: String, username: String, password: String): AuthSession =
-        wrapAuth { api(baseUrl).register(CredentialsDto(username, password)).toSession() }
-
     override suspend fun login(baseUrl: String, username: String, password: String): AuthSession =
         wrapAuth { api(baseUrl).login(CredentialsDto(username, password)).toSession() }
 
     override suspend fun listUsers(baseUrl: String, token: String): List<UserProfile> =
         wrapAuth { api(baseUrl).listUsers("Bearer $token").map { UserProfile(it.id, it.username) } }
 
-    override suspend fun registerDevice(baseUrl: String, token: String, name: String): String =
-        wrapAuth { api(baseUrl).registerDevice("Bearer $token", NameDto(name)).id }
+    override suspend fun registerDevice(baseUrl: String, token: String, name: String): RegisteredDevice =
+        wrapAuth {
+            val dto = api(baseUrl).registerDevice("Bearer $token", NameDto(name))
+            RegisteredDevice(dto.id, dto.deviceToken ?: error("server did not return a device token"))
+        }
+
+    override suspend fun refreshSession(baseUrl: String, deviceId: String, deviceToken: String): AuthSession =
+        wrapAuth { api(baseUrl).refresh(RefreshDto(deviceId, deviceToken)).toSession() }
+
+    override suspend fun issueDeviceToken(baseUrl: String, token: String, deviceId: String): String? =
+        try {
+            wrapAuth { api(baseUrl).issueDeviceToken("Bearer $token", deviceId).deviceToken }
+        } catch (ex: HttpException) {
+            if (ex.code() == 404) null else throw ex
+        }
 
     override suspend fun fetchManifest(
         baseUrl: String,

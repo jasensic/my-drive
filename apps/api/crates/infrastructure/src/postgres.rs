@@ -48,11 +48,12 @@ impl UserRepository for PgRepos {
 
     async fn insert(&self, user: &User) -> Result<(), DomainError> {
         sqlx::query(
-            "INSERT INTO users (id, username, password_hash, created_at) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(user.id.0)
         .bind(&user.username)
         .bind(&user.password_hash)
+        .bind(user.is_admin)
         .bind(user.created_at)
         .execute(&self.pool)
         .await
@@ -62,7 +63,7 @@ impl UserRepository for PgRepos {
 
     async fn find_by_username(&self, username: &str) -> Result<Option<User>, DomainError> {
         let row = sqlx::query(
-            "SELECT id, username, password_hash, created_at FROM users WHERE username = $1",
+            "SELECT id, username, password_hash, is_admin, created_at FROM users WHERE username = $1",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -72,12 +73,13 @@ impl UserRepository for PgRepos {
             id: UserId::from_uuid(r.get("id")),
             username: r.get("username"),
             password_hash: r.get("password_hash"),
+            is_admin: r.get("is_admin"),
             created_at: r.get("created_at"),
         }))
     }
 
     async fn find_by_id(&self, id: UserId) -> Result<Option<User>, DomainError> {
-        let row = sqlx::query("SELECT id, username, password_hash, created_at FROM users WHERE id = $1")
+        let row = sqlx::query("SELECT id, username, password_hash, is_admin, created_at FROM users WHERE id = $1")
             .bind(id.0)
             .fetch_optional(&self.pool)
             .await
@@ -86,12 +88,13 @@ impl UserRepository for PgRepos {
             id: UserId::from_uuid(r.get("id")),
             username: r.get("username"),
             password_hash: r.get("password_hash"),
+            is_admin: r.get("is_admin"),
             created_at: r.get("created_at"),
         }))
     }
 
     async fn list_summaries(&self) -> Result<Vec<UserSummary>, DomainError> {
-        let rows = sqlx::query("SELECT id, username FROM users ORDER BY username")
+        let rows = sqlx::query("SELECT id, username, is_admin FROM users ORDER BY username")
             .fetch_all(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;
@@ -100,6 +103,7 @@ impl UserRepository for PgRepos {
             .map(|r| UserSummary {
                 id: UserId::from_uuid(r.get("id")),
                 username: r.get("username"),
+                is_admin: r.get("is_admin"),
             })
             .collect())
     }
@@ -443,6 +447,36 @@ impl DeviceRepository for PgRepos {
         sqlx::query("UPDATE devices SET last_sync_at = $2 WHERE id = $1")
             .bind(id.0)
             .bind(at)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn set_token_hash(&self, id: DeviceId, token_hash: &str) -> Result<(), DomainError> {
+        sqlx::query("UPDATE devices SET token_hash = $2 WHERE id = $1")
+            .bind(id.0)
+            .bind(token_hash)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn token_hash(&self, id: DeviceId) -> Result<Option<String>, DomainError> {
+        let row: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT token_hash FROM devices WHERE id = $1")
+                .bind(id.0)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(row.and_then(|(hash,)| hash))
+    }
+
+    /// Sync profile, rules, and exclusions go with it via ON DELETE CASCADE.
+    async fn delete(&self, id: DeviceId) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM devices WHERE id = $1")
+            .bind(id.0)
             .execute(&self.pool)
             .await
             .map_err(|e| DomainError::infra(e.to_string()))?;

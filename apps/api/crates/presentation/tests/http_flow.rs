@@ -479,8 +479,24 @@ async fn register_users_share_exclusions_and_mobile_audio() {
         .unwrap();
     assert_eq!(too_early.status(), 409);
 
-    let registered: Value = client
+    let open_signup = client
         .post(format!("{base}/v1/register"))
+        .json(&serde_json::json!({"username":"intruder","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(open_signup.status(), 404);
+    let anonymous = client
+        .post(format!("{base}/v1/users"))
+        .json(&serde_json::json!({"username":"intruder","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(anonymous.status(), 401);
+
+    let created: Value = client
+        .post(format!("{base}/v1/users"))
+        .bearer_auth(admin_token)
         .json(&serde_json::json!({"username":"friend","password":"password123"}))
         .send()
         .await
@@ -488,16 +504,35 @@ async fn register_users_share_exclusions_and_mobile_audio() {
         .json()
         .await
         .unwrap();
-    let friend_token = registered["token"].as_str().unwrap();
-    let friend_id = registered["user"]["id"].as_str().unwrap();
+    assert_eq!(created["is_admin"], false);
+    let friend_id = created["id"].as_str().unwrap();
+    let friend_login: Value = client
+        .post(format!("{base}/v1/login"))
+        .json(&serde_json::json!({"username":"friend","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let friend_token = friend_login["token"].as_str().unwrap();
 
     let duplicate = client
-        .post(format!("{base}/v1/register"))
+        .post(format!("{base}/v1/users"))
+        .bearer_auth(admin_token)
         .json(&serde_json::json!({"username":"friend","password":"password123"}))
         .send()
         .await
         .unwrap();
     assert_eq!(duplicate.status(), 409);
+    let not_admin = client
+        .post(format!("{base}/v1/users"))
+        .bearer_auth(friend_token)
+        .json(&serde_json::json!({"username":"third","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(not_admin.status(), 403);
 
     let users: Value = client
         .get(format!("{base}/v1/users"))
@@ -689,3 +724,116 @@ async fn register_users_share_exclusions_and_mobile_audio() {
 
 #[allow(dead_code)]
 fn _keep_addr_type(_: SocketAddr) {}
+
+#[tokio::test]
+async fn device_refresh_tokens_and_admin_only_releases() {
+    let (base, client) = spawn_app().await;
+    let setup: Value = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"admin","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let admin_token = setup["token"].as_str().unwrap();
+    assert_eq!(setup["user"]["is_admin"], true);
+
+    let device: Value = client
+        .post(format!("{base}/v1/devices"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"name":"Phone A"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let device_id = device["id"].as_str().unwrap();
+    let device_token = device["device_token"].as_str().unwrap();
+    let listed: Value = client
+        .get(format!("{base}/v1/devices"))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(listed[0].get("device_token").is_none());
+
+    let refreshed: Value = client
+        .post(format!("{base}/v1/auth/refresh"))
+        .json(&serde_json::json!({"device_id": device_id, "device_token": device_token}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let fresh = refreshed["token"].as_str().unwrap();
+    let me = client
+        .get(format!("{base}/v1/me"))
+        .bearer_auth(fresh)
+        .send()
+        .await
+        .unwrap();
+    assert!(me.status().is_success());
+
+    let wrong = client
+        .post(format!("{base}/v1/auth/refresh"))
+        .json(&serde_json::json!({"device_id": device_id, "device_token": "nope"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), 401);
+
+    let deleted = client
+        .delete(format!("{base}/v1/devices/{device_id}"))
+        .bearer_auth(admin_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+    let revoked = client
+        .post(format!("{base}/v1/auth/refresh"))
+        .json(&serde_json::json!({"device_id": device_id, "device_token": device_token}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revoked.status(), 401);
+
+    client
+        .post(format!("{base}/v1/users"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"username":"friend","password":"password123"}))
+        .send()
+        .await
+        .unwrap();
+    let friend: Value = client
+        .post(format!("{base}/v1/login"))
+        .json(&serde_json::json!({"username":"friend","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let friend_token = friend["token"].as_str().unwrap();
+    let form = multipart::Form::new().part(
+        "apk",
+        multipart::Part::bytes(b"PK fake".to_vec())
+            .file_name("my-drive.apk")
+            .mime_str("application/vnd.android.package-archive")
+            .unwrap(),
+    );
+    let publish = client
+        .post(format!("{base}/v1/app/releases"))
+        .bearer_auth(friend_token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(publish.status(), 403);
+}

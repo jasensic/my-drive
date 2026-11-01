@@ -7,12 +7,14 @@ import { Checkbox } from 'primeng/checkbox';
 import { InputNumber } from 'primeng/inputnumber';
 import { InputText } from 'primeng/inputtext';
 import {
+  DELETE_DEVICE,
   LIST_DEVICES,
   LOAD_SYNC_PROFILE,
   REGISTER_DEVICE,
   SAVE_SYNC_PROFILE,
 } from '../application/use-cases.tokens';
 import type {
+  DeleteDevice,
   ListDevices,
   LoadSyncProfile,
   RegisterDevice,
@@ -104,7 +106,10 @@ import { extractError } from './login.page';
                 </div>
               </div>
             } @else {
-              <p-button label="Edit rules" (onClick)="edit(device)" />
+              <div class="actions">
+                <p-button label="Edit rules" (onClick)="edit(device)" />
+                <p-button label="Forget device" severity="danger" [text]="true" (onClick)="forget(device)" />
+              </div>
             }
           </p-card>
         }
@@ -124,6 +129,7 @@ export class DevicesPage {
   constructor(
     @Inject(LIST_DEVICES) private readonly listDevices: ListDevices,
     @Inject(REGISTER_DEVICE) private readonly registerDevice: RegisterDevice,
+    @Inject(DELETE_DEVICE) private readonly deleteDevice: DeleteDevice,
     @Inject(LOAD_SYNC_PROFILE) private readonly loadProfile: LoadSyncProfile,
     @Inject(SAVE_SYNC_PROFILE) private readonly saveProfile: SaveSyncProfile,
   ) {
@@ -142,6 +148,21 @@ export class DevicesPage {
     try {
       await this.registerDevice.execute(this.newName);
       this.newName = '';
+      await this.reload();
+    } catch (err) {
+      this.error.set(extractError(err));
+    }
+  }
+
+  async forget(device: Device) {
+    if (!confirm(`Forget “${device.name}”? It stops syncing and has to sign in again.`)) {
+      return;
+    }
+    try {
+      await this.deleteDevice.execute(device.id);
+      if (this.editing()?.device_id === device.id) {
+        this.cancel();
+      }
       await this.reload();
     } catch (err) {
       this.error.set(extractError(err));

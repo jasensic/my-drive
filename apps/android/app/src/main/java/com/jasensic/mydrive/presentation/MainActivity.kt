@@ -74,7 +74,6 @@ class MainActivity : ComponentActivity() {
                         themeMode = themeMode,
                         playback = playback,
                         onSignIn = vm::sync,
-                        onRegister = vm::register,
                         onSetup = vm::setupAdmin,
                         onScanLan = vm::scanLan,
                         onOpenLibrary = vm::openLibrary,

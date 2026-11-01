@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { DevicesPage } from './pages/devices.page';
+import { acceptDialogs } from './support/dialogs';
 import { uniqueName } from './support/names';
 
 test.describe('devices', () => {
@@ -38,5 +39,17 @@ test.describe('devices', () => {
     await card.getByRole('button', { name: 'Cancel' }).click();
     await expect(card.getByRole('button', { name: 'Edit rules' })).toBeVisible();
     await expect(card.getByText('Sync rules')).toHaveCount(0);
+  });
+
+  test('forgets a device', async ({ page }) => {
+    acceptDialogs(page);
+    const devices = new DevicesPage(page);
+    await devices.goto();
+    const name = uniqueName('Tablet');
+    await devices.register(name);
+    const card = devices.deviceCard(name);
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Forget device' }).click();
+    await expect(card).toHaveCount(0);
   });
 });

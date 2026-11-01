@@ -31,6 +31,7 @@ import com.jasensic.mydrive.domain.ServerDiscovery
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
 import com.jasensic.mydrive.domain.SignOutUseCase
 import com.jasensic.mydrive.domain.StreamRemoteFileUseCase
+import com.jasensic.mydrive.domain.SignInUseCase
 import com.jasensic.mydrive.domain.SyncFilesUseCase
 import com.jasensic.mydrive.domain.SyncProgressStore
 import com.jasensic.mydrive.domain.SyncScheduler
@@ -137,6 +138,15 @@ object AppProvides {
         progress,
         exclusions,
     )
+
+    @Provides
+    fun signInUseCase(
+        discovery: DiscoverServerUseCase,
+        remote: RemoteFileSource,
+        local: LocalMediaStore,
+        state: SyncStateRepository,
+        progress: SyncProgressStore,
+    ) = SignInUseCase(discovery, remote, local, state, android.os.Build.MODEL, progress)
 
     @Provides
     fun checkUpdateUseCase(

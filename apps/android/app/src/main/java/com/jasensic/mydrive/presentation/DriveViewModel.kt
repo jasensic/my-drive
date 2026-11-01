@@ -28,6 +28,7 @@ import com.jasensic.mydrive.domain.ShareGrant
 import com.jasensic.mydrive.domain.ShareLocalFilesUseCase
 import com.jasensic.mydrive.domain.SharePermission
 import com.jasensic.mydrive.domain.ShareResourceType
+import com.jasensic.mydrive.domain.SignInUseCase
 import com.jasensic.mydrive.domain.SignOutUseCase
 import com.jasensic.mydrive.domain.StreamRemoteFileUseCase
 import com.jasensic.mydrive.domain.SyncPhase
@@ -134,6 +135,7 @@ data class UiState(
 @HiltViewModel
 class DriveViewModel @Inject constructor(
     private val syncScheduler: SyncScheduler,
+    private val signIn: SignInUseCase,
     private val syncProgressStore: SyncProgressStore,
     private val listLibrary: ListLocalLibraryUseCase,
     private val loadState: LoadAppStateUseCase,
@@ -558,10 +560,6 @@ class DriveViewModel @Inject constructor(
         connect(username, password, manualHost, AuthAction.LOGIN)
     }
 
-    fun register(username: String, password: String, manualHost: String) {
-        connect(username, password, manualHost, AuthAction.REGISTER)
-    }
-
     fun setupAdmin(username: String, password: String, manualHost: String) {
         connect(username, password, manualHost, AuthAction.SETUP)
     }
@@ -581,14 +579,19 @@ class DriveViewModel @Inject constructor(
         }
     }
 
+    /** Signs in here, on the foreground, so the password never reaches WorkManager. */
     private fun connect(username: String?, password: String?, manualHost: String?, authAction: AuthAction) {
         _ui.value = _ui.value.copy(error = null)
-        syncScheduler.enqueue(
-            username?.ifBlank { null },
-            password?.ifBlank { null },
-            manualHost?.ifBlank { null },
-            authAction,
-        )
+        val host = manualHost?.ifBlank { null }
+        if (username.isNullOrBlank() && password.isNullOrBlank()) {
+            syncScheduler.enqueue(host)
+            return
+        }
+        viewModelScope.launch {
+            runCatching { signIn.execute(username.orEmpty(), password.orEmpty(), host, authAction) }
+                .onSuccess { syncScheduler.enqueue() }
+                .onFailure { _ui.value = _ui.value.copy(error = it.message) }
+        }
     }
 
     fun installUpdate() {

@@ -4,11 +4,32 @@ use async_trait::async_trait;
 use domain::model::{Device, SyncProfile, SyncRule};
 use domain::{DeviceId, FileId, MediaKind, SyncProfileId, UserId};
 
+use crate::device_tokens::{hash_device_token, new_device_token};
 use crate::{AppError, Deps};
+
+/// A new device and the refresh token it keeps to stay signed in. The token is
+/// only returned here and by [`IssueDeviceToken`]; the server keeps its hash.
+#[derive(Debug, Clone)]
+pub struct RegisteredDevice {
+    pub device: Device,
+    pub token: String,
+}
 
 #[async_trait]
 pub trait RegisterDevice: Send + Sync {
-    async fn execute(&self, user_id: UserId, name: String) -> Result<Device, AppError>;
+    async fn execute(&self, user_id: UserId, name: String) -> Result<RegisteredDevice, AppError>;
+}
+
+/// Rotate the refresh token of a device that is signed in with an access token.
+#[async_trait]
+pub trait IssueDeviceToken: Send + Sync {
+    async fn execute(&self, user_id: UserId, device_id: DeviceId) -> Result<String, AppError>;
+}
+
+/// Forget a device: revokes its refresh token and drops its sync profile.
+#[async_trait]
+pub trait DeleteDevice: Send + Sync {
+    async fn execute(&self, user_id: UserId, device_id: DeviceId) -> Result<(), AppError>;
 }
 
 #[async_trait]
@@ -59,7 +80,7 @@ impl RegisterDeviceService {
 
 #[async_trait]
 impl RegisterDevice for RegisterDeviceService {
-    async fn execute(&self, user_id: UserId, name: String) -> Result<Device, AppError> {
+    async fn execute(&self, user_id: UserId, name: String) -> Result<RegisteredDevice, AppError> {
         let name = name.trim().to_string();
         if name.is_empty() {
             return Err(AppError::validation("device name is required"));
@@ -75,7 +96,54 @@ impl RegisterDevice for RegisterDeviceService {
         self.deps.devices.insert(&device).await?;
         let profile = default_profile(device.id);
         self.deps.profiles.upsert(&profile).await?;
-        Ok(device)
+        let token = new_device_token();
+        self.deps
+            .devices
+            .set_token_hash(device.id, &hash_device_token(&token))
+            .await?;
+        Ok(RegisteredDevice { device, token })
+    }
+}
+
+pub struct IssueDeviceTokenService {
+    deps: Arc<Deps>,
+}
+
+impl IssueDeviceTokenService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl IssueDeviceToken for IssueDeviceTokenService {
+    async fn execute(&self, user_id: UserId, device_id: DeviceId) -> Result<String, AppError> {
+        let device = owned_device(&self.deps, user_id, device_id).await?;
+        let token = new_device_token();
+        self.deps
+            .devices
+            .set_token_hash(device.id, &hash_device_token(&token))
+            .await?;
+        Ok(token)
+    }
+}
+
+pub struct DeleteDeviceService {
+    deps: Arc<Deps>,
+}
+
+impl DeleteDeviceService {
+    pub fn new(deps: Arc<Deps>) -> Self {
+        Self { deps }
+    }
+}
+
+#[async_trait]
+impl DeleteDevice for DeleteDeviceService {
+    async fn execute(&self, user_id: UserId, device_id: DeviceId) -> Result<(), AppError> {
+        let device = owned_device(&self.deps, user_id, device_id).await?;
+        self.deps.devices.delete(device.id).await?;
+        Ok(())
     }
 }
 

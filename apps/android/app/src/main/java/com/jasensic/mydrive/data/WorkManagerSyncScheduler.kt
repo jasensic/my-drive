@@ -10,12 +10,10 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
-import com.jasensic.mydrive.domain.AuthAction
 import com.jasensic.mydrive.domain.SyncPhase
 import com.jasensic.mydrive.domain.SyncProgress
 import com.jasensic.mydrive.domain.SyncProgressStore
 import com.jasensic.mydrive.domain.SyncScheduler
-import com.jasensic.mydrive.domain.wireValue
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,20 +23,17 @@ class WorkManagerSyncScheduler @Inject constructor(
     @ApplicationContext private val context: Context,
     private val progressStore: SyncProgressStore,
 ) : SyncScheduler {
-    override fun enqueue(username: String?, password: String?, manualHost: String?, authAction: AuthAction) {
+    override fun enqueue(manualHost: String?) {
         if (!progressStore.current().isActive) {
             progressStore.publish(
                 SyncProgress(
                     phase = SyncPhase.CONNECTING,
-                    message = if (username.isNullOrBlank()) "Searching the LAN…" else "Signing in…",
+                    message = "Searching the LAN…",
                 ),
             )
         }
         val data = androidx.work.Data.Builder().apply {
-            username?.let { putString(SyncWorker.KEY_USERNAME, it) }
-            password?.let { putString(SyncWorker.KEY_PASSWORD, it) }
             manualHost?.let { putString(SyncWorker.KEY_HOST, it) }
-            putString(SyncWorker.KEY_AUTH_ACTION, authAction.wireValue())
         }.build()
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setInputData(data)
