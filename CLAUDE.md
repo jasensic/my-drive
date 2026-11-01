@@ -142,3 +142,24 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 - **Android sync**: descargas secuenciales y sin reanudación (escribe directo al destino, sin `.part` ni `Range`); un error aborta todo el sync; `reuseLocalFile` recalcula SHA-256 de cada archivo ya descargado en cada sync; se reintenta la carátula de cada audio sin portada en cada sync; la contraseña viaja en `Data` de WorkManager (persistida en su SQLite).
 - **NAS**: no hay copias de seguridad de `pgdata`/`miniodata`; HTTP plano en la LAN.
 - GC de papelera solo al llamar `GET /v1/files/trash` (efecto lateral en un GET).
+
+## Hoja de ruta (cambios planificados)
+
+Orden sugerido; cada punto es un PR propio. Al terminar uno, muévelo fuera de esta lista y actualiza las secciones de arriba.
+
+1. **Perfil “NAS completo”**: `default_profile` con `include_all` en los cuatro tipos, para que el dispositivo se descargue todo al conectarse.
+2. **Seguridad básica**: rol de administrador; alta de usuarios solo por el admin o por invitación; publicar o borrar APKs solo para el admin; `JWT_SECRET` obligatorio; refresh token por dispositivo, revocable desde el portal; sacar la contraseña de los `Data` de WorkManager.
+3. **Sync de Android robusto**: 3–4 descargas en paralelo, `.part` + `Range` para reanudar, fallos aislados por archivo, checksum verificado guardado en Room (sin re-hash), comprobación de espacio libre y no reintentar carátulas inexistentes.
+4. **Streaming en el servidor**: `ObjectStore` con `put_stream`/`get_stream`, hash calculado mientras se escribe, subidas troceadas y reanudables (> 512 MB), y miniaturas con `spawn_blocking`. Valorar un adaptador de sistema de archivos como alternativa a MinIO.
+5. **Trabajo en segundo plano**: tabla `jobs` (`FOR UPDATE SKIP LOCKED`) para AAC, miniaturas (incl. HEIC/WebP y fotograma de vídeo), EXIF y purga de papelera. El manifiesto nunca transcodifica.
+6. **Sync por cambios**: tabla `changes` con número de secuencia y `GET /v1/sync/changes?cursor=N` paginado en lugar del manifiesto completo.
+7. **URLs firmadas de corta duración** para `<img>/<video>`, ExoPlayer y Coil, así el portal reproduce en streaming sin descargar Blobs.
+8. **Copias de seguridad** de `pgdata`/`miniodata` (`pg_dump` + `mc mirror`) y un `/health` que compruebe la base de datos y MinIO.
+9. **Rediseño de la interfaz web y Android: estética tipo Apple, minimalista y fácil de usar.**
+   - **Un solo sistema de diseño para las dos apps.** Hoy no coinciden: el portal usa salvia/rosa/arena (`apps/web/src/app/presentation/theme.preset.ts`, tokens `--md-*` en `apps/web/src/styles.scss`) y Android verde azulado/ámbar (`presentation/theme/Color.kt`, `Theme.kt`). Define los tokens una vez (color, tipografía, espaciado, radios, sombras) en una tabla de este fichero y replícalos en ambos sitios.
+   - **Color**: superficies neutras (blanco/gris muy claro; negro/gris grafito en oscuro), un único color de acento y rojo solo para acciones destructivas. Claro/oscuro automático según el sistema (el portal ya tiene `ThemeModeService`).
+   - **Tipografía y espacio**: fuente del sistema (`-apple-system, BlinkMacSystemFont, "SF Pro Text"`, Inter de respaldo; en Android la del sistema), títulos grandes, mucho aire, jerarquía por tamaño y peso en vez de bordes y cajas. Radios de 10–14 px y sombras muy suaves.
+   - **Contenido primero**: fotos en una cuadrícula a sangre con visor a pantalla completa y gestos; música como lista limpia con carátula y un mini-reproductor fijo; archivos como lista sencilla. Barras de navegación translúcidas (`backdrop-filter: blur` en web).
+   - **Fácil de usar**: en el móvil, tres pestañas (Fotos, Música, Archivos) y los ajustes en una hoja; primer arranque en una sola pantalla (encontrar el servidor → iniciar sesión → sincronizar); el estado del sync como un indicador discreto, no como un panel; menos opciones visibles y las avanzadas (reglas de sync, publicar APK) agrupadas en Ajustes.
+   - **Plataforma**: en Android se mantiene Material 3 como base técnica, retocado con estos tokens (títulos grandes, listas agrupadas con margen); no copies componentes de iOS que rompan la navegación de Android (gesto atrás, botón atrás).
+   - **Restricciones**: PrimeNG sigue solo en `presentation/`; conserva roles y nombres accesibles para que los page objects de Playwright (`apps/web/e2e/pages/`) sigan funcionando, o actualízalos en el mismo PR. Haz web y Android en PRs separados.
