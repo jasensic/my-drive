@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manifest_applies_default_household_rules() {
+    async fn default_profile_mirrors_the_whole_library() {
         let now = Utc.with_ymd_and_hms(2026, 9, 15, 12, 0, 0).unwrap();
         let mem = TestMem::new();
         let user_id = mem.add_user("owner").await;
@@ -121,10 +121,22 @@ mod tests {
             .await
             .unwrap();
 
-        let old_photo = photo(user_id, now - chrono::Duration::days(400), "old.jpg");
+        let old_photo = photo(user_id, now - chrono::Duration::days(4000), "old.jpg");
         let new_photo = photo(user_id, now - chrono::Duration::days(3), "new.jpg");
-        mem.insert_file(old_photo).await;
-        mem.insert_file(new_photo.clone()).await;
+        let mut big_video = photo(user_id, now - chrono::Duration::days(900), "film.mp4");
+        big_video.media_kind = MediaKind::Video;
+        big_video.mime = "video/mp4".into();
+        big_video.size = 4 * 1024 * 1024 * 1024;
+        let mut document = photo(user_id, now - chrono::Duration::days(2000), "tax.pdf");
+        document.media_kind = MediaKind::Other;
+        document.mime = "application/pdf".into();
+        let expected: HashSet<FileId> = [&old_photo, &new_photo, &big_video, &document]
+            .iter()
+            .map(|file| file.id)
+            .collect();
+        for file in [old_photo, new_photo, big_video, document] {
+            mem.insert_file(file).await;
+        }
 
         let deps = deps_from(mem);
         let svc = BuildSyncManifestService::new(deps);
@@ -137,8 +149,8 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(manifest.files.len(), 1);
-        assert_eq!(manifest.files[0].id, new_photo.id);
+        let ids: HashSet<FileId> = manifest.files.iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, expected);
     }
 
     #[tokio::test]

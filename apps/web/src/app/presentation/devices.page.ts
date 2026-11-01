@@ -214,9 +214,9 @@ function ensureKinds(rules: SyncRule[]): SyncRule[] {
     (kind) =>
       rules.find((r) => r.media_kind === kind) ?? {
         media_kind: kind,
-        max_age_days: kind === 'photo' ? 365 : null,
-        max_size_bytes: kind === 'video' ? 10 * MB : null,
-        include_all: kind === 'audio' || kind === 'other',
+        max_age_days: null,
+        max_size_bytes: null,
+        include_all: true,
       },
   );
 }
