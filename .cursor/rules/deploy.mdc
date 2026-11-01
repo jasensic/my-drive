@@ -1,13 +1,14 @@
 ---
-description: On-prem deploy conventions
+description: NAS deploy conventions
 globs: deploy/**/*
 ---
 
 # Deploy
 
-- `docker-compose.yml` is local development (bridge network, published ports).
-- `docker-compose.prod.yml` is on-prem: Watchtower, named volumes, API `network_mode: host` for mDNS.
-- Never put secrets in compose files; use `.env`.
-- Nginx serves the Angular SPA and reverse-proxies `/v1` and `/api-docs` to the API.
-- Persist Postgres and MinIO volumes; Watchtower may recreate `api` and `web` only.
-- Android APKs are **not** shipped by Watchtower. Publish them in the portal (stored in MinIO) so phones update on the next LAN connect.
+- There is one install: the home NAS (Linux). `deploy/docker-compose.yml` is the only compose file. Do not add prod/staging/dev variants, registry images, or auto-updaters.
+- It builds from the repo: `docker compose --env-file .env -f deploy/docker-compose.yml up -d --build` from the repo root. Updating is `git pull` + the same command.
+- The API runs with `network_mode: host` so mDNS reaches the LAN. Postgres, MinIO, and musicdl publish on `127.0.0.1` only and the API reaches them over loopback. Only the API (`:8080`) and the portal (`:8088`) face the LAN.
+- Never put secrets in compose files; use the repo-root `.env`.
+- Nginx serves the Angular SPA and reverse-proxies `/v1`, `/api-docs`, and `/health` to the API on the host.
+- Keep the named volumes (`pgdata`, `miniodata`, `musicdl-downloads`) and the compose project name (`deploy`) stable so existing data survives.
+- Android APKs are not part of the compose. Publish them in the portal (stored in MinIO) so phones update on the next LAN connect.
