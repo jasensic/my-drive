@@ -10,7 +10,7 @@ Native client for LAN sync. Layers:
 
 1. The phone must be on the same Wi-Fi as the server.
 2. Sign in **once**. The JWT and device id stay in DataStore.
-3. Later launches scan `_mydrive._tcp` (production compose uses `network_mode: host` so multicast works) and reuse the stored session. No password prompt unless the token is rejected (401).
+3. Later launches scan `_mydrive._tcp` (the NAS compose runs the API with `network_mode: host` so multicast works) and reuse the stored session. No password prompt unless the token is rejected (401).
 4. `POST /v1/sync/manifest` returns files that match the device **sync profile** (portal → Devices). Those files are stored in app-private storage.
 5. The library UI filters by album and opens a viewer with previous/next.
 

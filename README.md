@@ -1,60 +1,56 @@
 # my-drive
 
-Almacenamiento y sincronización multimedia en la red local. El servidor vive on-premise (NUC, NAS con contenedores o Raspberry Pi); los clientes descubren la API por mDNS y sincronizan según reglas por dispositivo.
+Un NAS doméstico: un servidor Linux en la LAN guarda fotos, vídeos, música y archivos, y cada móvil que se conecta a la Wi-Fi encuentra el servidor por mDNS y se descarga lo que tiene para él. Hay una sola instalación (el NAS), construida desde este repo; no hay entornos de producción ni de pruebas.
 
-## Qué incluye este corte vertical
+## Qué incluye
 
 - API REST en Rust (Axum) con PostgreSQL y MinIO
 - Portal web Angular + PrimeNG (subida, álbumes, reproductor, perfiles de sync)
-- App Android nativa (descubrimiento mDNS, manifiesto JSON, descarga en paralelo, biblioteca local, actualización in-app)
-- Docker Compose para levantar el stack y Watchtower para actualizar imágenes
+- App Android nativa (descubrimiento mDNS, manifiesto JSON, descarga, biblioteca local offline, actualización in-app)
+- Un `docker-compose.yml` para el NAS
 - Clean Architecture en API, portal y Android: las capas solo se hablan por interfaces
-- Catálogo de APKs en el backoffice (`/app-updates`) para actualizar móviles en la LAN
+- Catálogo de APKs en el portal (`/app-updates`) para actualizar móviles en la LAN
 
-No incluye (aún): iOS, Fastlane / tiendas, gRPC ni transcodificación de vídeo.
+No incluye (aún): iOS, tiendas de apps ni transcodificación de vídeo.
 
 ## Requisitos
 
-- Docker y Docker Compose
-- (Desarrollo) Rust 1.85+, Node.js 22+, JDK 17+ y Android SDK para la app móvil
+- NAS: Linux con Docker y Docker Compose
+- Desarrollo: Rust 1.85+, Node.js 22+, JDK 17+ y Android SDK para la app móvil
 
-## Puesta en marcha (servidor local)
+## Instalar y actualizar el NAS
+
+Desde la raíz del repo:
 
 ```bash
-cp .env.example .env
-docker compose -f deploy/docker-compose.yml up --build
+git clone --recurse-submodules <repo> && cd my-drive   # primera vez
+cp .env.example .env                                    # primera vez: cambia contraseñas y JWT_SECRET
+git pull && git submodule update --init
+docker compose --env-file .env -f deploy/docker-compose.yml up -d --build
 ```
 
-Servicios:
+`--env-file .env` hace que Compose lea el `.env` de la raíz; sin él usaría las contraseñas por defecto. Actualizar es repetir las dos últimas líneas: los volúmenes de PostgreSQL y MinIO se conservan.
 
-| Servicio | URL |
+| Servicio | Dónde |
 | --- | --- |
-| Portal web | http://127.0.0.1:8088 |
-| API | http://127.0.0.1:8080/v1 |
-| musicdl-export | http://127.0.0.1:8090 (solo localhost; el portal habla con la API) |
-| Salud API | http://127.0.0.1:8080/health |
-| OpenAPI | http://127.0.0.1:8080/api-docs |
-| MinIO consola | http://127.0.0.1:9001 |
+| Portal web | `http://<nas>:8088` (LAN) |
+| API | `http://<nas>:8080/v1` (LAN) |
+| Salud / OpenAPI | `http://<nas>:8080/health` · `http://<nas>:8080/api-docs` |
+| PostgreSQL, MinIO (`:9000`, consola `:9001`), musicdl (`:8090`) | solo `127.0.0.1` del NAS (usa un túnel SSH para la consola de MinIO) |
 
-El primer acceso abre la pantalla de **setup**: crea el usuario administrador. Después se puede iniciar sesión, subir archivos y definir perfiles de sincronización.
+El primer acceso al portal abre la pantalla de **setup**: crea el primer usuario. Después se puede iniciar sesión, subir archivos y definir perfiles de sincronización.
 
 ### mDNS
 
-El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real (no loopback), el TXT `url` lleva esa base y Android la prefiere al IP resuelto. Las URLs de loopback no se anuncian. En Linux, el multicast no atraviesa la red bridge de Docker: el compose de producción usa `network_mode: host` para el API.
+El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real (no loopback), el TXT `url` lleva esa base y Android la prefiere al IP resuelto. Las URLs de loopback no se anuncian. El multicast no atraviesa la red bridge de Docker, por eso el API corre con `network_mode: host` y llega a Postgres, MinIO y musicdl por loopback.
 
 La app Android reescribe URLs de manifiesto que apuntan a `localhost` para usar el origen descubierto. Si mDNS falla, se puede introducir el host a mano (por ejemplo `192.168.1.10:8080`).
 
 La sincronización en segundo plano usa WorkManager: al entrar en la Wi-Fi y, mientras sigues en ella, una vez por hora.
 
-### Actualizaciones on-premise
+### Versiones de Android
 
-Las imágenes se publican en GHCR. En el servidor, Watchtower hace pull periódico y reinicia `api` y `web` sin tocar los volúmenes de PostgreSQL y MinIO.
-
-```bash
-docker compose -f deploy/docker-compose.prod.yml up -d
-```
-
-Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versionName` desde el último tag semver de la rama (`1.0.0` o `v1.0.0`): el commit del tag es esa versión y cada commit posterior sube el parche (`1.0.1`, `1.0.2`, …). Sin tags, empieza en `0.0.N` según el número de commits. La versión oficial (sin sufijo) solo sale al mergear a `main`; un APK de PR es `1.0.1-PR42`. `versionCode` deriva de esa semver para que las actualizaciones in-app sigan subiendo. Se publica el APK en el portal (**App updates**): el servidor lee esos campos del APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` es mayor, descarga e instala. CI genera `my-drive-<versionName>.apk` (por ejemplo `my-drive-0.0.16-PR9.apk`) en cada push a `main`, PR y tags `v*`. El artefacto de Actions se llama `my-drive-<versionName>` (sin `.apk`): GitHub empaqueta la descarga en zip y el APK va dentro.
+Los APK no van en el compose. Gradle calcula `versionName` desde el último tag semver de la rama (`1.0.0` o `v1.0.0`): el commit del tag es esa versión y cada commit posterior sube el parche (`1.0.1`, `1.0.2`, …). Sin tags, empieza en `0.0.N` según el número de commits. La versión oficial (sin sufijo) solo sale al mergear a `main`; un APK de PR es `1.0.1-PR42`. `versionCode` deriva de esa semver para que las actualizaciones in-app sigan subiendo. Se publica el APK en el portal (**App updates**): el servidor lee esos campos del APK. Cada teléfono comprueba `GET /v1/app/releases/latest` tras conectar. Si el `versionCode` es mayor, descarga e instala. CI genera `my-drive-<versionName>.apk` (por ejemplo `my-drive-0.0.16-PR9.apk`) en cada push a `main`, PR y tags `v*`. El artefacto de Actions se llama `my-drive-<versionName>` (sin `.apk`): GitHub empaqueta la descarga en zip y el APK va dentro.
 
 ## Funcionalidades principales
 
@@ -63,21 +59,23 @@ Las **versiones de Android** no las actualiza Watchtower. Gradle calcula `versio
 3. Búsqueda y descarga de canciones desde **Music** con la imagen `musicdl-export` (clientes por defecto de musicdl: Migu, NetEase, QQ, Kuwo y Qianqian). El audio queda en la biblioteca.
 4. Álbumes y reproducción en el navegador (HTTP Range para vídeo/audio)
 5. Perfiles de sync por dispositivo (ej. fotos del último año, vídeos &lt; 10 MB, música completa)
-6. Manifiesto JSON de archivos faltantes y descarga paralela en Android
+6. Manifiesto JSON de archivos faltantes y descarga en Android
 7. Android: login único; después el teléfono encuentra el servidor por mDNS (`_mydrive._tcp`, TXT `url` con el dominio) y sigue sincronizando en segundo plano. Un borrado en el portal desaparece del teléfono en el siguiente manifiesto (`removed`).
 8. Navegación offline de la biblioteca descargada (álbumes, visor anterior/siguiente)
 9. Publicación de APKs en el portal y actualización de Android al reconectar
 
-## Desarrollo sin Docker (API)
+## Desarrollo (en el PC)
 
-Necesitas PostgreSQL y MinIO en marcha (el compose de `deploy/` sirve). Luego:
+El API arranca sin Postgres ni MinIO con el backend en memoria; los tests también lo usan:
 
 ```bash
-export $(grep -v '^#' .env | xargs)
-cd apps/api && cargo test && cargo run -p mydrive-api
-cd apps/web && npm install && npm start
+cd apps/api && cargo test --workspace
+cd apps/api && MEMORY_BACKEND=true MDNS_ENABLE=false cargo run -p mydrive-api
+cd apps/web && npm install && npm start          # proxy /v1 → 127.0.0.1:8080
 cd apps/android && ./gradlew :domain:test :app:assembleRelease
 ```
+
+Para probar contra Postgres y MinIO reales, exporta el `.env` (`export $(grep -v '^#' .env | xargs)`) y apunta `DATABASE_URL`/`MINIO_ENDPOINT` a un servidor que los tenga.
 
 ## Estructura
 
@@ -85,7 +83,7 @@ cd apps/android && ./gradlew :domain:test :app:assembleRelease
 apps/api        Rust, Clean Architecture (domain / application / infrastructure / presentation)
 apps/web        Angular + PrimeNG
 apps/android    Kotlin (domain JVM + app Android)
-deploy          Compose, Nginx, Watchtower
+deploy          docker-compose.yml del NAS + Nginx del portal
 ```
 
 Contexto para agentes: [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) y `.cursor/rules/`.

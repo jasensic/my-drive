@@ -1,29 +1,40 @@
+# my-drive en el NAS (Linux). Un único entorno: se construye desde el repo.
+# Desde la raíz del repo:
+#   git pull && git submodule update --init
+#   docker compose --env-file .env -f deploy/docker-compose.yml up -d --build
+#
+# El API usa red host para que el anuncio mDNS llegue a los móviles de la LAN
+# (el multicast no atraviesa la red bridge). Por eso Postgres, MinIO y musicdl
+# publican sus puertos solo en 127.0.0.1 y el API los alcanza por loopback.
+# Solo el API (:8080) y el portal (:8088) quedan expuestos a la LAN.
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mydrive}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mydrive}
       POSTGRES_DB: ${POSTGRES_DB:-mydrive}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mydrive} -d ${POSTGRES_DB:-mydrive}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
 
   minio:
     image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
 
@@ -32,6 +43,7 @@ services:
       context: ../services
       dockerfile: Dockerfile
     image: musicdl-server:local
+    restart: unless-stopped
     init: true
     stdin_open: true
     tty: true
@@ -48,7 +60,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,mode=1777,size=512m
       - /home/musicdl:rw,nosuid,nodev,uid=1000,gid=1000,mode=700,size=128m
     environment:
-      MUSICDL_SOURCES: ${MUSICDL_SOURCES:-AppleMusicClient,AudiusMusicClient,DeezerMusicClient,ITunesMusicClient,SpotifyMusicClient,YouTubeMusicClient}
+      MUSICDL_SOURCES: ${MUSICDL_SOURCES:-MiguMusicClient,NeteaseMusicClient,QQMusicClient,KuwoMusicClient,QianqianMusicClient}
       MUSICDL_SEARCH_SIZE: ${MUSICDL_SEARCH_SIZE:-3}
       MUSICDL_SEARCH_DEADLINE: ${MUSICDL_SEARCH_DEADLINE:-20}
     volumes:
@@ -72,14 +84,17 @@ services:
     build:
       context: ../apps/api
       dockerfile: Dockerfile
+    restart: unless-stopped
+    network_mode: host
     env_file:
       - ../.env
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-mydrive}:${POSTGRES_PASSWORD:-mydrive}@postgres:5432/${POSTGRES_DB:-mydrive}
-      MINIO_ENDPOINT: http://minio:9000
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8080}
+      DATABASE_URL: postgres://${POSTGRES_USER:-mydrive}:${POSTGRES_PASSWORD:-mydrive}@127.0.0.1:5432/${POSTGRES_DB:-mydrive}
+      MINIO_ENDPOINT: http://127.0.0.1:9000
+      MUSICDL_URL: http://127.0.0.1:8090
+      API_HOST: 0.0.0.0
+      API_PORT: ${API_HTTP_PORT:-8080}
       MDNS_ENABLE: "true"
-      MUSICDL_URL: http://musicdl:8090
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,19 +102,20 @@ services:
         condition: service_started
       musicdl:
         condition: service_healthy
-    ports:
-      - "${API_HTTP_PORT:-8080}:8080"
 
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      API_UPSTREAM: http://api:8080
+      API_UPSTREAM: http://host.docker.internal:${API_HTTP_PORT:-8080}
     depends_on:
       - api
     ports:
-      - "127.0.0.1:${PORTAL_HTTP_PORT:-8088}:80"
+      - "${PORTAL_HTTP_PORT:-8088}:80"
 
 volumes:
   pgdata:

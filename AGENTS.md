@@ -9,7 +9,7 @@ Monorepo de **my-drive**: almacenamiento y sync multimedia en LAN.
 | `apps/api` | API Rust (workspace Cargo) | `cd apps/api && cargo test && cargo run -p mydrive-api` |
 | `apps/web` | Portal Angular + PrimeNG | `cd apps/web && npm test -- --watch=false` / `npm start` |
 | `apps/android` | App Kotlin + módulo `:domain` JVM | `./gradlew :domain:test :app:assembleRelease` |
-| `deploy` | Compose, Nginx, Watchtower | `docker compose -f deploy/docker-compose.yml up --build` |
+| `deploy` | Compose del NAS (única instalación) + Nginx | `docker compose --env-file .env -f deploy/docker-compose.yml up -d --build` |
 
 Contrato **entre procesos**: OpenAPI en `GET /api-docs/openapi.json`.
 Contrato **entre capas**: traits / `interface` / injection tokens. Nunca importar implementaciones concretas hacia una capa interna.
