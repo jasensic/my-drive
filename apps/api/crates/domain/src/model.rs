@@ -10,6 +10,8 @@ pub struct User {
     pub id: UserId,
     pub username: String,
     pub password_hash: String,
+    /// Admins create users and publish Android releases. Setup creates the first one.
+    pub is_admin: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -17,6 +19,7 @@ pub struct User {
 pub struct UserSummary {
     pub id: UserId,
     pub username: String,
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

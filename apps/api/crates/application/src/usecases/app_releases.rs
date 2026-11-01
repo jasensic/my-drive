@@ -7,6 +7,7 @@ use domain::model::AppRelease;
 use domain::{AppReleaseId, UserId};
 use sha2::{Digest, Sha256};
 
+use crate::device_tokens::require_admin;
 use crate::{AppError, Deps};
 
 pub struct PublishAppReleaseCommand {
@@ -89,7 +90,7 @@ impl PublishAppReleaseService {
 #[async_trait]
 impl PublishAppRelease for PublishAppReleaseService {
     async fn execute(&self, cmd: PublishAppReleaseCommand) -> Result<AppRelease, AppError> {
-        require_user(&self.deps, cmd.actor_id).await?;
+        require_admin(&self.deps, cmd.actor_id).await?;
         let identity = identity_from_apk(&self.deps, &cmd.file_name, &cmd.bytes)?;
         if self
             .deps
@@ -140,7 +141,7 @@ impl InspectApkService {
 #[async_trait]
 impl InspectApk for InspectApkService {
     async fn execute(&self, cmd: InspectApkCommand) -> Result<ApkIdentity, AppError> {
-        require_user(&self.deps, cmd.actor_id).await?;
+        require_admin(&self.deps, cmd.actor_id).await?;
         identity_from_apk(&self.deps, &cmd.file_name, &cmd.bytes)
     }
 }
@@ -249,7 +250,7 @@ impl UpdateAppReleaseService {
 #[async_trait]
 impl UpdateAppRelease for UpdateAppReleaseService {
     async fn execute(&self, cmd: UpdateAppReleaseCommand) -> Result<AppRelease, AppError> {
-        require_user(&self.deps, cmd.actor_id).await?;
+        require_admin(&self.deps, cmd.actor_id).await?;
         if cmd.changelog.is_none() && cmd.bytes.is_none() {
             return Err(AppError::validation("changelog or apk is required"));
         }
@@ -306,7 +307,7 @@ impl DeleteAppReleaseService {
 #[async_trait]
 impl DeleteAppRelease for DeleteAppReleaseService {
     async fn execute(&self, actor_id: UserId, id: AppReleaseId) -> Result<(), AppError> {
-        require_user(&self.deps, actor_id).await?;
+        require_admin(&self.deps, actor_id).await?;
         let release = self
             .deps
             .app_releases

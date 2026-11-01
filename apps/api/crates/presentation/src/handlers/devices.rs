@@ -1,11 +1,12 @@
 use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::Json;
 use domain::{DeviceId, FileId};
 use uuid::Uuid;
 
 use crate::dto::{
-    DeviceDto, DeviceExclusionsDto, DeviceExclusionsRequest, RegisterDeviceRequest, SyncProfileDto,
-    UpsertProfileRequest,
+    DeviceDto, DeviceExclusionsDto, DeviceExclusionsRequest, DeviceTokenResponse,
+    RegisterDeviceRequest, SyncProfileDto, UpsertProfileRequest,
 };
 use crate::error::ApiError;
 use crate::extract::CurrentUser;
@@ -32,6 +33,36 @@ pub async fn register(
         .execute(user.user_id, body.name)
         .await?;
     Ok(Json(device.into()))
+}
+
+/// Forget a device: its refresh token stops working and its sync profile is removed.
+#[utoipa::path(delete, path = "/v1/devices/{id}", params(("id" = Uuid, Path)), responses((status = 204)), security(("bearer" = [])))]
+pub async fn delete(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    state
+        .services
+        .delete_device
+        .execute(user.user_id, DeviceId::from_uuid(id))
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Rotate the device refresh token. Devices registered before refresh tokens existed call this once.
+#[utoipa::path(post, path = "/v1/devices/{id}/token", params(("id" = Uuid, Path)), responses((status = 200, body = DeviceTokenResponse)), security(("bearer" = [])))]
+pub async fn issue_token(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<DeviceTokenResponse>, ApiError> {
+    let device_token = state
+        .services
+        .issue_device_token
+        .execute(user.user_id, DeviceId::from_uuid(id))
+        .await?;
+    Ok(Json(DeviceTokenResponse { device_token }))
 }
 
 #[utoipa::path(get, path = "/v1/devices/{id}/sync-profile", params(("id" = Uuid, Path)), responses((status = 200, body = SyncProfileDto)), security(("bearer" = [])))]

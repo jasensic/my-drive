@@ -1,31 +1,52 @@
-import { ListUsersService, RegisterAccountService } from './auth.use-cases';
+import { CreateUserService, ListUsersService, LoginService } from './auth.use-cases';
 import { CreateShareService, ListSharesService, RevokeShareService } from './shares.use-cases';
 import { AuthRepository, TokenStore } from '../domain/ports';
 import { UserProfile } from '../domain/models';
 
-describe('RegisterAccountService', () => {
-  it('stores the session after register', async () => {
+function authRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
+  return {
+    status: async () => ({ setup_required: false }),
+    setup: async () => Promise.reject(new Error('unused')),
+    login: async () => Promise.reject(new Error('unused')),
+    me: async () => ({ id: 'u1', username: 'admin', is_admin: true }),
+    listUsers: async () => [],
+    createUser: async () => Promise.reject(new Error('unused')),
+    ...overrides,
+  };
+}
+
+describe('CreateUserService', () => {
+  it('creates the account without signing the admin out', async () => {
+    const createUser = vi.fn(async (username: string) => ({ id: 'u2', username, is_admin: false }));
+    const user = await new CreateUserService(authRepository({ createUser })).execute(' friend ', 'password123');
+    expect(user).toEqual({ id: 'u2', username: 'friend', is_admin: false });
+    expect(createUser).toHaveBeenCalledWith('friend', 'password123');
+  });
+
+  it('rejects short passwords before calling the server', async () => {
+    const createUser = vi.fn();
+    await expect(new CreateUserService(authRepository({ createUser })).execute('friend', 'short')).rejects.toThrow(
+      'at least 8',
+    );
+    expect(createUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoginService', () => {
+  it('remembers whether the user is an admin', async () => {
     const tokens: TokenStore = {
       get: () => null,
       username: () => null,
       userId: () => null,
+      isAdmin: () => false,
       set: vi.fn(),
       clear: () => undefined,
     };
-    const auth: AuthRepository = {
-      status: async () => ({ setup_required: false }),
-      setup: async () => Promise.reject(new Error('unused')),
-      register: async (username) => ({
-        token: 't',
-        user: { id: 'u2', username },
-      }),
-      login: async () => Promise.reject(new Error('unused')),
-      me: async () => ({ id: 'u2', username: 'friend' }),
-      listUsers: async () => [],
-    };
-    const session = await new RegisterAccountService(auth, tokens).execute('friend', 'password123');
-    expect(session.user.id).toBe('u2');
-    expect(tokens.set).toHaveBeenCalledWith('t', 'friend', 'u2');
+    const auth = authRepository({
+      login: async (username) => ({ token: 't', user: { id: 'u1', username, is_admin: true } }),
+    });
+    await new LoginService(auth, tokens).execute('admin', 'password123');
+    expect(tokens.set).toHaveBeenCalledWith('t', 'admin', 'u1', true);
   });
 });
 
@@ -35,14 +56,7 @@ describe('ListUsersService', () => {
       { id: '1', username: 'admin' },
       { id: '2', username: 'friend' },
     ];
-    const auth: AuthRepository = {
-      status: async () => ({ setup_required: false }),
-      setup: async () => Promise.reject(new Error('unused')),
-      register: async () => Promise.reject(new Error('unused')),
-      login: async () => Promise.reject(new Error('unused')),
-      me: async () => users[0],
-      listUsers: async () => users,
-    };
+    const auth = authRepository({ me: async () => users[0], listUsers: async () => users });
     await expect(new ListUsersService(auth).execute()).resolves.toEqual(users);
   });
 });

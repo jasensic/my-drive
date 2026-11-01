@@ -25,7 +25,7 @@ impl Settings {
             .unwrap_or(false);
         Ok(Self {
             database_url: env_or("DATABASE_URL", "postgres://mydrive:mydrive@localhost:5432/mydrive"),
-            jwt_secret: env_or("JWT_SECRET", "dev-secret-change-me"),
+            jwt_secret: jwt_secret(std::env::var("JWT_SECRET").ok(), memory_backend)?,
             api_host: env_or("API_HOST", "0.0.0.0"),
             api_port: env_or("API_PORT", "8080")
                 .parse()
@@ -46,4 +46,51 @@ impl Settings {
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+const MIN_JWT_SECRET_LEN: usize = 32;
+/// Values shipped in `.env.example` (current and older). Anyone on the LAN could forge tokens with them.
+const PLACEHOLDER_JWT_SECRETS: [&str; 2] = [
+    "change-me-please-use-a-long-random-string",
+    "change-me-in-production-please-use-a-long-random-string",
+];
+
+/// The NAS refuses to start with a missing, short, or placeholder secret.
+/// The in-memory backend (tests, CI, quick local runs) keeps a fixed dev fallback.
+fn jwt_secret(value: Option<String>, memory_backend: bool) -> Result<String, DomainError> {
+    let value = value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    match value {
+        None if memory_backend => Ok("dev-secret-change-me".into()),
+        Some(secret) if memory_backend => Ok(secret),
+        Some(secret)
+            if secret.len() >= MIN_JWT_SECRET_LEN
+                && !PLACEHOLDER_JWT_SECRETS.contains(&secret.as_str()) =>
+        {
+            Ok(secret)
+        }
+        _ => Err(DomainError::infra(format!(
+            "JWT_SECRET must be a random string of at least {MIN_JWT_SECRET_LEN} characters \
+             (for example `openssl rand -hex 32`); set it in .env"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::jwt_secret;
+
+    #[test]
+    fn nas_requires_a_real_jwt_secret() {
+        assert!(jwt_secret(None, false).is_err());
+        assert!(jwt_secret(Some("short".into()), false).is_err());
+        assert!(jwt_secret(Some("change-me-please-use-a-long-random-string".into()), false).is_err());
+        let good = "f".repeat(64);
+        assert_eq!(jwt_secret(Some(good.clone()), false).unwrap(), good);
+    }
+
+    #[test]
+    fn memory_backend_keeps_a_dev_fallback() {
+        assert_eq!(jwt_secret(None, true).unwrap(), "dev-secret-change-me");
+        assert_eq!(jwt_secret(Some("ci-secret".into()), true).unwrap(), "ci-secret");
+    }
 }

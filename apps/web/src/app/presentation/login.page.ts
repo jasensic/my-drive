@@ -6,8 +6,8 @@ import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
 import { Password } from 'primeng/password';
-import { CHECK_SETUP, LOGIN, REGISTER_ACCOUNT, SETUP_ADMIN } from '../application/use-cases.tokens';
-import type { CheckSetup, Login, RegisterAccount, SetupAdmin } from '../application/use-cases.tokens';
+import { CHECK_SETUP, LOGIN, SETUP_ADMIN } from '../application/use-cases.tokens';
+import type { CheckSetup, Login, SetupAdmin } from '../application/use-cases.tokens';
 import { ThemeModeService } from './theme.service';
 
 @Component({
@@ -48,12 +48,7 @@ import { ThemeModeService } from './theme.service';
             [loading]="busy()"
           />
           @if (!setupRequired()) {
-            <p-button
-              type="button"
-              [text]="true"
-              [label]="registerMode() ? 'Have an account? Sign in' : 'Create account'"
-              (onClick)="registerMode.set(!registerMode())"
-            />
+            <p class="caption">No account yet? Ask the person who set up this drive to add you.</p>
           }
         </form>
       </p-card>
@@ -64,27 +59,25 @@ export class LoginPage {
   username = '';
   password = '';
   setupRequired = signal(false);
-  registerMode = signal(false);
   busy = signal(false);
   error = signal<string | null>(null);
   header = computed(() => {
     if (this.setupRequired()) {
       return 'Create admin';
     }
-    return this.registerMode() ? 'Create account' : 'Sign in to my-drive';
+    return 'Sign in to my-drive';
   });
   submitLabel = computed(() => {
     if (this.setupRequired()) {
       return 'Complete setup';
     }
-    return this.registerMode() ? 'Create account' : 'Login';
+    return 'Login';
   });
 
   constructor(
     @Inject(CHECK_SETUP) private readonly checkSetup: CheckSetup,
     @Inject(SETUP_ADMIN) private readonly setupAdmin: SetupAdmin,
     @Inject(LOGIN) private readonly login: Login,
-    @Inject(REGISTER_ACCOUNT) private readonly registerAccount: RegisterAccount,
     readonly theme: ThemeModeService,
     private readonly router: Router,
   ) {
@@ -100,8 +93,6 @@ export class LoginPage {
     try {
       if (this.setupRequired()) {
         await this.setupAdmin.execute(this.username, this.password);
-      } else if (this.registerMode()) {
-        await this.registerAccount.execute(this.username, this.password);
       } else {
         await this.login.execute(this.username, this.password);
       }

@@ -1,4 +1,4 @@
-import { Component, Inject, ViewChild, signal } from '@angular/core';
+import { Component, Inject, ViewChild, computed, signal } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LucideDynamicIcon } from '@lucide/angular';
 import { Toast } from 'primeng/toast';
@@ -23,7 +23,7 @@ import { ThemeModeService } from './theme.service';
           <span>my-drive</span>
         </a>
         <nav class="nav" aria-label="Primary">
-          @for (item of nav; track item.routerLink) {
+          @for (item of nav(); track item.routerLink) {
             <a
               class="nav-link"
               [routerLink]="item.routerLink"
@@ -78,21 +78,30 @@ export class ShellComponent {
 
   navOpen = signal(false);
   readonly searchShortcut = navigator.platform.toLowerCase().includes('mac') ? '⌘K' : 'Ctrl K';
-  readonly nav = [
+  private readonly isAdmin = signal(false);
+  private readonly allNav = [
     { label: 'Music', routerLink: '/music', icon: 'music' },
     { label: 'Photos & videos', routerLink: '/photos', icon: 'images' },
     { label: 'Files', routerLink: '/files', icon: 'folder' },
     { label: 'Import', routerLink: '/imports', icon: 'cloud-download' },
     { label: 'Devices', routerLink: '/devices', icon: 'monitor-smartphone' },
-    { label: 'App updates', routerLink: '/app-updates', icon: 'package' },
+    { label: 'Users', routerLink: '/users', icon: 'users', adminOnly: true },
+    { label: 'App updates', routerLink: '/app-updates', icon: 'package', adminOnly: true },
   ];
+  readonly nav = computed(() => this.allNav.filter((item) => !('adminOnly' in item) || this.isAdmin()));
 
   constructor(
     @Inject(SESSION_QUERY) readonly session: SessionQuery,
     @Inject(MusicPlaybackService) readonly playback: MusicPlaybackService,
     readonly theme: ThemeModeService,
     private readonly router: Router,
-  ) {}
+  ) {
+    this.isAdmin.set(session.isAdmin());
+    void session
+      .refreshProfile()
+      .then(() => this.isAdmin.set(session.isAdmin()))
+      .catch(() => undefined);
+  }
 
   openSearch() {
     void this.fileSearch?.show();

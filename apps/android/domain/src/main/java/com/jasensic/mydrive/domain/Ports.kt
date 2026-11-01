@@ -12,10 +12,13 @@ interface ServerDiscovery {
 interface RemoteFileSource {
     suspend fun serverStatus(baseUrl: String): ServerStatus
     suspend fun setup(baseUrl: String, username: String, password: String): AuthSession
-    suspend fun register(baseUrl: String, username: String, password: String): AuthSession
     suspend fun login(baseUrl: String, username: String, password: String): AuthSession
     suspend fun listUsers(baseUrl: String, token: String): List<UserProfile>
-    suspend fun registerDevice(baseUrl: String, token: String, name: String): String
+    suspend fun registerDevice(baseUrl: String, token: String, name: String): RegisteredDevice
+    /** New access token for a device refresh token. Fails with "login required" once revoked. */
+    suspend fun refreshSession(baseUrl: String, deviceId: String, deviceToken: String): AuthSession
+    /** Rotate the device refresh token. Null when the device was forgotten in the portal. */
+    suspend fun issueDeviceToken(baseUrl: String, token: String, deviceId: String): String?
     suspend fun fetchManifest(
         baseUrl: String,
         token: String,

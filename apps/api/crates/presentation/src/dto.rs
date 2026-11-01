@@ -29,6 +29,7 @@ pub struct AuthResponse {
 pub struct UserDto {
     pub id: Uuid,
     pub username: String,
+    pub is_admin: bool,
 }
 
 impl From<User> for UserDto {
@@ -36,6 +37,7 @@ impl From<User> for UserDto {
         Self {
             id: value.id.0,
             username: value.username,
+            is_admin: value.is_admin,
         }
     }
 }
@@ -45,8 +47,20 @@ impl From<UserSummary> for UserDto {
         Self {
             id: value.id.0,
             username: value.username,
+            is_admin: value.is_admin,
         }
     }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct RefreshRequest {
+    pub device_id: Uuid,
+    pub device_token: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DeviceTokenResponse {
+    pub device_token: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -191,6 +205,9 @@ pub struct DeviceDto {
     pub id: Uuid,
     pub name: String,
     pub last_sync_at: Option<DateTime<Utc>>,
+    /// Refresh token for `POST /v1/auth/refresh`. Only present right after registration.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_token: Option<String>,
 }
 
 impl From<Device> for DeviceDto {
@@ -199,6 +216,16 @@ impl From<Device> for DeviceDto {
             id: value.id.0,
             name: value.name,
             last_sync_at: value.last_sync_at,
+            device_token: None,
+        }
+    }
+}
+
+impl From<application::RegisteredDevice> for DeviceDto {
+    fn from(value: application::RegisteredDevice) -> Self {
+        Self {
+            device_token: Some(value.token),
+            ..DeviceDto::from(value.device)
         }
     }
 }

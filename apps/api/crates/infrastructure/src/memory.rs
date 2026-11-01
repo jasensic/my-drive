@@ -29,6 +29,7 @@ struct Inner {
     exclusions: HashSet<(DeviceId, FileId)>,
     shares: Vec<Share>,
     objects: HashMap<String, Vec<u8>>,
+    device_tokens: HashMap<DeviceId, String>,
 }
 
 impl MemoryStore {
@@ -84,6 +85,7 @@ impl UserRepository for MemoryStore {
             .map(|u| UserSummary {
                 id: u.id,
                 username: u.username.clone(),
+                is_admin: u.is_admin,
             })
             .collect())
     }
@@ -339,6 +341,25 @@ impl DeviceRepository for MemoryStore {
         if let Some(d) = inner.devices.iter_mut().find(|d| d.id == id) {
             d.last_sync_at = Some(at);
         }
+        Ok(())
+    }
+    async fn set_token_hash(&self, id: DeviceId, token_hash: &str) -> Result<(), DomainError> {
+        self.inner
+            .lock()
+            .unwrap()
+            .device_tokens
+            .insert(id, token_hash.to_string());
+        Ok(())
+    }
+    async fn token_hash(&self, id: DeviceId) -> Result<Option<String>, DomainError> {
+        Ok(self.inner.lock().unwrap().device_tokens.get(&id).cloned())
+    }
+    async fn delete(&self, id: DeviceId) -> Result<(), DomainError> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.devices.retain(|d| d.id != id);
+        inner.profiles.retain(|p| p.device_id != id);
+        inner.exclusions.retain(|(device_id, _)| *device_id != id);
+        inner.device_tokens.remove(&id);
         Ok(())
     }
 }

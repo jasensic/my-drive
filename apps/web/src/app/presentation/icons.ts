@@ -30,6 +30,7 @@ import {
   LucideSun,
   LucideTrash2,
   LucideUpload,
+  LucideUsers,
   LucideX,
   provideLucideIcons,
 } from '@lucide/angular';
@@ -66,5 +67,6 @@ export const lucideIconsProvider = provideLucideIcons(
   LucideSun,
   LucideTrash2,
   LucideUpload,
+  LucideUsers,
   LucideX,
 );

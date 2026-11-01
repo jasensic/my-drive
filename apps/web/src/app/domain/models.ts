@@ -27,12 +27,14 @@ export function siloForKind(kind: MediaKind): LibrarySilo {
 
 export interface AuthSession {
   token: string;
-  user: { id: string; username: string };
+  user: { id: string; username: string; is_admin?: boolean };
 }
 
 export interface UserProfile {
   id: string;
   username: string;
+  /** Admins add users and publish Android releases. */
+  is_admin?: boolean;
 }
 
 export type ShareResourceType = 'file' | 'album';

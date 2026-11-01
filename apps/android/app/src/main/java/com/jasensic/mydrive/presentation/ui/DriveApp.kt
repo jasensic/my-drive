@@ -58,7 +58,6 @@ fun DriveApp(
     themeMode: ThemeMode,
     playback: PlaybackState,
     onSignIn: (String, String, String) -> Unit,
-    onRegister: (String, String, String) -> Unit,
     onSetup: (String, String, String) -> Unit,
     onScanLan: (String) -> Unit,
     onOpenLibrary: () -> Unit,
@@ -112,7 +111,7 @@ fun DriveApp(
         }
     }
     when (val screen = state.screen) {
-        Screen.Connect -> ConnectScreen(state, onSignIn, onRegister, onSetup, onScanLan, onOpenLibrary)
+        Screen.Connect -> ConnectScreen(state, onSignIn, onSetup, onScanLan, onOpenLibrary)
         Screen.NowPlaying -> {
             NowPlayingScreen(
                 playback = playback,

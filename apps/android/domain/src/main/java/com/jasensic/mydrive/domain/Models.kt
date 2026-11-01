@@ -12,7 +12,8 @@ enum class SharePermission { READ, WRITE }
 
 enum class LibrarySource { DEVICE, SERVER }
 
-enum class AuthAction { LOGIN, REGISTER, SETUP }
+/** There is no self sign-up: an admin adds users in the portal. */
+enum class AuthAction { LOGIN, SETUP }
 
 data class Album(
     val id: String,
@@ -77,6 +78,13 @@ data class AuthSession(
     val username: String,
     val deviceId: String?,
     val userId: String? = null,
+    /** Long-lived secret traded for a fresh [token] on each sync, so the phone stays signed in. */
+    val deviceToken: String? = null,
+)
+
+data class RegisteredDevice(
+    val id: String,
+    val token: String,
 )
 
 data class ServerStatus(
@@ -321,15 +329,6 @@ fun SharePermission.wireValue(): String =
     when (this) {
         SharePermission.READ -> "read"
         SharePermission.WRITE -> "write"
-    }
-
-fun AuthAction.wireValue(): String = name.lowercase()
-
-fun parseAuthAction(value: String?): AuthAction =
-    when (value?.lowercase()) {
-        "register" -> AuthAction.REGISTER
-        "setup" -> AuthAction.SETUP
-        else -> AuthAction.LOGIN
     }
 
 fun parseLibrarySilo(value: String?): LibrarySilo =

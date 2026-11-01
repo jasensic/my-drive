@@ -29,11 +29,11 @@ test.describe('music library', () => {
     });
     await library.goto('/music');
     await library.searchKeyword().fill('stuck query');
-    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
     await expect(library.searchKeyword()).toBeDisabled();
     await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByRole('button', { name: 'Search' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Search', exact: true })).toBeEnabled();
     await expect(library.searchKeyword()).toBeEnabled();
   });
 
@@ -115,7 +115,7 @@ test.describe('music library', () => {
     });
     await library.goto('/music');
     await library.searchKeyword().fill('paged song');
-    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.getByText('Paged Song 01')).toBeVisible();
     await expect(page.getByText('Paged Song 03')).toBeVisible();
     await expect(page.getByText('Paged Song 04')).toHaveCount(0);

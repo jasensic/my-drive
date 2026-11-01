@@ -39,10 +39,10 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/v1/status", get(auth::status))
         .route("/v1/setup", post(auth::setup))
-        .route("/v1/register", post(auth::register))
         .route("/v1/login", post(auth::login))
+        .route("/v1/auth/refresh", post(auth::refresh))
         .route("/v1/me", get(auth::me))
-        .route("/v1/users", get(auth::list_users))
+        .route("/v1/users", get(auth::list_users).post(auth::create_user))
         .route("/v1/albums", get(albums::list).post(albums::create))
         .route(
             "/v1/albums/{id}",
@@ -67,6 +67,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/files/{id}/content", get(files::content))
         .route("/v1/files/{id}/thumbnail", get(files::thumbnail))
         .route("/v1/devices", get(devices::list).post(devices::register))
+        .route("/v1/devices/{id}", axum::routing::delete(devices::delete))
+        .route("/v1/devices/{id}/token", post(devices::issue_token))
         .route(
             "/v1/devices/{id}/sync-profile",
             get(devices::get_profile).put(devices::put_profile),

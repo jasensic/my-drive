@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@angular/core';
 import { AUTH_REPOSITORY, AuthRepository, TOKEN_STORE, TokenStore } from '../domain/ports';
 import { AuthSession, UserProfile } from '../domain/models';
-import { CheckSetup, ListUsers, Login, RegisterAccount, SessionQuery, SetupAdmin } from './use-cases.tokens';
+import { CheckSetup, CreateUser, ListUsers, Login, SessionQuery, SetupAdmin } from './use-cases.tokens';
 
 @Injectable()
 export class CheckSetupService implements CheckSetup {
@@ -19,7 +19,7 @@ export class SetupAdminService implements SetupAdmin {
   ) {}
   async execute(username: string, password: string): Promise<AuthSession> {
     const session = await this.auth.setup(username, password);
-    this.tokens.set(session.token, session.user.username, session.user.id);
+    this.tokens.set(session.token, session.user.username, session.user.id, session.user.is_admin ?? true);
     return session;
   }
 }
@@ -32,14 +32,17 @@ export class LoginService implements Login {
   ) {}
   async execute(username: string, password: string): Promise<AuthSession> {
     const session = await this.auth.login(username, password);
-    this.tokens.set(session.token, session.user.username, session.user.id);
+    this.tokens.set(session.token, session.user.username, session.user.id, session.user.is_admin ?? false);
     return session;
   }
 }
 
 @Injectable()
 export class SessionQueryService implements SessionQuery {
-  constructor(@Inject(TOKEN_STORE) private readonly tokens: TokenStore) {}
+  constructor(
+    @Inject(TOKEN_STORE) private readonly tokens: TokenStore,
+    @Inject(AUTH_REPOSITORY) private readonly auth: AuthRepository,
+  ) {}
   hasSession(): boolean {
     return !!this.tokens.get();
   }
@@ -49,21 +52,34 @@ export class SessionQueryService implements SessionQuery {
   userId(): string | null {
     return this.tokens.userId();
   }
+  isAdmin(): boolean {
+    return this.tokens.isAdmin();
+  }
+  async refreshProfile(): Promise<void> {
+    const token = this.tokens.get();
+    if (!token) {
+      return;
+    }
+    const me = await this.auth.me();
+    this.tokens.set(token, me.username, me.id, me.is_admin ?? false);
+  }
   logout(): void {
     this.tokens.clear();
   }
 }
 
 @Injectable()
-export class RegisterAccountService implements RegisterAccount {
-  constructor(
-    @Inject(AUTH_REPOSITORY) private readonly auth: AuthRepository,
-    @Inject(TOKEN_STORE) private readonly tokens: TokenStore,
-  ) {}
-  async execute(username: string, password: string): Promise<AuthSession> {
-    const session = await this.auth.register(username, password);
-    this.tokens.set(session.token, session.user.username, session.user.id);
-    return session;
+export class CreateUserService implements CreateUser {
+  constructor(@Inject(AUTH_REPOSITORY) private readonly auth: AuthRepository) {}
+  execute(username: string, password: string): Promise<UserProfile> {
+    const trimmed = username.trim();
+    if (!trimmed) {
+      return Promise.reject(new Error('Username is required'));
+    }
+    if (password.length < 8) {
+      return Promise.reject(new Error('Password must be at least 8 characters'));
+    }
+    return this.auth.createUser(trimmed, password);
   }
 }
 
