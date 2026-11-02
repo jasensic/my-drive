@@ -26,9 +26,11 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -67,8 +69,20 @@ fun MiniPlayer(
     onOpen: () -> Unit,
 ) {
     val current = playback.current ?: return
+    val progress = if (playback.durationMs > 0L) {
+        (playback.positionMs.toFloat() / playback.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
     Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
-        Row(
+        Column {
+            if (playback.durationMs > 0L) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                )
+            }
+            Row(
             Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onOpen)
@@ -102,6 +116,7 @@ fun MiniPlayer(
             }
             IconButton(onClick = onSkipNext) {
                 Icon(Icons.Filled.SkipNext, contentDescription = "Next")
+            }
             }
         }
     }
@@ -185,11 +200,19 @@ fun NowPlayingScreen(
                 Icon(Icons.Filled.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
             }
             FilledIconButton(onClick = onPlayPause, modifier = Modifier.size(72.dp), enabled = current != null) {
-                Icon(
-                    if (playback.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (playback.playing) "Pause" else "Play",
-                    modifier = Modifier.size(40.dp),
-                )
+                if (playback.buffering && !playback.playing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 3.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                } else {
+                    Icon(
+                        if (playback.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (playback.playing) "Pause" else "Play",
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
             }
             IconButton(onClick = onNext, modifier = Modifier.size(56.dp)) {
                 Icon(Icons.Filled.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))

@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.LibrarySource
 import com.jasensic.mydrive.domain.LocalFile
+import com.jasensic.mydrive.domain.MediaKind
 import com.jasensic.mydrive.domain.PlaybackState
 import com.jasensic.mydrive.domain.SharePermission
 import com.jasensic.mydrive.domain.ThemeMode
@@ -50,6 +51,13 @@ import com.jasensic.mydrive.presentation.UiState
 import com.jasensic.mydrive.presentation.silo
 
 private enum class HubDialog { None, Actions, Rename, Move, CreateAlbum, RenameAlbum }
+
+private fun musicQueueAction(state: UiState, onTracks: (List<LocalFile>) -> Unit): (() -> Unit)? {
+    if (state.tab != HubTab.MUSIC) return null
+    val tracks = state.selectedFiles.filter { it.mediaKind == MediaKind.AUDIO }
+    if (tracks.isEmpty()) return null
+    return { onTracks(tracks) }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +75,8 @@ fun DriveApp(
     onTheme: (ThemeMode) -> Unit,
     onConnection: () -> Unit,
     onPlay: (List<LocalFile>, String) -> Unit,
+    onPlayNext: (List<LocalFile>) -> Unit,
+    onAddToQueue: (List<LocalFile>) -> Unit,
     onOpenPhoto: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onCloseViewer: () -> Unit,
@@ -150,6 +160,8 @@ fun DriveApp(
             onTheme = onTheme,
             onConnection = onConnection,
             onPlay = onPlay,
+            onPlayNext = onPlayNext,
+            onAddToQueue = onAddToQueue,
             onOpenPhoto = onOpenPhoto,
             onOpenFile = onOpenFile,
             onOpenNowPlaying = onOpenNowPlaying,
@@ -197,6 +209,8 @@ private fun HubScreen(
     onTheme: (ThemeMode) -> Unit,
     onConnection: () -> Unit,
     onPlay: (List<LocalFile>, String) -> Unit,
+    onPlayNext: (List<LocalFile>) -> Unit,
+    onAddToQueue: (List<LocalFile>) -> Unit,
     onOpenPhoto: (String) -> Unit,
     onOpenFile: (String) -> Unit,
     onOpenNowPlaying: () -> Unit,
@@ -407,6 +421,16 @@ private fun HubScreen(
         HubDialog.Actions -> LibraryActionSheet(
             count = state.selectedIds.size,
             canRename = state.selectedIds.size == 1,
+            onPlayNext = musicQueueAction(state) { tracks ->
+                dialog = HubDialog.None
+                onPlayNext(tracks)
+                onClearSelection()
+            },
+            onAddToQueue = musicQueueAction(state) { tracks ->
+                dialog = HubDialog.None
+                onAddToQueue(tracks)
+                onClearSelection()
+            },
             onRename = { dialog = HubDialog.Rename },
             onMove = { dialog = HubDialog.Move },
             onShare = {

@@ -40,6 +40,8 @@ fun LibraryActionSheet(
     onShareWithAccount: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    onPlayNext: (() -> Unit)? = null,
+    onAddToQueue: (() -> Unit)? = null,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 12.dp)) {
@@ -47,6 +49,12 @@ fun LibraryActionSheet(
                 if (count == 1) "1 item" else "$count items",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+            if (onPlayNext != null) {
+                TextButton(onClick = onPlayNext, modifier = Modifier.fillMaxWidth()) { Text("Play next") }
+            }
+            if (onAddToQueue != null) {
+                TextButton(onClick = onAddToQueue, modifier = Modifier.fillMaxWidth()) { Text("Add to queue") }
+            }
             if (canRename) {
                 TextButton(onClick = onRename, modifier = Modifier.fillMaxWidth()) { Text("Rename") }
             }

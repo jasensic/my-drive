@@ -271,6 +271,7 @@ data class PlaybackState(
     val durationMs: Long = 0,
     val shuffle: Boolean = false,
     val repeat: RepeatMode = RepeatMode.OFF,
+    val buffering: Boolean = false,
 ) {
     val current: LocalFile? get() = queue.getOrNull(currentIndex)
     val isActive: Boolean get() = current != null

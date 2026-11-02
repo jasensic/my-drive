@@ -20,6 +20,27 @@ fun editQueueMove(queue: List<LocalFile>, fromIndex: Int, toIndex: Int): List<Lo
     return next
 }
 
+/**
+ * Insert tracks into the visible queue.
+ * [insertAfterId] null appends. Tracks already queued move to the insert point.
+ * The anchor track stays where it is.
+ */
+fun placeInQueue(queue: List<LocalFile>, incoming: List<LocalFile>, insertAfterId: String?): List<LocalFile> {
+    val audio = incoming
+        .filter { it.mediaKind == MediaKind.AUDIO && it.id != insertAfterId }
+        .distinctBy { it.id }
+    if (audio.isEmpty()) return queue
+    val incomingIds = audio.map { it.id }.toSet()
+    val kept = queue.filter { it.id !in incomingIds }
+    val at = if (insertAfterId == null) {
+        kept.size
+    } else {
+        val anchor = kept.indexOfFirst { it.id == insertAfterId }
+        if (anchor < 0) kept.size else anchor + 1
+    }
+    return kept.toMutableList().apply { addAll(at, audio) }
+}
+
 /** Playlist index to resume after an edit, following the track that was playing. */
 fun queueIndexAfterEdit(queue: List<LocalFile>, currentId: String?): Int {
     if (queue.isEmpty()) return -1

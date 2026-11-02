@@ -51,6 +51,15 @@ class PlaybackQueueTest {
     }
 
     @Test
+    fun placeInsertsAfterTheCurrentTrackAndAppends() {
+        val queue = listOf(track("a"), track("b"), track("c"))
+        assertEquals(listOf("a", "d", "b", "c"), placeInQueue(queue, listOf(track("d")), "a").map { it.id })
+        assertEquals(listOf("a", "b", "c", "d"), placeInQueue(queue, listOf(track("d")), null).map { it.id })
+        assertEquals(listOf("a", "c", "b"), placeInQueue(queue, listOf(track("c")), "a").map { it.id })
+        assertEquals(queue.map { it.id }, placeInQueue(queue, listOf(track("b")), "b").map { it.id })
+    }
+
+    @Test
     fun shuffleOrderStartsAtTheCurrentTrack() {
         assertEquals(listOf(2, 0, 1), rotateOrderToCurrent(listOf(0, 1, 2), 2))
         assertEquals(listOf(0, 1, 2), rotateOrderToCurrent(listOf(0, 1, 2), 0))
