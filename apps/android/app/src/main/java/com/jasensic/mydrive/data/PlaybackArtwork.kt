@@ -66,7 +66,7 @@ internal object PlaybackArtwork {
 }
 
 @OptIn(UnstableApi::class)
-internal fun LocalFile.toPlayableMediaItem(context: Context): MediaItem {
+internal fun LocalFile.toPlayableMediaItem(context: Context, embedArtwork: Boolean = false): MediaItem {
     val mediaFile = File(path)
     val mediaUri = when {
         mediaFile.isFile -> PlaybackArtwork.contentUri(context, mediaFile) ?: Uri.fromFile(mediaFile)
@@ -80,7 +80,7 @@ internal fun LocalFile.toPlayableMediaItem(context: Context): MediaItem {
         artworkPath?.startsWith("http") == true -> Uri.parse(artworkPath)
         else -> null
     }
-    val artBytes = artFile?.absolutePath?.let { PlaybackArtwork.resizedJpeg(it) }
+    val artBytes = if (embedArtwork) artFile?.absolutePath?.let { PlaybackArtwork.resizedJpeg(it) } else null
     val metadata = MediaMetadata.Builder()
         .setTitle(songTitle())
         .setArtist(displayArtist)
@@ -96,7 +96,9 @@ internal fun LocalFile.toPlayableMediaItem(context: Context): MediaItem {
     return MediaItem.Builder()
         .setMediaId(id)
         .setUri(mediaUri)
-        .setMimeType(mime.ifBlank { "audio/*" })
+        .apply {
+            playbackMime(mime)?.let { setMimeType(it) }
+        }
         .setMediaMetadata(metadata)
         .build()
 }
@@ -126,6 +128,12 @@ internal fun browsableMediaItem(
         .setMediaId(mediaId)
         .setMediaMetadata(metadata)
         .build()
+}
+
+internal fun playbackMime(mime: String): String? {
+    val value = mime.trim().lowercase()
+    if (!value.startsWith("audio/") || value == "audio/*" || value == "audio/") return null
+    return mime.trim()
 }
 
 internal fun MediaItem.grantArtworkAndContent(context: Context, packageName: String) {

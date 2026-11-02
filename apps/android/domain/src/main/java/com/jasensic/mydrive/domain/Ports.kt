@@ -135,6 +135,8 @@ interface AudioPlayer {
     fun removeFromQueue(fileId: String) {}
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {}
     fun playQueueItem(fileId: String) {}
+    fun playNext(files: List<LocalFile>) {}
+    fun addToQueue(files: List<LocalFile>) {}
 }
 
 interface ExternalFileOpener {

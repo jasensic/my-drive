@@ -6,10 +6,12 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
@@ -66,8 +68,18 @@ class PlaybackService : MediaLibraryService() {
                     .createDataSource()
             }
         }
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 2_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 250,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000,
+            )
+            .setBackBuffer(/* backBufferDurationMs = */ 15_000, /* retainBackBufferFromKeyframe = */ true)
+            .build()
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory)))
+            .setLoadControl(loadControl)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -79,6 +91,15 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
+            .build()
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setAudioOffloadPreferences(
+                TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                    .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
+                    .setIsGaplessSupportRequired(true)
+                    .build(),
+            )
             .build()
 
         val sessionActivity = packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
@@ -176,14 +197,14 @@ class PlaybackService : MediaLibraryService() {
                         this,
                     )
                 }
-            ID_SONGS -> tracks.map { it.toPlayableMediaItem(this) }
+            ID_SONGS -> tracks.map { it.toPlayableMediaItem(this, embedArtwork = true) }
             else -> when {
                 parentId.startsWith(ID_ARTIST_PREFIX) -> {
                     val name = parentId.removePrefix(ID_ARTIST_PREFIX)
-                    tracks.filter { it.displayArtist == name }.map { it.toPlayableMediaItem(this) }
+                    tracks.filter { it.displayArtist == name }.map { it.toPlayableMediaItem(this, embedArtwork = true) }
                 }
                 parentId.startsWith(ID_ALBUM_ID_PREFIX) || parentId.startsWith(ID_ALBUM_NAME_PREFIX) ->
-                    tracks.filter { albumIdOf(it) == parentId }.map { it.toPlayableMediaItem(this) }
+                    tracks.filter { albumIdOf(it) == parentId }.map { it.toPlayableMediaItem(this, embedArtwork = true) }
                 else -> emptyList()
             }
         }
@@ -195,11 +216,11 @@ class PlaybackService : MediaLibraryService() {
         childrenOf(ID_ROOT, tracks).find { it.mediaId == mediaId }?.let { return it }
         childrenOf(ID_ARTISTS, tracks).find { it.mediaId == mediaId }?.let { return it }
         childrenOf(ID_ALBUMS, tracks).find { it.mediaId == mediaId }?.let { return it }
-        return tracks.find { it.id == mediaId }?.toPlayableMediaItem(this)
+        return tracks.find { it.id == mediaId }?.toPlayableMediaItem(this, embedArtwork = true)
     }
 
     private fun expandToPlayable(mediaId: String, tracks: List<LocalFile>): List<MediaItem> {
-        tracks.find { it.id == mediaId }?.let { return listOf(it.toPlayableMediaItem(this)) }
+        tracks.find { it.id == mediaId }?.let { return listOf(it.toPlayableMediaItem(this, embedArtwork = true)) }
         val children = childrenOf(mediaId, tracks)
         if (children.isEmpty()) return emptyList()
         if (children.all { it.mediaMetadata.isPlayable == true }) return children

@@ -83,6 +83,8 @@ class MainActivity : ComponentActivity() {
                         onTheme = vm::setThemeMode,
                         onConnection = vm::showConnect,
                         onPlay = player::play,
+                        onPlayNext = player::playNext,
+                        onAddToQueue = player::addToQueue,
                         onOpenPhoto = vm::openViewer,
                         onOpenFile = vm::openDocument,
                         onCloseViewer = vm::closeViewer,

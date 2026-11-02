@@ -41,4 +41,8 @@ class PlayerViewModel @Inject constructor(
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = player.moveQueueItem(fromIndex, toIndex)
 
     fun playQueueItem(fileId: String) = player.playQueueItem(fileId)
+
+    fun playNext(files: List<LocalFile>) = player.playNext(files)
+
+    fun addToQueue(files: List<LocalFile>) = player.addToQueue(files)
 }

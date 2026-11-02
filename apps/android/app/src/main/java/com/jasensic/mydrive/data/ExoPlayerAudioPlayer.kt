@@ -16,6 +16,7 @@ import com.jasensic.mydrive.domain.RepeatMode
 import com.jasensic.mydrive.domain.editQueueMove
 import com.jasensic.mydrive.domain.editQueueRemove
 import com.jasensic.mydrive.domain.materializePlayOrder
+import com.jasensic.mydrive.domain.placeInQueue
 import com.jasensic.mydrive.domain.queueIndexAfterEdit
 import com.jasensic.mydrive.domain.rotateOrderToCurrent
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -49,8 +50,8 @@ class ExoPlayerAudioPlayer @Inject constructor(
     init {
         ticker = scope.launch {
             while (isActive) {
-                if (controller?.playWhenReady == true) emitState()
-                delay(250)
+                if (controller?.playWhenReady == true || controller?.playbackState == Player.STATE_BUFFERING) emitState()
+                delay(50)
             }
         }
     }
@@ -102,7 +103,7 @@ class ExoPlayerAudioPlayer @Inject constructor(
     override fun skipToNext() {
         runWhenReady {
             val player = controller ?: return@runWhenReady
-            if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0)
+            if (player.hasNextMediaItem()) player.seekToNextMediaItem()
             emitState()
         }
     }
@@ -154,14 +155,7 @@ class ExoPlayerAudioPlayer @Inject constructor(
         runWhenReady {
             val player = controller ?: return@runWhenReady
             val next = editQueueRemove(queue, fileId) ?: return@runWhenReady
-            replaceSession(
-                player,
-                next,
-                player.currentMediaItem?.mediaId,
-                player.currentPosition,
-                player.playWhenReady,
-                player.shuffleModeEnabled,
-            )
+            alignPlaylist(player, next)
         }
     }
 
@@ -170,15 +164,17 @@ class ExoPlayerAudioPlayer @Inject constructor(
             val player = controller ?: return@runWhenReady
             val displayed = displayedQueue(player)
             val next = editQueueMove(displayed, fromIndex, toIndex) ?: return@runWhenReady
-            replaceSession(
-                player,
-                next,
-                player.currentMediaItem?.mediaId,
-                player.currentPosition,
-                player.playWhenReady,
-                shuffle = false,
-            )
+            player.shuffleModeEnabled = false
+            alignPlaylist(player, next)
         }
+    }
+
+    override fun playNext(files: List<LocalFile>) {
+        placeRelative(files, afterCurrent = true)
+    }
+
+    override fun addToQueue(files: List<LocalFile>) {
+        placeRelative(files, afterCurrent = false)
     }
 
     override fun playQueueItem(fileId: String) {
@@ -198,6 +194,66 @@ class ExoPlayerAudioPlayer @Inject constructor(
             player.play()
             emitState()
         }
+    }
+
+    private fun placeRelative(files: List<LocalFile>, afterCurrent: Boolean) {
+        runWhenReady {
+            val player = controller ?: return@runWhenReady
+            val incoming = files.filter {
+                it.mediaKind == MediaKind.AUDIO && (File(it.path).isFile || !it.remoteUrl.isNullOrBlank())
+            }
+            if (incoming.isEmpty()) return@runWhenReady
+            if (queue.isEmpty()) {
+                queue = incoming
+                val start = 0
+                player.shuffleModeEnabled = false
+                player.setMediaItems(incoming.map { it.toPlayableMediaItem(context) }, start, 0L)
+                player.prepare()
+                player.play()
+                emitState()
+                return@runWhenReady
+            }
+            val displayed = displayedQueue(player)
+            val anchor = if (afterCurrent) player.currentMediaItem?.mediaId else null
+            val next = placeInQueue(displayed, incoming, anchor)
+            if (next == displayed) return@runWhenReady
+            player.shuffleModeEnabled = false
+            alignPlaylist(player, next)
+        }
+    }
+
+    /**
+     * Reorder the live playlist without preparing it again, so the current track keeps playing.
+     */
+    private fun alignPlaylist(player: MediaController, desired: List<LocalFile>) {
+        if (desired.isEmpty()) {
+            player.stop()
+            player.clearMediaItems()
+            queue = emptyList()
+            emitState()
+            return
+        }
+        val desiredIds = desired.map { it.id }.toSet()
+        for (index in player.mediaItemCount - 1 downTo 0) {
+            if (player.getMediaItemAt(index).mediaId !in desiredIds) {
+                player.removeMediaItem(index)
+            }
+        }
+        desired.forEachIndexed { target, file ->
+            val from = (target until player.mediaItemCount).firstOrNull {
+                player.getMediaItemAt(it).mediaId == file.id
+            }
+            when {
+                from == null -> player.addMediaItem(
+                    target.coerceAtMost(player.mediaItemCount),
+                    file.toPlayableMediaItem(context),
+                )
+                from != target -> player.moveMediaItem(from, target)
+            }
+        }
+        queue = desired
+        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        emitState()
     }
 
     private fun replaceSession(
@@ -317,6 +373,7 @@ class ExoPlayerAudioPlayer @Inject constructor(
                 positionMs = position,
                 durationMs = player.duration.takeIf { it > 0 } ?: displayed.getOrNull(index)?.durationMs ?: 0L,
                 shuffle = player.shuffleModeEnabled,
+                buffering = player.playbackState == Player.STATE_BUFFERING,
                 repeat = when (player.repeatMode) {
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE
                     Player.REPEAT_MODE_ALL -> RepeatMode.ALL
