@@ -32,6 +32,17 @@ test.describe('auth', () => {
     await expect(page.getByRole('heading', { name: 'Photos & videos' })).toBeVisible();
   });
 
+  test('returns to login when the server rejects the stored token', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('mydrive.token', 'rejected-by-the-server');
+      localStorage.setItem('mydrive.username', 'admin');
+    });
+    await page.goto('/photos');
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByText('Sign in to my-drive')).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('mydrive.token'))).toBeNull();
+  });
+
   test('has no self sign-up', async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();
