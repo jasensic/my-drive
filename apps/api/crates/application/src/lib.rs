@@ -1,4 +1,5 @@
 pub mod access;
+mod device_tokens;
 pub mod error;
 pub mod locks;
 pub mod mobile;
@@ -46,7 +47,8 @@ pub struct Deps {
 pub struct Services {
     pub check_setup: Arc<dyn CheckSetup>,
     pub setup_admin: Arc<dyn SetupAdmin>,
-    pub register_user: Arc<dyn RegisterUser>,
+    pub create_user: Arc<dyn CreateUser>,
+    pub refresh_session: Arc<dyn RefreshSession>,
     pub list_users: Arc<dyn ListUsers>,
     pub login: Arc<dyn Login>,
     pub authenticate: Arc<dyn Authenticate>,
@@ -67,6 +69,8 @@ pub struct Services {
     pub empty_trash: Arc<dyn EmptyTrash>,
     pub register_device: Arc<dyn RegisterDevice>,
     pub list_devices: Arc<dyn ListDevices>,
+    pub issue_device_token: Arc<dyn IssueDeviceToken>,
+    pub delete_device: Arc<dyn DeleteDevice>,
     pub upsert_sync_profile: Arc<dyn UpsertSyncProfile>,
     pub get_sync_profile: Arc<dyn GetSyncProfile>,
     pub merge_device_exclusions: Arc<dyn MergeDeviceExclusions>,
@@ -94,7 +98,8 @@ impl Services {
         Self {
             check_setup: Arc::new(CheckSetupService::new(deps.clone())),
             setup_admin: Arc::new(SetupAdminService::new(deps.clone())),
-            register_user: Arc::new(RegisterUserService::new(deps.clone())),
+            create_user: Arc::new(CreateUserService::new(deps.clone())),
+            refresh_session: Arc::new(RefreshSessionService::new(deps.clone())),
             list_users: Arc::new(ListUsersService::new(deps.clone())),
             login: Arc::new(LoginService::new(deps.clone())),
             authenticate: Arc::new(AuthenticateService::new(deps.clone())),
@@ -115,6 +120,8 @@ impl Services {
             empty_trash: Arc::new(EmptyTrashService::new(deps.clone())),
             register_device: Arc::new(RegisterDeviceService::new(deps.clone())),
             list_devices: Arc::new(ListDevicesService::new(deps.clone())),
+            issue_device_token: Arc::new(IssueDeviceTokenService::new(deps.clone())),
+            delete_device: Arc::new(DeleteDeviceService::new(deps.clone())),
             upsert_sync_profile: Arc::new(UpsertSyncProfileService::new(deps.clone())),
             get_sync_profile: Arc::new(GetSyncProfileService::new(deps.clone())),
             merge_device_exclusions: Arc::new(MergeDeviceExclusionsService::new(deps.clone())),

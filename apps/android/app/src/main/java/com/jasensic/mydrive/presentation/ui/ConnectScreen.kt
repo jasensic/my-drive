@@ -36,7 +36,6 @@ import com.jasensic.mydrive.presentation.UiState
 fun ConnectScreen(
     state: UiState,
     onSignIn: (String, String, String) -> Unit,
-    onRegister: (String, String, String) -> Unit,
     onSetup: (String, String, String) -> Unit,
     onScanLan: (String) -> Unit,
     onOpenLibrary: () -> Unit,
@@ -44,7 +43,6 @@ fun ConnectScreen(
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("") }
-    var registerMode by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -111,18 +109,6 @@ fun ConnectScreen(
                                 Text("Create admin account")
                             }
                         }
-                        registerMode -> {
-                            Button(
-                                onClick = { onRegister(user, pass, host) },
-                                enabled = canSubmit,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text("Create account")
-                            }
-                            TextButton(onClick = { registerMode = false }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Have an account? Sign in")
-                            }
-                        }
                         else -> {
                             Button(
                                 onClick = { onSignIn(user, pass, host) },
@@ -131,9 +117,11 @@ fun ConnectScreen(
                             ) {
                                 Text("Sign in and download")
                             }
-                            TextButton(onClick = { registerMode = true }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Create account")
-                            }
+                            Text(
+                                "No account yet? Ask the person who set up this drive to add you in the portal.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }

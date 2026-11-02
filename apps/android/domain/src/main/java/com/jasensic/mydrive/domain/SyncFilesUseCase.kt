@@ -74,6 +74,69 @@ class LoadAppStateUseCase(
     }
 }
 
+/**
+ * Sign in on the foreground and keep the session: password in, access token + device
+ * refresh token out. The password is never stored or handed to background work.
+ */
+class SignInUseCase(
+    private val discovery: DiscoverServerUseCase,
+    private val remote: RemoteFileSource,
+    private val localStore: LocalMediaStore,
+    private val state: SyncStateRepository,
+    private val deviceName: String,
+    private val progress: SyncProgressStore = InMemorySyncProgressStore(),
+) {
+    suspend fun execute(
+        username: String,
+        password: String,
+        manualHost: String? = null,
+        authAction: AuthAction = AuthAction.LOGIN,
+    ): AuthSession {
+        progress.publish(SyncProgress(phase = SyncPhase.CONNECTING, message = "Signing in…"))
+        return try {
+            val server = discovery.execute(manualHost)
+            signInAt(server.baseUrl, username, password, authAction)
+        } catch (err: Throwable) {
+            progress.publish(
+                SyncProgress(
+                    phase = SyncPhase.FAILED,
+                    errorMessage = err.message ?: "Sign-in failed",
+                    message = err.message ?: "Sign-in failed",
+                ),
+            )
+            throw err
+        }
+    }
+
+    internal suspend fun signInAt(
+        base: String,
+        username: String,
+        password: String,
+        authAction: AuthAction,
+    ): AuthSession {
+        require(username.isNotBlank() && password.isNotBlank()) { "login required" }
+        val loggedIn = when (authAction) {
+            AuthAction.SETUP -> remote.setup(base, username, password)
+            AuthAction.LOGIN -> remote.login(base, username, password)
+        }
+        localStore.bindUser(loggedIn.userId ?: "legacy")
+        val device = deviceFor(base, loggedIn)
+        val session = loggedIn.copy(deviceId = device.id, deviceToken = device.token)
+        state.saveSession(session)
+        return session
+    }
+
+    /** Reuse this phone's device for the user (fresh refresh token), or register it if it was forgotten. */
+    private suspend fun deviceFor(base: String, loggedIn: AuthSession): RegisteredDevice {
+        val remembered = loggedIn.userId?.let { state.rememberedDeviceId(it) }
+        if (remembered != null) {
+            val token = remote.issueDeviceToken(base, loggedIn.token, remembered)
+            if (token != null) return RegisteredDevice(remembered, token)
+        }
+        return remote.registerDevice(base, loggedIn.token, deviceName)
+    }
+}
+
 class SyncFilesUseCase(
     private val connectivity: ConnectivityMonitor,
     private val discovery: DiscoverServerUseCase,
@@ -84,6 +147,8 @@ class SyncFilesUseCase(
     private val progress: SyncProgressStore = InMemorySyncProgressStore(),
     private val exclusions: DeviceExclusionStore = InMemoryDeviceExclusionStore(),
 ) {
+    private val signIn = SignInUseCase(discovery, remote, localStore, state, deviceName, progress)
+
     suspend fun execute(
         username: String? = null,
         password: String? = null,
@@ -100,21 +165,12 @@ class SyncFilesUseCase(
         return try {
             val server = discovery.execute(manualHost)
             val base = server.baseUrl
-            var session = state.session()
-            if (session == null) {
-                require(!username.isNullOrBlank() && !password.isNullOrBlank()) { "login required" }
-                val loggedIn = when (authAction) {
-                    AuthAction.SETUP -> remote.setup(base, username, password)
-                    AuthAction.REGISTER -> remote.register(base, username, password)
-                    AuthAction.LOGIN -> remote.login(base, username, password)
-                }
-                localStore.bindUser(loggedIn.userId ?: "legacy")
-                val deviceId = loggedIn.userId?.let { state.rememberedDeviceId(it) }
-                    ?: remote.registerDevice(base, loggedIn.token, deviceName)
-                session = loggedIn.copy(deviceId = deviceId)
-                state.saveSession(session)
+            val stored = state.session()
+            val session = if (stored == null) {
+                signIn.signInAt(base, username.orEmpty(), password.orEmpty(), authAction)
             } else {
-                localStore.bindUser(session.userId ?: "legacy")
+                localStore.bindUser(stored.userId ?: "legacy")
+                renewSession(base, stored)
             }
             val deviceId = session.deviceId ?: error("device is not registered")
             flushDeviceExclusions(base, session.token, deviceId)
@@ -231,6 +287,24 @@ class SyncFilesUseCase(
             }
             throw err
         }
+    }
+
+    /**
+     * Trade the device refresh token for a fresh access token so the 7-day JWT never lapses
+     * while the phone keeps syncing. Sessions from before refresh tokens get one with the
+     * access token they still hold. A revoked device fails with "login required".
+     */
+    private suspend fun renewSession(base: String, session: AuthSession): AuthSession {
+        val deviceId = session.deviceId ?: error("device is not registered")
+        val renewed = if (session.deviceToken != null) {
+            val fresh = remote.refreshSession(base, deviceId, session.deviceToken)
+            session.copy(token = fresh.token, username = fresh.username, userId = fresh.userId ?: session.userId)
+        } else {
+            val deviceToken = remote.issueDeviceToken(base, session.token, deviceId) ?: error("login required")
+            session.copy(deviceToken = deviceToken)
+        }
+        state.saveSession(renewed)
+        return renewed
     }
 
     private suspend fun flushDeviceExclusions(base: String, token: String, deviceId: String) {

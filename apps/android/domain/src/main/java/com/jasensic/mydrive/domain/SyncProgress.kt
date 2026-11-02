@@ -89,13 +89,9 @@ class InMemorySyncProgressStore : SyncProgressStore {
     }
 }
 
+/** Credentials never reach the scheduler: sign in first with [SignInUseCase], then enqueue. */
 interface SyncScheduler {
-    fun enqueue(
-        username: String? = null,
-        password: String? = null,
-        manualHost: String? = null,
-        authAction: AuthAction = AuthAction.LOGIN,
-    )
+    fun enqueue(manualHost: String? = null)
 
     /** Keep syncing on a schedule while the app is not in the foreground. */
     fun ensureBackgroundSync() {}

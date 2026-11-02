@@ -25,10 +25,6 @@ export class LoginPage {
     return this.page.locator('form').getByRole('button', { name });
   }
 
-  modeToggle(name: string | RegExp): Locator {
-    return this.page.getByRole('button', { name });
-  }
-
   async fill(username: string, password: string): Promise<void> {
     await this.username.fill(username);
     await this.password.fill(password);
@@ -36,6 +32,6 @@ export class LoginPage {
 
   async authenticate(username: string, password: string): Promise<void> {
     await this.fill(username, password);
-    await this.page.getByRole('button', { name: /Complete setup|Login|Create account/ }).click();
+    await this.page.getByRole('button', { name: /Complete setup|Login/ }).click();
   }
 }

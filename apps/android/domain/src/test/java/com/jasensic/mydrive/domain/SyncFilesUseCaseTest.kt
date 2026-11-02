@@ -20,7 +20,9 @@ class FakeDiscovery(private val server: DiscoveredServer?) : ServerDiscovery {
 class FakeRemote : RemoteFileSource {
     var downloaded = 0
     var logins = 0
-    var registers = 0
+    var refreshes = 0
+    var issuedTokens = 0
+    var forgottenDevices = mutableSetOf<String>()
     var setups = 0
     var lastSyncSeen: String? = "unset"
     var latest: AppRelease? = null
@@ -46,11 +48,6 @@ class FakeRemote : RemoteFileSource {
         return AuthSession("token", username, null, "user-1")
     }
 
-    override suspend fun register(baseUrl: String, username: String, password: String): AuthSession {
-        registers += 1
-        return AuthSession("token", username, null, "user-1")
-    }
-
     override suspend fun login(baseUrl: String, username: String, password: String): AuthSession {
         logins += 1
         return AuthSession("token", username, null, "user-1")
@@ -58,7 +55,21 @@ class FakeRemote : RemoteFileSource {
 
     override suspend fun listUsers(baseUrl: String, token: String) = users
 
-    override suspend fun registerDevice(baseUrl: String, token: String, name: String) = "dev-1"
+    override suspend fun registerDevice(baseUrl: String, token: String, name: String) =
+        RegisteredDevice("dev-1", "device-secret")
+
+    override suspend fun refreshSession(baseUrl: String, deviceId: String, deviceToken: String): AuthSession {
+        if (failAuth || deviceId in forgottenDevices) error("login required")
+        refreshes += 1
+        return AuthSession("fresh-token", "admin", null, "user-1")
+    }
+
+    override suspend fun issueDeviceToken(baseUrl: String, token: String, deviceId: String): String? {
+        if (failAuth) error("login required")
+        if (deviceId in forgottenDevices) return null
+        issuedTokens += 1
+        return "rotated-secret"
+    }
 
     override suspend fun fetchManifest(
         baseUrl: String,
@@ -693,14 +704,62 @@ class SyncFilesUseCaseTest {
     }
 
     @Test
-    fun registerCreatesAccountInsteadOfLogin() = runTest {
+    fun signInKeepsADeviceRefreshTokenButNeverThePassword() = runTest {
         val remote = FakeRemote()
         val state = FakeState()
-        useCase(remote, FakeStore(), state).execute("bob", "password123", authAction = AuthAction.REGISTER)
-        assertEquals(1, remote.registers)
-        assertEquals(0, remote.logins)
-        assertEquals("bob", state.stored?.username)
-        assertEquals("user-1", state.stored?.userId)
+        val session = SignInUseCase(
+            DiscoverServerUseCase(FakeConnectivity(), FakeDiscovery(DiscoveredServer("192.168.1.10", 8080, "my-drive")), state),
+            remote,
+            FakeStore(),
+            state,
+            "Phone A",
+        ).execute("admin", "password123")
+        assertEquals("dev-1", session.deviceId)
+        assertEquals("device-secret", session.deviceToken)
+        assertEquals(session, state.stored)
+        assertTrue("password123" !in state.stored.toString())
+    }
+
+    @Test
+    fun syncRefreshesTheAccessTokenWithTheDeviceToken() = runTest {
+        val remote = FakeRemote()
+        val state = FakeState().apply {
+            stored = AuthSession("old-token", "admin", "dev-1", "user-1", deviceToken = "device-secret")
+        }
+        useCase(remote, FakeStore(), state).execute()
+        assertEquals(1, remote.refreshes)
+        assertEquals("fresh-token", state.stored?.token)
+        assertEquals("device-secret", state.stored?.deviceToken)
+    }
+
+    @Test
+    fun sessionsFromBeforeRefreshTokensGetOneOnTheNextSync() = runTest {
+        val remote = FakeRemote()
+        val state = FakeState().apply { stored = AuthSession("still-valid", "admin", "dev-1", "user-1") }
+        useCase(remote, FakeStore(), state).execute()
+        assertEquals(1, remote.issuedTokens)
+        assertEquals("rotated-secret", state.stored?.deviceToken)
+        assertEquals("still-valid", state.stored?.token)
+    }
+
+    @Test
+    fun forgottenDeviceSignsOutOnTheNextSync() = runTest {
+        val remote = FakeRemote().apply { forgottenDevices += "dev-1" }
+        val state = FakeState().apply {
+            stored = AuthSession("t", "admin", "dev-1", "user-1", deviceToken = "device-secret")
+        }
+        val err = assertFailsWith<IllegalStateException> { useCase(remote, FakeStore(), state).execute() }
+        assertEquals("login required", err.message)
+        assertNull(state.stored)
+    }
+
+    @Test
+    fun signInRegistersAgainWhenTheRememberedDeviceWasForgotten() = runTest {
+        val remote = FakeRemote().apply { forgottenDevices += "dev-old" }
+        val state = FakeState().apply { devices["user-1"] = "dev-old" }
+        useCase(remote, FakeStore(), state).execute("admin", "password123")
+        assertEquals("dev-1", state.stored?.deviceId)
+        assertEquals("device-secret", state.stored?.deviceToken)
     }
 
     @Test

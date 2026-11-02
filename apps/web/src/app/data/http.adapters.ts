@@ -24,6 +24,7 @@ export class LocalTokenStore implements TokenStore {
   private readonly tokenKey = 'mydrive.token';
   private readonly userKey = 'mydrive.username';
   private readonly userIdKey = 'mydrive.userId';
+  private readonly adminKey = 'mydrive.isAdmin';
 
   get(): string | null {
     return localStorage.getItem(this.tokenKey);
@@ -37,7 +38,11 @@ export class LocalTokenStore implements TokenStore {
     return localStorage.getItem(this.userIdKey);
   }
 
-  set(token: string, username: string, userId?: string): void {
+  isAdmin(): boolean {
+    return localStorage.getItem(this.adminKey) === 'true';
+  }
+
+  set(token: string, username: string, userId?: string, isAdmin = false): void {
     localStorage.setItem(this.tokenKey, token);
     localStorage.setItem(this.userKey, username);
     if (userId) {
@@ -45,12 +50,14 @@ export class LocalTokenStore implements TokenStore {
     } else {
       localStorage.removeItem(this.userIdKey);
     }
+    localStorage.setItem(this.adminKey, String(isAdmin));
   }
 
   clear(): void {
     localStorage.removeItem(this.tokenKey);
     localStorage.removeItem(this.userKey);
     localStorage.removeItem(this.userIdKey);
+    localStorage.removeItem(this.adminKey);
   }
 }
 
@@ -75,20 +82,20 @@ export class HttpAuthRepository implements AuthRepository {
     return firstValueFrom(this.http.post<AuthSession>('/v1/setup', { username, password }));
   }
 
-  register(username: string, password: string): Promise<AuthSession> {
-    return firstValueFrom(this.http.post<AuthSession>('/v1/register', { username, password }));
-  }
-
   login(username: string, password: string): Promise<AuthSession> {
     return firstValueFrom(this.http.post<AuthSession>('/v1/login', { username, password }));
   }
 
-  me(): Promise<{ id: string; username: string }> {
-    return firstValueFrom(this.http.get<{ id: string; username: string }>('/v1/me'));
+  me(): Promise<UserProfile> {
+    return firstValueFrom(this.http.get<UserProfile>('/v1/me'));
   }
 
   listUsers(): Promise<UserProfile[]> {
     return firstValueFrom(this.http.get<UserProfile[]>('/v1/users'));
+  }
+
+  createUser(username: string, password: string): Promise<UserProfile> {
+    return firstValueFrom(this.http.post<UserProfile>('/v1/users', { username, password }));
   }
 }
 
@@ -172,6 +179,9 @@ export class HttpDeviceRepository implements DeviceRepository {
   }
   register(name: string): Promise<Device> {
     return firstValueFrom(this.http.post<Device>('/v1/devices', { name }));
+  }
+  async remove(deviceId: string): Promise<void> {
+    await firstValueFrom(this.http.delete(`/v1/devices/${deviceId}`));
   }
   getProfile(deviceId: string): Promise<SyncProfile> {
     return firstValueFrom(this.http.get<SyncProfile>(`/v1/devices/${deviceId}/sync-profile`));

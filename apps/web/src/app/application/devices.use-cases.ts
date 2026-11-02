@@ -1,7 +1,15 @@
 import { Inject, Injectable } from '@angular/core';
 import { Device, SyncProfile, SyncRule } from '../domain/models';
 import { DEVICE_REPOSITORY, DeviceRepository } from '../domain/ports';
-import { ListDevices, LoadSyncProfile, RegisterDevice, SaveSyncProfile } from './use-cases.tokens';
+import { DeleteDevice, ListDevices, LoadSyncProfile, RegisterDevice, SaveSyncProfile } from './use-cases.tokens';
+
+@Injectable()
+export class DeleteDeviceService implements DeleteDevice {
+  constructor(@Inject(DEVICE_REPOSITORY) private readonly devices: DeviceRepository) {}
+  execute(deviceId: string): Promise<void> {
+    return this.devices.remove(deviceId);
+  }
+}
 
 @Injectable()
 export class ListDevicesService implements ListDevices {
