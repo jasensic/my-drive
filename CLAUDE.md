@@ -18,7 +18,8 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --build
 ```
 
 - `--env-file .env` es obligatorio: sin él, Compose interpola `${…}` desde `deploy/.env` (no existe) y usa las contraseñas por defecto aunque el `.env` de la raíz diga otra cosa.
-- Topología ([deploy/docker-compose.yml](deploy/docker-compose.yml)): el **API** va en `network_mode: host` (el multicast mDNS no atraviesa la red bridge) y alcanza por `127.0.0.1` a Postgres `:5432`, MinIO `:9000` (consola `:9001`) y musicdl `:8090`, que solo escuchan en loopback. A la LAN solo se exponen el **API `:8080`** y el **portal `:8088`** (Nginx: SPA + proxy `/v1`, `/api-docs`, `/health` hacia `host.docker.internal:8080`).
+- Topología ([deploy/docker-compose.yml](deploy/docker-compose.yml)): el **API** va en `network_mode: host` (el multicast mDNS no atraviesa la red bridge) y alcanza por `127.0.0.1` a Postgres `:5432`, MinIO `:9000` (consola `:9001`) y musicdl `:8090`, que solo escuchan en loopback. A la LAN solo se exponen el **API `:8080`** y el **portal `:8088`** (Nginx: SPA + proxy `/v1`, `/api-docs`, `/health` hacia `172.29.0.1:8080`, la puerta de enlace fija de la red de Compose; no uses `host.docker.internal`, que en Docker Desktop apunta al host Windows/macOS y falla).
+- **Docker Desktop (Windows/macOS)**: el portal funciona en `http://localhost:8088`, pero el API en red host queda dentro del VM de Docker: `:8080` no es accesible desde el host ni desde la LAN y mDNS no se anuncia. Para probar con un móvil usa el NAS Linux; para desarrollar, `cargo run` + `npm start`.
 - Datos: volúmenes `pgdata`, `miniodata`, `musicdl-downloads` (proyecto Compose `deploy`). `docker compose down` no los borra; `down -v` sí.
 - Primer acceso al portal → pantalla de **setup** (crea el primer usuario).
 - APKs de Android: se publican desde el portal (**App updates**) y los teléfonos se actualizan al reconectar.
