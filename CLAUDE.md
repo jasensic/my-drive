@@ -2,7 +2,7 @@
 
 **my-drive** es un NAS doméstico: un servidor Linux en la LAN guarda fotos, vídeos, música y archivos, y cada dispositivo que se conecta a la Wi-Fi descubre el servidor por mDNS y **descarga automáticamente lo que el servidor tiene para él**. Los dispositivos usan su copia local offline; el servidor es la fuente de verdad.
 
-**No hay entornos.** Existe una sola instalación (el NAS), construida desde este repo, y el bucle de desarrollo en el PC. No añadas variantes “prod/staging/dev” de compose, imágenes publicadas ni auto-updaters: el objetivo es simplificar.
+**No hay entornos.** Existe una sola instalación (el NAS), construida desde este repo, y el bucle de desarrollo en el PC. No añadas variantes “prod/staging” de compose, imágenes publicadas ni auto-updaters: el objetivo es simplificar. La única excepción es `deploy/docker-compose.desktop.yml`, un override para probar en el PC con Docker Desktop (ver abajo).
 
 Lee también [AGENTS.md](AGENTS.md) y `.cursor/rules/*.mdc` antes de editar. Commits en inglés y en imperativo. No commitees `.env` ni keystores.
 
@@ -19,7 +19,11 @@ docker compose --env-file .env -f deploy/docker-compose.yml up -d --build
 
 - `--env-file .env` es obligatorio: sin él, Compose interpola `${…}` desde `deploy/.env` (no existe) y usa las contraseñas por defecto aunque el `.env` de la raíz diga otra cosa.
 - Topología ([deploy/docker-compose.yml](deploy/docker-compose.yml)): el **API** va en `network_mode: host` (el multicast mDNS no atraviesa la red bridge) y alcanza por `127.0.0.1` a Postgres `:5432`, MinIO `:9000` (consola `:9001`) y musicdl `:8090`, que solo escuchan en loopback. A la LAN solo se exponen el **API `:8080`** y el **portal `:8088`** (Nginx: SPA + proxy `/v1`, `/api-docs`, `/health` hacia `172.29.0.1:8080`, la puerta de enlace fija de la red de Compose; no uses `host.docker.internal`, que en Docker Desktop apunta al host Windows/macOS y falla).
-- **Docker Desktop (Windows/macOS)**: el portal funciona en `http://localhost:8088`, pero el API en red host queda dentro del VM de Docker: `:8080` no es accesible desde el host ni desde la LAN y mDNS no se anuncia. Para probar con un móvil usa el NAS Linux; para desarrollar, `cargo run` + `npm start`.
+- **Probar en el PC con Docker Desktop (Windows/macOS)**: en Docker Desktop la red host es la del VM de Docker, así que un API en red host no es alcanzable desde el móvil ni desde `localhost:8080`. Añade el override:
+  ```bash
+  docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.desktop.yml up -d --build
+  ```
+  Pone el API en la red de Compose con `:8080` publicado en el PC y desactiva mDNS (no puede llegar a la LAN desde un contenedor). El portal va en `http://localhost:8088`; el móvil se conecta escribiendo a mano la IP del PC en la pantalla de conexión (`ipconfig` → p. ej. `192.168.1.49:8080`). Si cambias entre este modo y el del NAS, añade `--force-recreate`.
 - Datos: volúmenes `pgdata`, `miniodata`, `musicdl-downloads` (proyecto Compose `deploy`). `docker compose down` no los borra; `down -v` sí.
 - Primer acceso al portal → pantalla de **setup** (crea el primer usuario).
 - APKs de Android: se publican desde el portal (**App updates**) y los teléfonos se actualizan al reconectar.
@@ -56,7 +60,7 @@ CI (`.github/workflows/ci.yml`): `cargo test --workspace`, tests + build del por
 | `apps/android` | `:domain` (Kotlin JVM, casos de uso y puertos) + `:app` (`data` = Retrofit/OkHttp/Room/NSD/WorkManager/Media3, `presentation` = Compose + ViewModels, Hilt) |
 | `services/musicdl` | Submódulo git (CharlesPikachu/musicdl) |
 | `services/musicdl-server/server.py` | Sidecar HTTP Python (`:8090`) sobre musicdl: búsqueda asíncrona con `search_id`, parse de playlists de Spotify, descarga |
-| `deploy/` | `docker-compose.yml` del NAS y `nginx/nginx.conf` del portal |
+| `deploy/` | `docker-compose.yml` del NAS, `docker-compose.desktop.yml` (override para Docker Desktop) y `nginx/nginx.conf` del portal |
 
 ## Clean Architecture (obligatoria en las tres apps)
 

@@ -1,0 +1,24 @@
+# Solo para probar en el PC con Docker Desktop (Windows/macOS). El NAS Linux NO usa este fichero.
+#
+#   docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.desktop.yml up -d --build
+#
+# En Docker Desktop la red host de un contenedor es la del VM de Docker, no la del PC:
+# un API en red host no es alcanzable desde el móvil. Aquí el API va en la red de Compose
+# y publica el :8080 en el PC, así que el móvil lo alcanza por la IP del PC
+# (p. ej. 192.168.1.49:8080, escrita a mano en la pantalla de conexión).
+# mDNS no puede llegar a la LAN desde un contenedor, por eso se desactiva.
+services:
+  api:
+    network_mode: !reset null
+    ports:
+      - "${API_HTTP_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-mydrive}:${POSTGRES_PASSWORD:-mydrive}@postgres:5432/${POSTGRES_DB:-mydrive}
+      MINIO_ENDPOINT: http://minio:9000
+      MUSICDL_URL: http://musicdl:8090
+      API_PORT: "8080"
+      MDNS_ENABLE: "false"
+
+  web:
+    environment:
+      API_UPSTREAM: http://api:8080

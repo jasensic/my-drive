@@ -589,7 +589,7 @@ class DriveViewModel @Inject constructor(
         }
         viewModelScope.launch {
             runCatching { signIn.execute(username.orEmpty(), password.orEmpty(), host, authAction) }
-                .onSuccess { syncScheduler.enqueue() }
+                .onSuccess { syncScheduler.enqueue(host) }
                 .onFailure { _ui.value = _ui.value.copy(error = it.message) }
         }
     }

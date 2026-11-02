@@ -42,6 +42,16 @@ El API no arranca sin un `JWT_SECRET` aleatorio de al menos 32 caracteres (`open
 
 El primer acceso al portal abre la pantalla de **setup**: crea el usuario administrador. No hay registro abierto: el admin da de alta al resto de la familia en **Users**. Cada móvil recibe al conectarse un token de dispositivo para seguir sincronizando sin volver a pedir la contraseña; desde **Devices** se puede olvidar un móvil y revocar ese acceso.
 
+### Probar en el PC (Docker Desktop)
+
+En Docker Desktop un API en red host queda dentro del VM de Docker y el móvil no lo alcanza. Para probar con un móvil desde Windows/macOS añade el override, que publica el API en `:8080` del PC y desactiva mDNS:
+
+```bash
+docker compose --env-file .env -f deploy/docker-compose.yml -f deploy/docker-compose.desktop.yml up -d --build
+```
+
+En la app Android escribe la IP del PC como servidor (`ipconfig`, por ejemplo `192.168.1.49:8080`). El NAS Linux no usa este fichero.
+
 ### mDNS
 
 El API anuncia `_mydrive._tcp.local`. Si `API_PUBLIC_URL` es un hostname real (no loopback), el TXT `url` lleva esa base y Android la prefiere al IP resuelto. Las URLs de loopback no se anuncian. El multicast no atraviesa la red bridge de Docker, por eso el API corre con `network_mode: host` y llega a Postgres, MinIO y musicdl por loopback.
