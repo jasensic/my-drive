@@ -2,6 +2,33 @@ package com.jasensic.mydrive.presentation.ui
 
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import com.jasensic.mydrive.presentation.theme.Motion
+import com.jasensic.mydrive.presentation.theme.pressScale
+import com.jasensic.mydrive.presentation.theme.rememberHaptics
+import kotlin.math.abs
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,7 +44,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -31,7 +57,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -49,6 +74,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -107,12 +133,14 @@ fun PhotosScreen(
         columns = GridCells.Adaptive(118.dp),
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }, key = "title") {
             Text(
                 "Photos",
                 style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 6.dp),
             )
         }
         item(span = { GridItemSpan(maxLineSpan) }, key = "search") {
@@ -120,25 +148,7 @@ fun PhotosScreen(
         }
         if (albums.isNotEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }, key = "albums") {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item {
-                        FilterChip(
-                            selected = albumId == null,
-                            onClick = { onOpenAlbum(null) },
-                            label = { Text("All") },
-                        )
-                    }
-                    items(albums, key = { it.id }) { album ->
-                        FilterChip(
-                            selected = albumId == album.id,
-                            onClick = { onOpenAlbum(album.id) },
-                            label = { Text(if (album.shared) "${album.name} · Shared" else album.name) },
-                        )
-                    }
-                }
+                AlbumFilterRow(albums, albumId, onOpenAlbum)
             }
         }
         if (groups.isEmpty()) {
@@ -156,59 +166,103 @@ fun PhotosScreen(
                 Text(
                     formatDateHeader(group.epochDay, today),
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
                 )
             }
             items(group.files, key = { it.id }) { file ->
-                val selected = file.id in selectedIds
-                Box(
-                    Modifier
-                        .padding(2.dp)
-                        .fillMaxWidth()
-                        .combinedClickable(
-                            onClick = {
-                                if (selecting) onToggleSelect(file.id) else onOpen(file.id)
-                            },
-                            onLongClick = { onLongPress(file.id) },
-                        )
-                        .then(
-                            if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
-                            else Modifier
-                        ),
-                ) {
-                    AsyncImage(
-                        model = thumbnailModel(file),
-                        contentDescription = file.name,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f),
-                        contentScale = ContentScale.Crop,
-                    )
-                    if (file.mediaKind == MediaKind.VIDEO) {
-                        Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Video",
-                            tint = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(8.dp)
-                                .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                                .padding(4.dp)
-                                .size(18.dp),
-                        )
-                    }
-                    if (selected) {
-                        Icon(
-                            Icons.Filled.CheckCircle,
-                            contentDescription = "Selected",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(6.dp),
-                        )
-                    }
-                }
+                PhotoTile(
+                    file = file,
+                    selected = file.id in selectedIds,
+                    selecting = selecting,
+                    onClick = { if (selecting) onToggleSelect(file.id) else onOpen(file.id) },
+                    onLongClick = { onLongPress(file.id) },
+                    modifier = Modifier.animateItem(),
+                )
             }
+        }
+    }
+}
+
+/**
+ * A square tile. Selecting one shrinks it a little inside a rounded frame with a check badge, so the
+ * state is readable without a border.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PhotoTile(
+    file: LocalFile,
+    selected: Boolean,
+    selecting: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.colorScheme
+    val haptics = rememberHaptics()
+    val source = remember { MutableInteractionSource() }
+    val inset by animateDpAsState(if (selected) 10.dp else 0.dp, Motion.spring(), label = "tileInset")
+    val corner by animateDpAsState(if (selected) 10.dp else 0.dp, Motion.spring(), label = "tileCorner")
+    Box(
+        modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .background(if (selected) colors.primaryContainer else Color.Transparent)
+            .pressScale(source, 0.97f)
+            .combinedClickable(
+                interactionSource = source,
+                indication = null,
+                onClick = onClick,
+                onLongClick = {
+                    haptics.lift()
+                    onLongClick()
+                },
+            ),
+    ) {
+        AsyncImage(
+            model = thumbnailModel(file),
+            contentDescription = file.name,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(inset)
+                .clip(RoundedCornerShape(corner)),
+            contentScale = ContentScale.Crop,
+        )
+        if (file.mediaKind == MediaKind.VIDEO) {
+            Icon(
+                Icons.Filled.PlayArrow,
+                contentDescription = "Video",
+                tint = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    .padding(4.dp)
+                    .size(18.dp),
+            )
+        }
+        AnimatedVisibility(
+            visible = selected,
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+            enter = scaleIn(Motion.spring(), initialScale = 0.3f) + fadeIn(),
+            exit = scaleOut(tween(Motion.Fast)) + fadeOut(tween(Motion.Fast)),
+        ) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = "Selected",
+                tint = colors.primary,
+                modifier = Modifier
+                    .size(24.dp)
+                    .background(Color.White, CircleShape),
+            )
+        }
+        if (selecting && !selected) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(22.dp)
+                    .border(1.5.dp, Color.White.copy(alpha = 0.9f), CircleShape),
+            )
         }
     }
 }
@@ -237,6 +291,7 @@ fun MediaViewerScreen(
     authToken: String?,
     onPage: (String) -> Unit,
     onPauseAudio: () -> Unit,
+    onClose: () -> Unit = {},
 ) {
     val start = files.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
     val pager = rememberPagerState(initialPage = start) { files.size }
@@ -250,11 +305,55 @@ fun MediaViewerScreen(
             pager.scrollToPage(index)
         }
     }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+    var chromeVisible by remember { mutableStateOf(true) }
+    var zoomed by remember { mutableStateOf(false) }
+    // Dragging a photo down closes the viewer: the picture follows the finger, the backdrop fades.
+    val drag = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val dragProgress = (abs(drag.value) / 900f).coerceIn(0f, 1f)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 1f - dragProgress * 0.85f)),
+    ) {
+        HorizontalPager(
+            state = pager,
+            userScrollEnabled = !zoomed,
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationY = drag.value
+                    val s = 1f - dragProgress * 0.15f
+                    scaleX = s
+                    scaleY = s
+                }
+                .pointerInput(zoomed) {
+                    if (zoomed) return@pointerInput
+                    detectVerticalDragGestures(
+                        onDragEnd = {
+                            scope.launch {
+                                if (abs(drag.value) > 260f) {
+                                    drag.animateTo(if (drag.value > 0) 1600f else -1600f, tween(Motion.Medium))
+                                    onClose()
+                                } else {
+                                    drag.animateTo(0f, Motion.spring())
+                                }
+                            }
+                        },
+                        onDragCancel = { scope.launch { drag.animateTo(0f, Motion.spring()) } },
+                    ) { change, amount ->
+                        change.consume()
+                        scope.launch { drag.snapTo(drag.value + amount) }
+                    }
+                },
+        ) { page ->
             val file = files[page]
             when (file.mediaKind) {
-                MediaKind.PHOTO -> ZoomablePhoto(file)
+                MediaKind.PHOTO -> ZoomablePhoto(
+                    file = file,
+                    onTap = { chromeVisible = !chromeVisible },
+                    onZoomChange = { zoomed = it },
+                )
                 MediaKind.VIDEO -> {
                     LaunchedEffect(file.id) { onPauseAudio() }
                     VideoPlayer(file, authToken)
@@ -262,29 +361,44 @@ fun MediaViewerScreen(
                 else -> Text(file.name, color = Color.White, modifier = Modifier.padding(24.dp))
             }
         }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        AnimatedVisibility(
+            visible = chromeVisible && dragProgress == 0f,
+            modifier = Modifier.align(Alignment.TopCenter),
+            enter = fadeIn(tween(Motion.Fast)),
+            exit = fadeOut(tween(Motion.Fast)),
         ) {
             val current = files.getOrNull(pager.currentPage)
-            Column(Modifier.weight(1f)) {
-                Text(current?.name.orEmpty(), color = Color.White, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "${pager.currentPage + 1} / ${files.size}",
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent)))
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
+                    Text(current?.name.orEmpty(), color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text(
+                        "${pager.currentPage + 1} of ${files.size}",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
     }
 }
 
+/** Pinch to zoom, double tap to jump between fit and 2.5x, tap to hide the controls. */
 @Composable
-private fun ZoomablePhoto(file: LocalFile) {
+private fun ZoomablePhoto(file: LocalFile, onTap: () -> Unit, onZoomChange: (Boolean) -> Unit) {
     var scale by remember(file.id) { mutableFloatStateOf(1f) }
     var offset by remember(file.id) { mutableStateOf(Offset.Zero) }
+    val animatedScale by animateFloatAsState(scale, Motion.spring(), label = "photoZoom")
+    LaunchedEffect(scale) { onZoomChange(scale > 1.01f) }
     AsyncImage(
         model = mediaModel(file.path) ?: file.remoteUrl ?: file.path,
         contentDescription = file.name,
@@ -292,15 +406,42 @@ private fun ZoomablePhoto(file: LocalFile) {
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
+                scaleX = animatedScale,
+                scaleY = animatedScale,
                 translationX = offset.x,
                 translationY = offset.y,
             )
             .pointerInput(file.id) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 5f)
-                    offset = if (scale == 1f) Offset.Zero else offset + pan
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onDoubleTap = {
+                        if (scale > 1.01f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    },
+                )
+            }
+            .pointerInput(file.id) {
+                // Only claims the gesture for two fingers or when already zoomed, so a one-finger
+                // swipe still pages the viewer and a drag down still closes it.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val fingers = event.changes.count { it.pressed }
+                        if (fingers >= 2 || scale > 1.01f) {
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            if (zoom != 1f || pan != Offset.Zero) {
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset = if (scale <= 1f) Offset.Zero else offset + pan
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             },
     )

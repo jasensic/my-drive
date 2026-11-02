@@ -1,8 +1,25 @@
 package com.jasensic.mydrive.presentation.ui
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import com.jasensic.mydrive.presentation.theme.Motion
+import com.jasensic.mydrive.presentation.theme.pressScale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -52,7 +69,6 @@ import com.jasensic.mydrive.domain.songTitle
 import com.jasensic.mydrive.domain.trackHeadline
 import com.jasensic.mydrive.domain.trackSubtitle
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MusicScreen(
     tracks: List<LocalFile>,
@@ -60,6 +76,8 @@ fun MusicScreen(
     albumId: String?,
     artistName: String?,
     selectedIds: Set<String>,
+    playingId: String? = null,
+    isPlaying: Boolean = false,
     onPlay: (List<LocalFile>, String) -> Unit,
     onOpenAlbum: (String?) -> Unit,
     onOpenArtist: (String?) -> Unit,
@@ -100,19 +118,15 @@ fun MusicScreen(
     if (detail != null) {
         Column(Modifier.fillMaxSize().padding(contentPadding)) {
             Row(
-                Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(detail.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("${detailTracks.size} tracks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(detail.name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${detailTracks.size} tracks", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (detailTracks.isNotEmpty()) {
-                    TextButton(onClick = { onPlay(detailTracks, detailTracks.first().id) }) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Play")
-                    }
+                    PlayPill("Play") { onPlay(detailTracks, detailTracks.first().id) }
                 }
             }
             LibrarySearchField(query = query, onQueryChange = { query = it }, placeholder = "Search songs")
@@ -127,6 +141,8 @@ fun MusicScreen(
                 TrackList(
                     tracks = detailTracks,
                     selectedIds = selectedIds,
+                    playingId = playingId,
+                    isPlaying = isPlaying,
                     onPlay = { track ->
                         if (selecting) onToggleSelect(track.id) else onPlay(detailTracks, track.id)
                     },
@@ -142,29 +158,25 @@ fun MusicScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                    .padding(start = 20.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Music", style = MaterialTheme.typography.headlineMedium)
                     Text(
                         if (searching) "${filteredSongs.size + filteredOther.size} matches" else "${tracks.size} tracks",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 if (playable.isNotEmpty()) {
-                    TextButton(onClick = { onPlay(playable, playable.first().id) }) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Play all")
-                    }
+                    PlayPill("Play all") { onPlay(playable, playable.first().id) }
                 }
             }
         }
@@ -203,6 +215,8 @@ fun MusicScreen(
                 TrackRow(
                     track,
                     selected = track.id in selectedIds,
+                    playing = track.id == playingId,
+                    isPlaying = isPlaying,
                     onClick = {
                         if (selecting) onToggleSelect(track.id) else onPlay(filteredSongs, track.id)
                     },
@@ -216,6 +230,8 @@ fun MusicScreen(
                 TrackRow(
                     track,
                     selected = track.id in selectedIds,
+                    playing = track.id == playingId,
+                    isPlaying = isPlaying,
                     onClick = {
                         if (selecting) onToggleSelect(track.id) else onPlay(filteredOther, track.id)
                     },
@@ -227,33 +243,55 @@ fun MusicScreen(
     }
 }
 
+
 @Composable
 private fun SectionLabel(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
     )
+}
+
+@Composable
+private fun PlayPill(label: String, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    Row(
+        Modifier
+            .pressScale(source)
+            .height(36.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(interactionSource = source, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium.copy(fontSize = 15.sp), color = MaterialTheme.colorScheme.primary)
+    }
 }
 
 @Composable
 private fun MusicCarousel(groups: List<MusicGroup>, onClick: (MusicGroup) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         items(groups, key = { it.id }) { group ->
+            val source = remember { MutableInteractionSource() }
             Column(
                 Modifier
                     .width(148.dp)
-                    .clickable { onClick(group) },
+                    .pressScale(source, 0.95f)
+                    .clickable(interactionSource = source, indication = null) { onClick(group) },
             ) {
                 Artwork(
                     file = group.tracks.firstOrNull(),
                     fallbackName = group.name,
                     icon = Icons.Filled.MusicNote,
                     modifier = Modifier.size(148.dp),
-                    corner = 14.dp,
+                    corner = 12.dp,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(group.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
@@ -277,6 +315,8 @@ private fun MusicCarousel(groups: List<MusicGroup>, onClick: (MusicGroup) -> Uni
 private fun TrackList(
     tracks: List<LocalFile>,
     selectedIds: Set<String>,
+    playingId: String?,
+    isPlaying: Boolean,
     onPlay: (LocalFile) -> Unit,
     onLongPress: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -286,6 +326,8 @@ private fun TrackList(
             TrackRow(
                 track,
                 selected = track.id in selectedIds,
+                playing = track.id == playingId,
+                isPlaying = isPlaying,
                 onClick = { onPlay(track) },
                 onLongClick = { onLongPress(track.id) },
             )
@@ -293,55 +335,94 @@ private fun TrackList(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(
     track: LocalFile,
     selected: Boolean = false,
+    playing: Boolean = false,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val background by animateColorAsState(
+        if (selected) colors.primaryContainer else Color.Transparent,
+        tween(Motion.Fast),
+        label = "trackSelected",
+    )
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .alpha(if (selected) 1f else 1f),
+            .background(background)
+            .rowClickable(onClick, onLongClick)
+            .drawBehind {
+                drawLine(
+                    colors.outlineVariant,
+                    Offset(80.dp.toPx(), size.height - 0.5f),
+                    Offset(size.width, size.height - 0.5f),
+                    strokeWidth = 1f,
+                )
+            }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Artwork(
-            file = track,
-            fallbackName = track.displayAlbum,
-            icon = Icons.Filled.MusicNote,
-            modifier = Modifier.size(52.dp),
-            corner = 8.dp,
-        )
+        Box(Modifier.size(50.dp), contentAlignment = Alignment.Center) {
+            Artwork(
+                file = track,
+                fallbackName = track.displayAlbum,
+                icon = Icons.Filled.MusicNote,
+                modifier = Modifier.fillMaxSize(),
+                corner = 8.dp,
+            )
+            if (playing) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color.Black.copy(alpha = 0.38f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EqualizerBars(playing = isPlaying, color = Color.White)
+                }
+            }
+        }
         Column(Modifier.weight(1f)) {
-            Text(track.trackHeadline(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                track.trackHeadline(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (playing) colors.primary else colors.onSurface,
+            )
             val subtitle = listOfNotNull(
                 track.trackSubtitle().takeIf { it.isNotBlank() },
                 "Shared".takeIf { track.shared },
-                "On device".takeIf { track.onDevice && !track.path.isBlank() && track.remoteUrl != null },
             ).joinToString(" · ")
             if (subtitle.isNotBlank()) {
                 Text(
                     subtitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant,
                 )
             }
         }
-        if (selected) {
-            Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
-        } else {
-            Text(
-                formatDuration(track.durationMs),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        AnimatedContent(
+            targetState = selected,
+            transitionSpec = { (scaleIn(Motion.spring()) + fadeIn(tween(Motion.Fast))) togetherWith fadeOut(tween(Motion.Fast)) },
+            label = "trackTrailing",
+        ) { isSelected ->
+            if (isSelected) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = colors.primary)
+            } else {
+                Text(
+                    formatDuration(track.durationMs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            }
         }
     }
 }

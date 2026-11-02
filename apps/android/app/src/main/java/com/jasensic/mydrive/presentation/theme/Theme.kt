@@ -3,7 +3,9 @@ package com.jasensic.mydrive.presentation.theme
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -11,47 +13,83 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.jasensic.mydrive.domain.ThemeMode
 
+// Mapping used across the app:
+//   background        grouped background (the page)
+//   surface           rows and cards sitting on the page
+//   surfaceVariant    fills: search field, segmented control, chips
+//   outlineVariant    hairline separators
+//   onSurfaceVariant  secondary label
 private val LightColors = lightColorScheme(
-    primary = TealDark,
+    primary = AccentLight,
     onPrimary = Color.White,
-    primaryContainer = TealContainerLight,
-    onPrimaryContainer = Color(0xFF042F2E),
-    secondary = Amber,
-    onSecondary = Color(0xFF3B2500),
-    secondaryContainer = Color(0xFFFFE7C2),
-    onSecondaryContainer = Color(0xFF3B2500),
-    tertiary = Color(0xFF6366F1),
-    background = Mist,
-    onBackground = Color(0xFF10201C),
-    surface = Paper,
-    onSurface = Color(0xFF10201C),
-    surfaceVariant = Cloud,
-    onSurfaceVariant = Color(0xFF3F4F4B),
-    outline = Color(0xFF6B7C77),
-    error = DangerLight,
+    primaryContainer = AccentLight.copy(alpha = 0.12f),
+    onPrimaryContainer = AccentLight,
+    secondary = AccentLight,
+    onSecondary = Color.White,
+    secondaryContainer = FillLight,
+    onSecondaryContainer = LabelLight,
+    tertiary = AccentLight,
+    background = GroupedBackgroundLight,
+    onBackground = LabelLight,
+    surface = SurfaceLight,
+    onSurface = LabelLight,
+    surfaceVariant = FillLight,
+    onSurfaceVariant = SecondaryLabelLight,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = SurfaceLight,
+    surfaceContainerLow = SurfaceLight,
+    surfaceContainer = SurfaceLight,
+    surfaceContainerHigh = SurfaceLight,
+    surfaceContainerHighest = FillLight,
+    outline = SecondaryLabelLight,
+    outlineVariant = SeparatorLight,
+    error = DestructiveLight,
+    onError = Color.White,
+    errorContainer = DestructiveLight.copy(alpha = 0.12f),
+    onErrorContainer = DestructiveLight,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = TealLight,
-    onPrimary = Color(0xFF042F2E),
-    primaryContainer = TealContainerDark,
-    onPrimaryContainer = Color(0xFF99F6E4),
-    secondary = AmberDark,
-    onSecondary = Color(0xFF3B2500),
-    secondaryContainer = Color(0xFF7A4B05),
-    onSecondaryContainer = Color(0xFFFFE7C2),
-    tertiary = Color(0xFFA5B4FC),
-    background = Ink,
-    onBackground = Color(0xFFE7F5F1),
-    surface = Forest,
-    onSurface = Color(0xFFE7F5F1),
-    surfaceVariant = Slate,
-    onSurfaceVariant = Color(0xFFB7C7C2),
-    outline = Color(0xFF8AA09A),
-    error = DangerDark,
+    primary = AccentDark,
+    onPrimary = Color.White,
+    primaryContainer = AccentDark.copy(alpha = 0.20f),
+    onPrimaryContainer = AccentDark,
+    secondary = AccentDark,
+    onSecondary = Color.White,
+    secondaryContainer = FillDark,
+    onSecondaryContainer = LabelDark,
+    tertiary = AccentDark,
+    background = GroupedBackgroundDark,
+    onBackground = LabelDark,
+    surface = SurfaceDark,
+    onSurface = LabelDark,
+    surfaceVariant = FillDark,
+    onSurfaceVariant = SecondaryLabelDark,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = GroupedBackgroundDark,
+    surfaceContainerLow = SurfaceDark,
+    surfaceContainer = SurfaceDark,
+    surfaceContainerHigh = SurfaceDark,
+    surfaceContainerHighest = FillDark,
+    outline = SecondaryLabelDark,
+    outlineVariant = SeparatorDark,
+    error = DestructiveDark,
+    onError = Color.White,
+    errorContainer = DestructiveDark.copy(alpha = 0.20f),
+    onErrorContainer = DestructiveDark,
+)
+
+/** Soft corners everywhere; dialogs use the iOS alert radius. */
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(16.dp),
+    extraLarge = RoundedCornerShape(14.dp),
 )
 
 @Composable
@@ -83,6 +121,8 @@ fun MyDriveTheme(
     }
     MaterialTheme(
         colorScheme = scheme,
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content,
     )
 }
