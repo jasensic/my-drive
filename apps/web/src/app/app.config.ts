@@ -120,13 +120,14 @@ import {
 } from './application/use-cases.tokens';
 import { PRIMENG_LICENSE } from '../primeng-license';
 import { MusicPlaybackService } from './presentation/music-playback.service';
+import { sessionExpiredInterceptor } from './presentation/session-expired.interceptor';
 import { ThemeModeService } from './presentation/theme.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([authInterceptor, sessionExpiredInterceptor])),
     providePrimeNG({
       theme: { preset: portalPreset, options: { darkModeSelector: '.app-dark' } },
       license: PRIMENG_LICENSE,
