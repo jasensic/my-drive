@@ -45,6 +45,10 @@ android {
         }
     }
     buildTypes {
+        debug {
+            // Lets a debug build live next to the installed release app.
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = false
             signingConfig = if (keystore.isNotEmpty()) {

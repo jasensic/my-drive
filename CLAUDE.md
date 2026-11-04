@@ -131,6 +131,9 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 - JWT en `localStorage` (`LocalTokenStore`) + `authInterceptor`. Medios autenticados se cargan como `Blob` (`LOAD_MEDIA_BLOB`) porque `<img>/<video>` no envían el header.
 - Claves de Google/Spotify y licencia PrimeNG se inyectan en build con `scripts/ng-env.mjs` desde el `.env` de la raíz (el Dockerfile lo copia si existe).
 - PrimeNG solo en `presentation/`. Componentes inyectan casos de uso por token, nunca `HttpClient` ni clases de `data/`.
+- **Diseño** (mismos tokens que Android; tabla en la sección de diseño de Android si ya está fusionada): los valores viven en `presentation/theme.preset.ts` (PrimeNG: acento `#007AFF`/`#0A84FF`, superficies neutras, campos rellenos sin borde, radio 10–14) y en las variables `--md-*` de `src/styles.scss` (`--md-canvas`, `--md-surface`, `--md-fill`, `--md-accent`, `--md-glass`…). Barra lateral y superior translúcidas (`backdrop-filter`), títulos grandes sin icono, tarjetas sin borde, rojo solo para acciones destructivas (`severity="danger"`).
+- **Movimiento**: CSS puro, con `--md-ease` y `--md-spring`; la página entra con `page-in` (320 ms), las rejillas con una onda corta, el reproductor flota con `float-in`, los botones se encogen al pulsarlos. `prefers-reduced-motion` lo desactiva todo.
+- **Tests e2e**: los page objects dependen de roles y nombres accesibles (enlaces del menú, botones `Logout`, `Dark mode`/`Light mode`, `Search`, `p-card` por `hasText`). Al restilar, cambia CSS, no roles ni textos; en móvil las etiquetas de la barra superior se ocultan visualmente (`.btn-label`) pero siguen en el DOM.
 
 ## Configuración
 
@@ -148,6 +151,26 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 - **NAS**: no hay copias de seguridad de `pgdata`/`miniodata`; HTTP plano en la LAN.
 - GC de papelera solo al llamar `GET /v1/files/trash` (efecto lateral en un GET).
 
+## Diseño de la app Android (hecho) y tokens para el portal
+
+La app Android sigue una estética tipo iOS: superficies neutras, un único acento, jerarquía por tipografía en vez de cajas, y movimiento con resortes. Los tokens viven en `apps/android/app/.../presentation/theme/` (`Color.kt`, `Type.kt`, `Theme.kt`, `Motion.kt`) y los componentes compartidos en `presentation/ui/Ios.kt`. **El portal debe usar los mismos valores** (punto 7 de la hoja de ruta).
+
+| Token | Claro | Oscuro |
+| --- | --- | --- |
+| Acento (`primary`) | `#007AFF` | `#0A84FF` |
+| Fondo de página (`background`) | `#F2F2F7` | `#000000` |
+| Filas y tarjetas (`surface`) | `#FFFFFF` | `#1C1C1E` |
+| Relleno: buscador, segmentado, chips (`surfaceVariant`) | `#E9E9EE` | `#2C2C2E` |
+| Separador (`outlineVariant`) | `#D9D9DE` | `#38383A` |
+| Texto / texto secundario | `#000000` / `#6C6C70` | `#FFFFFF` / `#AEAEB2` |
+| Destructivo (`error`) | `#FF3B30` | `#FF453A` |
+
+- **Tipografía** (`Type.kt`): Large Title 34 bold, Title 22 semibold, Headline 17 semibold, Body 17, Subhead 15, Footnote 13, Caption 11. Radios: 10 (campos), 12–14 (tarjetas, diálogos), 16 (mini reproductor), capsule en chips y píldoras.
+- **Estructura**: tres pestañas (Music, Photos, Files); los ajustes van en una hoja desde el engranaje; barra superior fina con `Device | Server`, indicador de sync en píldora (`SyncPill`), menú `…` y engranaje. El título grande es el primer elemento de cada lista y se desplaza con ella.
+- **Movimiento** (`Motion.kt`): resortes para posición y tamaño (`Motion.spring()`), sin rebote en toques (`snap()`), `sheet()` para cubiertas; fundidos de 150–260 ms; nada dura más de ~400 ms. Cambio de pestaña desliza en horizontal; abrir un álbum empuja; Now Playing sube como hoja y se cierra arrastrando la portada; el visor de fotos se cierra arrastrando hacia abajo, zoom con doble toque, toque para ocultar controles; selección con insignia animada, barra contextual que sustituye a las pestañas y háptico (`Haptics`).
+- **Reglas**: un solo botón relleno por pantalla; destructivo solo en rojo; sin ripple en filas (se oscurecen al pulsar, `rowClickable`); el hub se mantiene compuesto bajo el visor y Now Playing para conservar el scroll; no copies gestos de iOS que rompan el botón o gesto atrás de Android.
+- **Probar visualmente**: hay un AVD (`Pixel_10_Pro`). `./gradlew :app:assembleDebug` instala como `com.jasensic.mydrive.debug` (sufijo de `applicationId` en `debug`), así que convive con la app de release y sus datos. Con `adb shell cmd uimode night yes|no` cambias entre claro y oscuro, y `adb exec-out screencap -p` captura la pantalla. Un API de pruebas con datos de ejemplo: `MEMORY_BACKEND=true` en el puerto 18080 y servidor `10.0.2.2:18080` en el emulador.
+
 ## Hoja de ruta (cambios planificados)
 
 Orden sugerido; cada punto es un PR propio. Al terminar uno, muévelo fuera de esta lista y actualiza las secciones de arriba.
@@ -157,8 +180,8 @@ Orden sugerido; cada punto es un PR propio. Al terminar uno, muévelo fuera de e
 3. **Sync por cambios**: tabla `changes` con número de secuencia y `GET /v1/sync/changes?cursor=N` paginado en lugar del manifiesto completo.
 4. **URLs firmadas de corta duración** para `<img>/<video>`, ExoPlayer y Coil, así el portal reproduce en streaming sin descargar Blobs.
 5. **Copias de seguridad** de `pgdata`/`miniodata` (`pg_dump` + `mc mirror`) y un `/health` que compruebe la base de datos y MinIO.
-6. **Rediseño de la interfaz web y Android: estética tipo Apple, minimalista y fácil de usar.**
-   - **Un solo sistema de diseño para las dos apps.** Hoy no coinciden: el portal usa salvia/rosa/arena (`apps/web/src/app/presentation/theme.preset.ts`, tokens `--md-*` en `apps/web/src/styles.scss`) y Android verde azulado/ámbar (`presentation/theme/Color.kt`, `Theme.kt`). Define los tokens una vez (color, tipografía, espaciado, radios, sombras) en una tabla de este fichero y replícalos en ambos sitios.
+6. **Rediseño del portal web con el mismo sistema de diseño (Android ya está hecho, ver arriba).**
+   - **Un solo sistema de diseño para las dos apps.** Android ya usa los tokens de la tabla de arriba; el portal sigue con salvia/rosa/arena (`apps/web/src/app/presentation/theme.preset.ts`, tokens `--md-*` en `apps/web/src/styles.scss`). Replica los tokens en el preset de PrimeNG y en `styles.scss`.
    - **Color**: superficies neutras (blanco/gris muy claro; negro/gris grafito en oscuro), un único color de acento y rojo solo para acciones destructivas. Claro/oscuro automático según el sistema (el portal ya tiene `ThemeModeService`).
    - **Tipografía y espacio**: fuente del sistema (`-apple-system, BlinkMacSystemFont, "SF Pro Text"`, Inter de respaldo; en Android la del sistema), títulos grandes, mucho aire, jerarquía por tamaño y peso en vez de bordes y cajas. Radios de 10–14 px y sombras muy suaves.
    - **Contenido primero**: fotos en una cuadrícula a sangre con visor a pantalla completa y gestos; música como lista limpia con carátula y un mini-reproductor fijo; archivos como lista sencilla. Barras de navegación translúcidas (`backdrop-filter: blur` en web).

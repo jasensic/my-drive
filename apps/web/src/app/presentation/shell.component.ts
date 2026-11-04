@@ -23,7 +23,10 @@ import { ThemeModeService } from './theme.service';
           <span>my-drive</span>
         </a>
         <nav class="nav" aria-label="Primary">
-          @for (item of nav(); track item.routerLink) {
+          @for (item of nav(); track item.routerLink; let first = $first; let i = $index) {
+            @if (first || item.section !== nav()[i - 1].section) {
+              <span class="nav-section">{{ item.section }}</span>
+            }
             <a
               class="nav-link"
               [routerLink]="item.routerLink"
@@ -51,17 +54,17 @@ import { ThemeModeService } from './theme.service';
           <div class="topbar-end">
             <button type="button" class="ghost-btn search-trigger" (click)="openSearch()">
               <svg lucideIcon="search" aria-hidden="true" />
-              Search
+              <span class="btn-label">Search</span>
               <kbd>{{ searchShortcut }}</kbd>
             </button>
             <button type="button" class="ghost-btn" (click)="theme.toggle()">
               <svg [lucideIcon]="theme.mode() === 'dark' ? 'sun' : 'moon'" aria-hidden="true" />
-              {{ theme.mode() === 'dark' ? 'Light mode' : 'Dark mode' }}
+              <span class="btn-label">{{ theme.mode() === 'dark' ? 'Light mode' : 'Dark mode' }}</span>
             </button>
             <span class="user-chip">{{ session.username() }}</span>
             <button type="button" class="ghost-btn" (click)="logout()">
               <svg lucideIcon="log-out" aria-hidden="true" />
-              Logout
+              <span class="btn-label">Logout</span>
             </button>
           </div>
         </header>
@@ -80,13 +83,13 @@ export class ShellComponent {
   readonly searchShortcut = navigator.platform.toLowerCase().includes('mac') ? '⌘K' : 'Ctrl K';
   private readonly isAdmin = signal(false);
   private readonly allNav = [
-    { label: 'Music', routerLink: '/music', icon: 'music' },
-    { label: 'Photos & videos', routerLink: '/photos', icon: 'images' },
-    { label: 'Files', routerLink: '/files', icon: 'folder' },
-    { label: 'Import', routerLink: '/imports', icon: 'cloud-download' },
-    { label: 'Devices', routerLink: '/devices', icon: 'monitor-smartphone' },
-    { label: 'Users', routerLink: '/users', icon: 'users', adminOnly: true },
-    { label: 'App updates', routerLink: '/app-updates', icon: 'package', adminOnly: true },
+    { section: 'Library', label: 'Music', routerLink: '/music', icon: 'music' },
+    { section: 'Library', label: 'Photos & videos', routerLink: '/photos', icon: 'images' },
+    { section: 'Library', label: 'Files', routerLink: '/files', icon: 'folder' },
+    { section: 'Library', label: 'Import', routerLink: '/imports', icon: 'cloud-download' },
+    { section: 'This drive', label: 'Devices', routerLink: '/devices', icon: 'monitor-smartphone' },
+    { section: 'This drive', label: 'Users', routerLink: '/users', icon: 'users', adminOnly: true },
+    { section: 'This drive', label: 'App updates', routerLink: '/app-updates', icon: 'package', adminOnly: true },
   ];
   readonly nav = computed(() => this.allNav.filter((item) => !('adminOnly' in item) || this.isAdmin()));
 
