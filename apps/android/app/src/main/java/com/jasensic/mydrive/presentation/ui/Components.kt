@@ -6,19 +6,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -34,8 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jasensic.mydrive.domain.LocalFile
-import com.jasensic.mydrive.domain.SyncPhase
-import com.jasensic.mydrive.presentation.UiState
+import com.jasensic.mydrive.presentation.theme.ArtworkPalette
 import java.io.File
 import kotlin.math.absoluteValue
 
@@ -46,17 +40,6 @@ fun mediaModel(path: String?): Any? {
     return if (file.isFile) file else path
 }
 
-private val AlbumPalette = listOf(
-    Color(0xFF0F766E),
-    Color(0xFF7C3AED),
-    Color(0xFFB45309),
-    Color(0xFF1D4ED8),
-    Color(0xFFBE123C),
-    Color(0xFF047857),
-    Color(0xFF4338CA),
-    Color(0xFF0E7490),
-)
-
 @Composable
 fun Artwork(
     file: LocalFile?,
@@ -66,7 +49,7 @@ fun Artwork(
     corner: Dp = 12.dp,
 ) {
     val color = remember(fallbackName) {
-        AlbumPalette[fallbackName.hashCode().absoluteValue % AlbumPalette.size]
+        ArtworkPalette[fallbackName.hashCode().absoluteValue % ArtworkPalette.size]
     }
     val artPath = file?.artworkPath ?: file?.thumbnailUrl
     val model = mediaModel(artPath)
@@ -87,18 +70,14 @@ fun Artwork(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(
-                        Brush.linearGradient(
-                            listOf(color, color.copy(alpha = 0.65f), Color.Black.copy(alpha = 0.25f)),
-                        ),
-                    ),
+                    .background(Brush.linearGradient(listOf(color.copy(alpha = 0.85f), color))),
             )
             if (icon != null) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.size(36.dp),
+                    tint = Color.White.copy(alpha = 0.92f),
+                    modifier = Modifier.fillMaxSize(0.46f),
                 )
             }
         }
@@ -111,25 +90,7 @@ fun LibrarySearchField(
     onQueryChange: (String) -> Unit,
     placeholder: String,
     modifier: Modifier = Modifier,
-) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        singleLine = true,
-        placeholder = { Text(placeholder) },
-        leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Clear search")
-                }
-            }
-        },
-    )
-}
+) = IosSearchField(query, onQueryChange, placeholder, modifier)
 
 @Composable
 fun EmptyLibrary(
@@ -139,14 +100,22 @@ fun EmptyLibrary(
     modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier.fillMaxSize().padding(32.dp),
+        modifier.fillMaxSize().padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(16.dp))
+        Box(
+            Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(20.dp))
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             body,
             style = MaterialTheme.typography.bodyMedium,
@@ -156,41 +125,24 @@ fun EmptyLibrary(
     }
 }
 
+/** "All" plus one capsule per album. Used by the Photos and Files lists. */
 @Composable
-fun SyncStatusBar(
-    state: UiState,
-    modifier: Modifier = Modifier,
+fun AlbumFilterRow(
+    albums: List<com.jasensic.mydrive.domain.Album>,
+    albumId: String?,
+    onOpenAlbum: (String?) -> Unit,
 ) {
-    val progress = state.syncProgress
-    val showSync = progress.isActive || progress.phase == SyncPhase.COMPLETED
-    val message = state.statusMessage ?: state.progress
-    if (!showSync && message == null) return
-
-    Column(modifier.fillMaxWidth()) {
-        when {
-            progress.phase == SyncPhase.DOWNLOADING && progress.totalFiles > 0 -> {
-                LinearProgressIndicator(
-                    progress = { progress.fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    "${progress.percent}% · ${message.orEmpty()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-            showSync || message != null -> {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                if (message != null) {
-                    Text(
-                        message,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-            }
+    androidx.compose.foundation.lazy.LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item { IosChip("All", albumId == null, { onOpenAlbum(null) }) }
+        items(albums, key = { it.id }) { album ->
+            IosChip(
+                label = if (album.shared) "${album.name} · Shared" else album.name,
+                selected = albumId == album.id,
+                onClick = { onOpenAlbum(album.id) },
+            )
         }
     }
 }

@@ -2,19 +2,16 @@ package com.jasensic.mydrive.presentation.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -22,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.ThemeMode
 import com.jasensic.mydrive.presentation.UiState
 
+/** The content of the settings sheet: grouped sections, one decision per row. */
 @Composable
 fun SettingsPage(
     state: UiState,
@@ -32,54 +30,98 @@ fun SettingsPage(
     onConnection: () -> Unit,
     onSignOut: () -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
     Column(
         Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .navigationBarsPadding()
+            .padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
-        Text("Server ${state.serverLabel}", style = MaterialTheme.typography.bodyMedium)
-        if (state.username.isNotBlank()) {
-            Text("Signed in as ${state.username}", style = MaterialTheme.typography.bodySmall)
-        }
-        Text("App ${state.appVersion} · last sync ${formatLocalInstant(state.lastSync).ifBlank { "never" }}", style = MaterialTheme.typography.bodySmall)
         Text(
-            "Sync runs in the background on this Wi-Fi. You can also start it now.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            "Settings",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(horizontal = 20.dp),
         )
-        Text("Theme", style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = themeMode == ThemeMode.SYSTEM, onClick = { onTheme(ThemeMode.SYSTEM) }, label = { Text("System") })
-            FilterChip(selected = themeMode == ThemeMode.LIGHT, onClick = { onTheme(ThemeMode.LIGHT) }, label = { Text("Light") })
-            FilterChip(selected = themeMode == ThemeMode.DARK, onClick = { onTheme(ThemeMode.DARK) }, label = { Text("Dark") })
-        }
+        ErrorBanner(state.error)
+
         state.availableUpdate?.let { release ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Update available: ${release.versionName}", style = MaterialTheme.typography.titleSmall)
-                    if (release.changelog.isNotBlank()) {
-                        Text(release.changelog, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Button(onClick = onUpdate, enabled = !state.isBusy) { Text("Install update") }
-                }
+            GroupedSection(
+                title = "Update",
+                footer = release.changelog.takeIf { it.isNotBlank() },
+            ) {
+                GroupedRow(
+                    title = "Version ${release.versionName} is ready",
+                    subtitle = "Downloads from your server",
+                    divider = false,
+                )
+                GroupedRow(
+                    title = "Install update",
+                    onClick = onUpdate,
+                    enabled = !state.isBusy,
+                    divider = false,
+                )
             }
         }
-        SyncStatusBar(state)
-        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Button(onClick = onSync, enabled = !state.isBusy, modifier = Modifier.fillMaxWidth()) {
-            Text("Sync now")
+
+        GroupedSection(title = "Sync", footer = "Sync runs in the background whenever this phone joins your Wi-Fi.") {
+            GroupedRow(
+                title = "Sync now",
+                onClick = onSync,
+                enabled = !state.isBusy,
+                trailing = {
+                    if (state.isBusy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = colors.primary)
+                },
+            )
+            GroupedRow(
+                title = "Last sync",
+                trailing = { ValueText(formatLocalInstant(state.lastSync).ifBlank { "Never" }) },
+                divider = false,
+            )
         }
-        OutlinedButton(onClick = onConnection, modifier = Modifier.fillMaxWidth()) {
-            Text("Connection and sign-in")
+
+        GroupedSection(title = "Appearance") {
+            GroupedRow(
+                title = "Theme",
+                divider = false,
+                trailing = {
+                    SegmentedControl(
+                        options = listOf("Auto", "Light", "Dark"),
+                        selectedIndex = themeMode.ordinal,
+                        onSelect = { onTheme(ThemeMode.entries[it]) },
+                        modifier = Modifier.padding(start = 12.dp).fillMaxWidth(0.62f),
+                    )
+                },
+            )
         }
-        if (state.loggedIn) {
-            OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
-                Text("Sign out")
+
+        GroupedSection(title = "Account") {
+            GroupedRow(title = "Server", trailing = { ValueText(state.serverLabel) })
+            if (state.username.isNotBlank()) {
+                GroupedRow(title = "Signed in as", trailing = { ValueText(state.username) })
+            }
+            GroupedRow(title = "App version", trailing = { ValueText(state.appVersion) }, divider = false)
+        }
+
+        GroupedSection {
+            GroupedRow(title = "Connection and sign-in", onClick = onConnection, divider = state.loggedIn)
+            if (state.loggedIn) {
+                GroupedRow(title = "Sign out", onClick = onSignOut, destructive = true, divider = false)
             }
         }
         Spacer(Modifier.height(8.dp))
     }
+}
+
+@Composable
+private fun ValueText(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        modifier = Modifier.padding(start = 12.dp),
+    )
 }

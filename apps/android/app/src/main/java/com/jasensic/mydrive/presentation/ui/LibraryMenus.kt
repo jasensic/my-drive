@@ -1,16 +1,31 @@
 package com.jasensic.mydrive.presentation.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CreateNewFolder
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.FolderOff
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.PlaylistAdd
+import androidx.compose.material.icons.outlined.QueuePlayNext
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,8 +35,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.jasensic.mydrive.domain.Album
 import com.jasensic.mydrive.domain.ShareGrant
@@ -29,6 +47,24 @@ import com.jasensic.mydrive.domain.SharePermission
 import com.jasensic.mydrive.domain.UserProfile
 import com.jasensic.mydrive.domain.wireValue
 
+@Composable
+private fun SheetAction(icon: ImageVector, title: String, divider: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
+    GroupedRow(
+        title = title,
+        leading = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
+        },
+        onClick = onClick,
+        divider = divider,
+        destructive = destructive,
+    )
+}
+
+/** What you can do with the selected items, as a list of actions rather than a pile of buttons. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryActionSheet(
@@ -43,25 +79,40 @@ fun LibraryActionSheet(
     onPlayNext: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 8.dp, vertical = 12.dp)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.background,
+        dragHandle = { SheetGrabber(Modifier.padding(vertical = 10.dp)) },
+    ) {
+        Column(
+            Modifier.navigationBarsPadding().padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text(
                 if (count == 1) "1 item" else "$count items",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
-            if (onPlayNext != null) {
-                TextButton(onClick = onPlayNext, modifier = Modifier.fillMaxWidth()) { Text("Play next") }
+            val queue = listOfNotNull(
+                onPlayNext?.let { Triple(Icons.Outlined.QueuePlayNext, "Play next", it) },
+                onAddToQueue?.let { Triple(Icons.Outlined.PlaylistAdd, "Add to queue", it) },
+            )
+            if (queue.isNotEmpty()) {
+                GroupedSection {
+                    queue.forEachIndexed { index, (icon, title, action) ->
+                        SheetAction(icon, title, divider = index != queue.lastIndex, onClick = action)
+                    }
+                }
             }
-            if (onAddToQueue != null) {
-                TextButton(onClick = onAddToQueue, modifier = Modifier.fillMaxWidth()) { Text("Add to queue") }
+            GroupedSection {
+                if (canRename) SheetAction(Icons.Outlined.Edit, "Rename", onClick = onRename)
+                SheetAction(Icons.Outlined.DriveFileMove, "Move to album", onClick = onMove)
+                SheetAction(Icons.Outlined.Share, "Share with another app", onClick = onShare)
+                SheetAction(Icons.Outlined.PersonAdd, "Share with account", divider = false, onClick = onShareWithAccount)
             }
-            if (canRename) {
-                TextButton(onClick = onRename, modifier = Modifier.fillMaxWidth()) { Text("Rename") }
+            GroupedSection {
+                SheetAction(Icons.Outlined.Delete, "Remove from this device", divider = false, destructive = true, onClick = onDelete)
             }
-            TextButton(onClick = onMove, modifier = Modifier.fillMaxWidth()) { Text("Move / album") }
-            TextButton(onClick = onShare, modifier = Modifier.fillMaxWidth()) { Text("Share with another app") }
-            TextButton(onClick = onShareWithAccount, modifier = Modifier.fillMaxWidth()) { Text("Share with account") }
-            TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) { Text("Remove from this device") }
         }
     }
 }
@@ -76,30 +127,46 @@ fun TextPromptDialog(
 ) {
     var value by remember { mutableStateOf(initial) }
     val focus = remember { FocusRequester() }
+    val colors = MaterialTheme.colorScheme
     LaunchedEffect(Unit) { focus.requestFocus() }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        containerColor = colors.surface,
+        title = { Text(title, style = MaterialTheme.typography.titleMedium) },
         text = {
-            OutlinedTextField(
+            BasicTextField(
                 value = value,
                 onValueChange = { value = it },
                 singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                cursorBrush = SolidColor(colors.primary),
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(focus)
                     .imePadding(),
+                decorationBox = { inner ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surfaceVariant)
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    ) { inner() }
+                },
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) { Text(confirmLabel) }
+            TextButton(onClick = { onConfirm(value) }, enabled = value.isNotBlank()) {
+                Text(confirmLabel, style = MaterialTheme.typography.labelLarge)
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Cancel", style = MaterialTheme.typography.bodyLarge) }
         },
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoveAlbumDialog(
     albums: List<Album>,
@@ -118,26 +185,27 @@ fun MoveAlbumDialog(
         )
         return
     }
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Move to album") },
-        text = {
-            Column(
-                Modifier.navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                TextButton(onClick = { onMove(null) }) { Text("No album") }
-                albums.forEach { album ->
-                    TextButton(onClick = { onMove(album.id) }) { Text(album.name) }
+        containerColor = MaterialTheme.colorScheme.background,
+        dragHandle = { SheetGrabber(Modifier.padding(vertical = 10.dp)) },
+    ) {
+        Column(
+            Modifier.navigationBarsPadding().padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text("Move to album", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp))
+            GroupedSection {
+                SheetAction(Icons.Outlined.FolderOff, "No album", divider = albums.isNotEmpty()) { onMove(null) }
+                albums.forEachIndexed { index, album ->
+                    SheetAction(Icons.Outlined.Folder, album.name, divider = index != albums.lastIndex) { onMove(album.id) }
                 }
-                TextButton(onClick = { creating = true }) { Text("Create album") }
             }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
-    )
+            GroupedSection {
+                SheetAction(Icons.Outlined.CreateNewFolder, "New album…", divider = false) { creating = true }
+            }
+        }
+    }
 }
 
 @Composable
