@@ -45,7 +45,7 @@ cd apps/web && npm test -- --watch=false
 cd apps/web && npm run test:e2e                  # requiere API + portal en marcha
 
 # Android (JDK 17; :domain es JVM puro, sin emulador)
-cd apps/android && ./gradlew buildSrc:test :domain:test
+cd apps/android && ./gradlew buildSrc:test :domain:test :app:testDebugUnitTest   # :app:testDebugUnitTest = descarga reanudable contra MockWebServer
 cd apps/android && ./gradlew :app:assembleRelease
 ```
 
@@ -107,7 +107,7 @@ CI (`.github/workflows/ci.yml`): `cargo test --workspace`, tests + build del por
    - Audio con variante móvil → `url` con `?variant=mobile` y tamaño/MIME/checksum del AAC.
    - `removed`: ids de `have_file_ids` que están en papelera, borrados, excluidos o ya no accesibles. **Lo que solo deja de cumplir las reglas se queda en el dispositivo.**
    - `last_sync_at` se envía pero el servidor lo ignora: el manifiesto es siempre completo.
-4. **Descarga** (`domain/.../SyncFilesUseCase.kt`): borra `removed`, reemplaza álbumes, descarga cada archivo que falta (hoy secuencialmente), verifica SHA-256, hace `commit` en Room y trae carátulas de audio. Al final guarda `generated_at` como `lastSyncAt`.
+4. **Descarga** (`domain/.../SyncFilesUseCase.kt` + `SyncDownloads.kt`): borra `removed`, reemplaza álbumes y baja los archivos que faltan con `FileDownloader`: `PARALLEL_DOWNLOADS` (4) a la vez, cada uno aislado (un fallo se reintenta una vez y, si persiste, queda en `SyncResult.failures` para el siguiente sync; solo `"login required"` aborta todo). `RemoteFileSource.downloadTo` escribe en `<destino>.part` y renombra al terminar; si queda un `.part`, pide el resto con `Range` (200 → empieza de cero, 416 → `.part` completo o caducado). Antes de bajar reserva espacio (`LocalMediaStore.freeBytes()` menos `FREE_SPACE_RESERVE_BYTES`); si no cabe, ese archivo falla y los demás siguen. Un archivo ya presente se reutiliza sin re-hash si Room guarda el mismo checksum verificado (`verifiedChecksums()`) y el tamaño coincide; las copias anteriores a esa columna se hashean una vez. Tras verificar SHA-256 hace `commit` (que guarda el checksum) y trae la carátula de los audios; si ni el archivo ni el servidor (404) la tienen se marca `artworkMissing` y no se vuelve a pedir. Al final guarda `generated_at` como `lastSyncAt`. El progreso (`SyncProgress.bytesDone/bytesTotal`) es agregado y se publica como mucho cada 150 ms.
 5. **Disparadores** (`WorkManagerSyncScheduler`, `WifiSyncReceiver`, `SyncWorker` en foreground `dataSync`): al entrar en una Wi-Fi nueva, cada hora mientras hay red, y manualmente. WorkManager solo recibe el host manual, nunca credenciales. Un 401 (también un refresh revocado) se traduce en `"login required"` y cierra la sesión local.
 6. **Exclusiones**: “quitar de este dispositivo” borra la copia local y encola el id; se envía con `PUT /v1/devices/{id}/exclusions` en el siguiente sync (cola offline en DataStore).
 7. **Actualización in-app**: tras sincronizar, `GET /v1/app/releases/latest`; si `versionCode` > `BuildConfig.VERSION_CODE`, descarga, verifica checksum e instala (`REQUEST_INSTALL_PACKAGES`).
@@ -118,7 +118,7 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 
 ## Android
 
-- Almacenamiento local privado: `filesDir/users/{userId}/media/{fileId}` (legacy `filesDir/media`), carátulas y caché aparte; Room por usuario (`AppDb` v4, `fallbackToDestructiveMigration`). Sesión, servidor y exclusiones en DataStore.
+- Almacenamiento local privado: `filesDir/users/{userId}/media/{fileId}` (legacy `filesDir/media`), carátulas y caché aparte; Room por usuario (`AppDb` v5; migraciones explícitas 3→4 y 4→5, `fallbackToDestructiveMigration` solo para versiones más antiguas). Sesión, servidor y exclusiones en DataStore.
 - `LocalMediaStore.library()` debe ser rápido (sin decodificar tags); `enrichMetadata()` rellena tags/carátulas después.
 - Navegación remota sin descargar: `BrowseRemoteLibraryUseCase` + `StreamRemoteFileUseCase` (Coil/ExoPlayer con `Authorization` inyectado por interceptor).
 - Reproducción: Media3 `PlaybackService` (MediaSession, Android Auto vía `automotive_app_desc.xml`), cola en `domain/PlaybackQueue.kt`.
@@ -147,7 +147,7 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 - **Manifiesto caro**: `BuildSyncManifest` llama a `ensure_mobile_audio` para cada audio de forma secuencial dentro de la petición; el primer sync con muchos FLAC transcodifica toda la biblioteca en ese request. También es O(biblioteca) en cada sync (sin delta ni cursor).
 - **CPU en el runtime async**: miniaturas (`image`) se generan dentro de handlers async sin `spawn_blocking`.
 - **Auth**: el portal no tiene refresh token (se vuelve a iniciar sesión cada 7 días); CORS `Any`; no hay forma de quitar ni degradar usuarios ni de cambiar contraseñas.
-- **Android sync**: descargas secuenciales y sin reanudación (escribe directo al destino, sin `.part` ni `Range`); un error aborta todo el sync; `reuseLocalFile` recalcula SHA-256 de cada archivo ya descargado en cada sync; se reintenta la carátula de cada audio sin portada en cada sync.
+- **Android sync**: un 401 en mitad de un sync lo aborta entero (correcto), pero un servidor lento sin errores no se distingue de uno caído hasta el timeout de lectura de 5 min; los `.part` de archivos que nunca llegaron a `commit` (p. ej. excluidos a medias) no se limpian hasta reinstalar.
 - **NAS**: no hay copias de seguridad de `pgdata`/`miniodata`; HTTP plano en la LAN.
 - GC de papelera solo al llamar `GET /v1/files/trash` (efecto lateral en un GET).
 
@@ -175,13 +175,12 @@ La app Android sigue una estética tipo iOS: superficies neutras, un único acen
 
 Orden sugerido; cada punto es un PR propio. Al terminar uno, muévelo fuera de esta lista y actualiza las secciones de arriba.
 
-1. **Sync de Android robusto**: 3–4 descargas en paralelo, `.part` + `Range` para reanudar, fallos aislados por archivo, checksum verificado guardado en Room (sin re-hash), comprobación de espacio libre y no reintentar carátulas inexistentes.
-2. **Streaming en el servidor**: `ObjectStore` con `put_stream`/`get_stream`, hash calculado mientras se escribe, subidas troceadas y reanudables (> 512 MB), y miniaturas con `spawn_blocking`. Valorar un adaptador de sistema de archivos como alternativa a MinIO.
-3. **Trabajo en segundo plano**: tabla `jobs` (`FOR UPDATE SKIP LOCKED`) para AAC, miniaturas (incl. HEIC/WebP y fotograma de vídeo), EXIF y purga de papelera. El manifiesto nunca transcodifica.
-4. **Sync por cambios**: tabla `changes` con número de secuencia y `GET /v1/sync/changes?cursor=N` paginado en lugar del manifiesto completo.
-5. **URLs firmadas de corta duración** para `<img>/<video>`, ExoPlayer y Coil, así el portal reproduce en streaming sin descargar Blobs.
-6. **Copias de seguridad** de `pgdata`/`miniodata` (`pg_dump` + `mc mirror`) y un `/health` que compruebe la base de datos y MinIO.
-7. **Rediseño del portal web con el mismo sistema de diseño (Android ya está hecho, ver arriba).**
+1. **Streaming en el servidor**: `ObjectStore` con `put_stream`/`get_stream`, hash calculado mientras se escribe, subidas troceadas y reanudables (> 512 MB), y miniaturas con `spawn_blocking`. Valorar un adaptador de sistema de archivos como alternativa a MinIO.
+2. **Trabajo en segundo plano**: tabla `jobs` (`FOR UPDATE SKIP LOCKED`) para AAC, miniaturas (incl. HEIC/WebP y fotograma de vídeo), EXIF y purga de papelera. El manifiesto nunca transcodifica.
+3. **Sync por cambios**: tabla `changes` con número de secuencia y `GET /v1/sync/changes?cursor=N` paginado en lugar del manifiesto completo.
+4. **URLs firmadas de corta duración** para `<img>/<video>`, ExoPlayer y Coil, así el portal reproduce en streaming sin descargar Blobs.
+5. **Copias de seguridad** de `pgdata`/`miniodata` (`pg_dump` + `mc mirror`) y un `/health` que compruebe la base de datos y MinIO.
+6. **Rediseño del portal web con el mismo sistema de diseño (Android ya está hecho, ver arriba).**
    - **Un solo sistema de diseño para las dos apps.** Android ya usa los tokens de la tabla de arriba; el portal sigue con salvia/rosa/arena (`apps/web/src/app/presentation/theme.preset.ts`, tokens `--md-*` en `apps/web/src/styles.scss`). Replica los tokens en el preset de PrimeNG y en `styles.scss`.
    - **Color**: superficies neutras (blanco/gris muy claro; negro/gris grafito en oscuro), un único color de acento y rojo solo para acciones destructivas. Claro/oscuro automático según el sistema (el portal ya tiene `ThemeModeService`).
    - **Tipografía y espacio**: fuente del sistema (`-apple-system, BlinkMacSystemFont, "SF Pro Text"`, Inter de respaldo; en Android la del sistema), títulos grandes, mucho aire, jerarquía por tamaño y peso en vez de bordes y cajas. Radios de 10–14 px y sombras muy suaves.

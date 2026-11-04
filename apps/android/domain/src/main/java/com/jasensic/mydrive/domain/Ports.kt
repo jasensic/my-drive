@@ -75,8 +75,16 @@ interface LocalMediaStore {
     fun pathFor(fileId: String): String
     fun artworkPathFor(fileId: String): String
     fun cachePathFor(fileId: String): String = pathFor("cache-$fileId")
+    /** Record [file] as stored at [path]. The caller has already verified its checksum. */
     suspend fun commit(file: ManifestFile, path: String)
     suspend fun knownIds(): Set<String>
+    /** Checksum each stored file was verified against, so a sync never re-hashes what it already checked. */
+    suspend fun verifiedChecksums(): Map<String, String> = emptyMap()
+    /** Bytes still free where files are stored. */
+    fun freeBytes(): Long = Long.MAX_VALUE
+    /** Audio for which neither the file nor the server has a cover, so syncs stop asking. */
+    suspend fun artworkMissingIds(): Set<String> = emptySet()
+    suspend fun markArtworkMissing(fileId: String) {}
     /** Fast catalog from local storage. Must not decode tags or artwork. */
     suspend fun library(): LocalLibrary
     /** Fill cached tags/artwork for rows that still need it. Returns the updated catalog. */

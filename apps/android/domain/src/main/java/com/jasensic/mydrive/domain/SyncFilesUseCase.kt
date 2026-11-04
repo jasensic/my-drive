@@ -148,6 +148,7 @@ class SyncFilesUseCase(
     private val exclusions: DeviceExclusionStore = InMemoryDeviceExclusionStore(),
 ) {
     private val signIn = SignInUseCase(discovery, remote, localStore, state, deviceName, progress)
+    private val downloader = FileDownloader(remote, localStore, progress)
 
     suspend fun execute(
         username: String? = null,
@@ -187,73 +188,13 @@ class SyncFilesUseCase(
             localStore.replaceAlbums(manifest.albums)
             val toFetch = manifest.files.filter { it.id !in excluded }
             val total = toFetch.size
-            var downloaded = 0
-            var completed = 0
-            for (file in toFetch) {
-                progress.publish(
-                    SyncProgress(
-                        phase = SyncPhase.DOWNLOADING,
-                        completedFiles = completed,
-                        totalFiles = total,
-                        currentFileName = file.name,
-                        currentBytes = 0L,
-                        currentTotalBytes = file.size.coerceAtLeast(0L),
-                        message = "Downloading ${file.name}…",
-                    ),
-                )
-                val path = localStore.pathFor(file.id)
-                val reused = reuseLocalFile(file, path)
-                if (!reused) {
-                    remote.downloadTo(lanUrl(base, file.url), session.token, path) { bytesRead, contentLength ->
-                        val totalBytes = when {
-                            contentLength > 0L -> contentLength
-                            file.size > 0L -> file.size
-                            else -> 0L
-                        }
-                        progress.publish(
-                            SyncProgress(
-                                phase = SyncPhase.DOWNLOADING,
-                                completedFiles = completed,
-                                totalFiles = total,
-                                currentFileName = file.name,
-                                currentBytes = bytesRead,
-                                currentTotalBytes = totalBytes,
-                                message = "Downloading ${file.name}…",
-                            ),
-                        )
-                    }
-                    if (file.checksum.isNotBlank() && file.checksum.startsWith("sha256:") &&
-                        !checksumMatchesPath(file.checksum, path)
-                    ) {
-                        java.io.File(path).delete()
-                        error("checksum mismatch for ${file.name}")
-                    }
-                    downloaded += 1
-                }
-                localStore.commit(file, path)
-                if (file.mediaKind == MediaKind.AUDIO) {
-                    ensureAudioArtwork(base, session.token, file.id)
-                }
-                completed += 1
-                progress.publish(
-                    SyncProgress(
-                        phase = SyncPhase.DOWNLOADING,
-                        completedFiles = completed,
-                        totalFiles = total,
-                        currentFileName = file.name,
-                        currentBytes = 0L,
-                        currentTotalBytes = 0L,
-                        message = "Downloading ${file.name}…",
-                    ),
-                )
-            }
-            for (file in localStore.library().files) {
-                if (file.mediaKind == MediaKind.AUDIO) {
-                    ensureAudioArtwork(base, session.token, file.id)
-                }
-            }
+            val outcome = downloader.run(base, session.token, toFetch)
+            val downloaded = outcome.downloaded
+            val failures = outcome.failures
+            backfillArtwork(base, session.token)
             state.saveLastSyncAt(manifest.generatedAt)
             val summary = when {
+                failures.isNotEmpty() -> "Downloaded $downloaded of $total files · ${failures.size} failed"
                 total == 0 -> "Up to date"
                 downloaded == 0 -> "Synced $total files"
                 else -> "Downloaded $downloaded of $total files"
@@ -266,9 +207,9 @@ class SyncFilesUseCase(
                     message = summary,
                 ),
             )
-            SyncResult(server, manifest.copy(files = toFetch), downloaded)
+            SyncResult(server, manifest.copy(files = toFetch), downloaded, failures)
         } catch (err: Throwable) {
-            if (err.message == "login required") {
+            if (err.message == LOGIN_REQUIRED) {
                 state.clearSession()
                 localStore.bindUser(null)
             }
@@ -318,28 +259,13 @@ class SyncFilesUseCase(
         }
     }
 
-    private suspend fun ensureAudioArtwork(base: String, token: String, fileId: String) {
-        val artPath = localStore.artworkPathFor(fileId)
-        val existing = java.io.File(artPath)
-        if (existing.isFile && existing.length() > 0L) {
-            localStore.rememberArtwork(fileId, artPath)
-            return
-        }
-        val embedded = localStore.captureEmbeddedArtwork(fileId)
-        if (!embedded.isNullOrBlank()) {
-            val embeddedFile = java.io.File(embedded)
-            if (embeddedFile.isFile && embeddedFile.length() > 0L) return
-        }
-        try {
-            remote.downloadTo(lanUrl(base, "/v1/files/$fileId/thumbnail"), token, artPath)
-            val downloaded = java.io.File(artPath)
-            if (downloaded.isFile && downloaded.length() > 0L) {
-                localStore.rememberArtwork(fileId, artPath)
-            } else {
-                downloaded.delete()
+    /** Covers that failed to arrive earlier, or that the user's earlier syncs never looked for. */
+    private suspend fun backfillArtwork(base: String, token: String) {
+        val noArtwork = localStore.artworkMissingIds()
+        for (file in localStore.library().files) {
+            if (file.mediaKind == MediaKind.AUDIO && file.id !in noArtwork) {
+                downloader.ensureArtwork(base, token, file.id, noArtwork)
             }
-        } catch (_: Throwable) {
-            java.io.File(artPath).delete()
         }
     }
 }

@@ -120,7 +120,7 @@ jobs:
         working-directory: apps/android
         env:
           ANDROID_PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon
       - uses: ./.github/actions/upload-named-android-apk
 
   e2e:
