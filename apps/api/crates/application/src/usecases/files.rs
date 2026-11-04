@@ -255,42 +255,6 @@ impl UploadTally {
     }
 }
 
-/// Largest photo or audio file whose bytes are kept while uploading to make a thumbnail.
-const THUMBNAIL_SOURCE_LIMIT: u64 = 32 * 1024 * 1024;
-
-/// Running checksum and size of an upload, plus its leading bytes while they are small enough
-/// to decode a thumbnail from.
-struct UploadTally {
-    hasher: Sha256,
-    size: u64,
-    head: Option<Vec<u8>>,
-}
-
-impl UploadTally {
-    fn new(keep_head: bool) -> Self {
-        Self {
-            hasher: Sha256::new(),
-            size: 0,
-            head: keep_head.then(Vec::new),
-        }
-    }
-
-    fn add(&mut self, chunk: &Bytes) {
-        self.hasher.update(chunk);
-        self.size += chunk.len() as u64;
-        if self.size > THUMBNAIL_SOURCE_LIMIT {
-            self.head = None;
-        } else if let Some(head) = &mut self.head {
-            head.extend_from_slice(chunk);
-        }
-    }
-
-    fn finish(&mut self) -> (u64, String, Option<Vec<u8>>) {
-        let checksum = format!("sha256:{:x}", self.hasher.clone().finalize());
-        (self.size, checksum, self.head.take())
-    }
-}
-
 pub struct ListFilesService {
     deps: Arc<Deps>,
 }
