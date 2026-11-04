@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use domain::{ByteRange, ByteStream, ObjectBody};
+use domain::{ByteRange, ByteStream, InMemoryJobQueue, ObjectBody};
 use domain::model::{
     Album, AppRelease, AuthSession, Device, FileRecord, Share, ShareResourceType, SyncProfile,
     TranscodedAudio, User, UserSummary,
@@ -149,6 +149,7 @@ pub fn deps_from(mem: Arc<TestMem>) -> Arc<Deps> {
         exclusions: mem.clone(),
         shares: mem.clone(),
         profiles: mem.clone(),
+        jobs: Arc::new(InMemoryJobQueue::new()),
         app_releases: mem.clone(),
         objects: mem,
         hasher: Arc::new(NoopHasher),
@@ -315,6 +316,18 @@ impl FileRepository for TestMem {
             .cloned()
             .collect())
     }
+    async fn list_trashed_before(&self, cutoff: DateTime<Utc>) -> Result<Vec<FileRecord>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .files
+            .iter()
+            .filter(|f| f.deleted_at.is_some_and(|at| at < cutoff))
+            .cloned()
+            .collect())
+    }
+
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError> {
         Ok(self
             .inner

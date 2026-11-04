@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use application::Services;
+use application::{JobWorker, Services};
 use infrastructure::config::Settings;
 use infrastructure::build_deps;
 use reqwest::multipart;
@@ -26,6 +26,11 @@ async fn spawn_app() -> (String, reqwest::Client) {
         musicdl_url: "http://127.0.0.1:8090".into(),
     };
     let deps = build_deps(&settings).await.unwrap();
+    tokio::spawn(
+        JobWorker::new(deps.clone())
+            .with_poll(std::time::Duration::from_millis(20))
+            .run(),
+    );
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let public = format!("http://{addr}");
@@ -676,6 +681,48 @@ async fn register_users_share_exclusions_and_mobile_audio() {
         .await
         .unwrap();
     assert_eq!(&original[..], b"fLaCnotreally");
+    let friend_device: Value = client
+        .post(format!("{base}/v1/devices"))
+        .bearer_auth(admin_token)
+        .json(&serde_json::json!({"name":"Phone B"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    // The AAC copy is made by a background job. The manifest never waits for it: a phone that
+    // does not have the file yet is not offered the original, it gets the AAC on a later sync.
+    let mut audio = None;
+    for _ in 0..200 {
+        let music_manifest: Value = client
+            .post(format!("{base}/v1/sync/manifest"))
+            .bearer_auth(admin_token)
+            .json(&serde_json::json!({
+                "device_id": friend_device["id"],
+                "have_file_ids": []
+            }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        audio = music_manifest["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == flac_id)
+            .cloned();
+        if audio.is_some() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let audio = audio.expect("the background job should have made the AAC copy");
+    assert_eq!(audio["mime"], "audio/mp4");
+    assert!(audio["url"].as_str().unwrap().contains("variant=mobile"));
+
     let mobile = client
         .get(format!("{base}/v1/files/{flac_id}/content?variant=mobile"))
         .bearer_auth(admin_token)
@@ -688,38 +735,6 @@ async fn register_users_share_exclusions_and_mobile_audio() {
     );
     let mobile_bytes = mobile.bytes().await.unwrap();
     assert_eq!(&mobile_bytes[..], b"fake-aac");
-
-    let friend_device: Value = client
-        .post(format!("{base}/v1/devices"))
-        .bearer_auth(admin_token)
-        .json(&serde_json::json!({"name":"Phone B"}))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    let music_manifest: Value = client
-        .post(format!("{base}/v1/sync/manifest"))
-        .bearer_auth(admin_token)
-        .json(&serde_json::json!({
-            "device_id": friend_device["id"],
-            "have_file_ids": []
-        }))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
-    let audio = music_manifest["files"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["id"] == flac_id)
-        .unwrap();
-    assert_eq!(audio["mime"], "audio/mp4");
-    assert!(audio["url"].as_str().unwrap().contains("variant=mobile"));
 }
 
 #[allow(dead_code)]

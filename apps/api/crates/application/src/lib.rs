@@ -1,4 +1,5 @@
 pub mod access;
+pub mod jobs;
 mod device_tokens;
 pub mod error;
 pub mod locks;
@@ -9,12 +10,13 @@ use std::sync::Arc;
 
 use domain::ports::{
     AlbumRepository, ApkInspector, AppReleaseRepository, AudioTranscoder, Clock, DeviceExclusionRepository,
-    DeviceRepository, FileRepository, MusicDownloader, ObjectStore, PasswordHasher, ShareRepository,
+    DeviceRepository, FileRepository, JobQueue, MusicDownloader, ObjectStore, PasswordHasher, ShareRepository,
     SyncProfileRepository, Thumbnailer, TokenService, UserRepository,
 };
 
 pub use access::{AccessibleAlbum, AccessibleFile, ResourceAccess};
 pub use error::AppError;
+pub use jobs::JobWorker;
 pub use locks::FileTranscodeLocks;
 pub use usecases::*;
 
@@ -31,6 +33,7 @@ pub struct Deps {
     pub shares: Arc<dyn ShareRepository>,
     pub profiles: Arc<dyn SyncProfileRepository>,
     pub app_releases: Arc<dyn AppReleaseRepository>,
+    pub jobs: Arc<dyn JobQueue>,
     pub objects: Arc<dyn ObjectStore>,
     pub hasher: Arc<dyn PasswordHasher>,
     pub tokens: Arc<dyn TokenService>,
