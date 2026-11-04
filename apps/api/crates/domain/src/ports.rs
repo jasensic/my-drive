@@ -7,6 +7,7 @@ use crate::model::{
     User, UserSummary,
 };
 use crate::music::{DownloadedAudio, MusicSearch};
+use crate::storage::{ByteRange, ObjectBody};
 use crate::DomainError;
 
 #[async_trait::async_trait]
@@ -133,13 +134,11 @@ pub trait ApkInspector: Send + Sync {
 #[async_trait::async_trait]
 pub trait ObjectStore: Send + Sync {
     async fn put(&self, key: &str, bytes: bytes::Bytes, content_type: &str) -> Result<(), DomainError>;
+    /// Reads a whole object into memory. Only for small ones; use `open` for anything a user can fill.
     async fn get(&self, key: &str) -> Result<bytes::Bytes, DomainError>;
-    async fn get_range(
-        &self,
-        key: &str,
-        start: u64,
-        end: Option<u64>,
-    ) -> Result<(bytes::Bytes, u64), DomainError>;
+    /// Opens an object, or part of it, as a stream. A range starting past the end is
+    /// `DomainError::RangeNotSatisfiable`.
+    async fn open(&self, key: &str, range: Option<ByteRange>) -> Result<ObjectBody, DomainError>;
     async fn delete(&self, key: &str) -> Result<(), DomainError>;
 }
 

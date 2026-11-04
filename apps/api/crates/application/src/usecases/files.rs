@@ -3,7 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use bytes::Bytes;
 use domain::model::{Album, FileRecord};
-use domain::{AlbumId, FileId, LibrarySilo, MediaKind, ShareResourceType, UserId};
+use domain::{
+    AlbumId, ByteRange, DomainError, FileId, LibrarySilo, MediaKind, ObjectBody, ShareResourceType, UserId,
+};
 use sha2::{Digest, Sha256};
 
 use crate::access::{
@@ -28,11 +30,10 @@ pub enum FileContentVariant {
     Mobile,
 }
 
+/// A file's bytes as a stream, so serving it never holds the whole file in memory.
 pub struct FileContent {
     pub mime: String,
-    pub total_size: u64,
-    pub data: Bytes,
-    pub start: u64,
+    pub body: ObjectBody,
 }
 
 #[async_trait]
@@ -141,17 +142,15 @@ impl UploadFile for UploadFileService {
         if let Some(album_id) = cmd.album_id {
             ensure_album_accepts(&self.deps, cmd.owner_id, album_id, media_kind).await?;
         }
-        let checksum = format!("sha256:{:x}", Sha256::digest(&cmd.bytes));
+        let checksum = sha256_checksum(cmd.bytes.clone()).await;
         let object_key = domain::media::object_key(media_kind, id, &cmd.name);
         self.deps
             .objects
             .put(&object_key, cmd.bytes.clone(), &mime)
             .await?;
 
-        let thumbnail_key = self
-            .deps
-            .thumbnailer
-            .jpeg_thumbnail(&cmd.bytes, &mime)
+        let thumbnail_key = jpeg_thumbnail(&self.deps, cmd.bytes.clone(), &mime)
+            .await
             .map(|thumb| {
                 let key = domain::media::thumbnail_object_key(id);
                 (key, thumb)
@@ -295,7 +294,7 @@ impl GetFileContentService {
 
     async fn cover_from_audio(&self, file: &FileRecord) -> Result<Bytes, AppError> {
         let audio = self.deps.objects.get(&file.object_key).await?;
-        let Some(thumb) = self.deps.thumbnailer.jpeg_thumbnail(&audio, &file.mime) else {
+        let Some(thumb) = jpeg_thumbnail(&self.deps, audio, &file.mime).await else {
             return Err(AppError::not_found("thumbnail not available"));
         };
         let key = domain::media::thumbnail_object_key(file.id);
@@ -328,12 +327,9 @@ impl GetFileContent for GetFileContentService {
             } else {
                 return Err(AppError::not_found("thumbnail not available"));
             };
-            let len = data.len() as u64;
             return Ok(FileContent {
                 mime: "image/jpeg".into(),
-                total_size: len,
-                data,
-                start: 0,
+                body: ObjectBody::from_bytes(data),
             });
         }
         if variant == FileContentVariant::Mobile {
@@ -350,24 +346,36 @@ impl GetFileContent for GetFileContentService {
         } else {
             (file.object_key.clone(), file.mime.clone(), file.size)
         };
-        if let Some(start) = start {
-            let (data, total) = self.deps.objects.get_range(&object_key, start, end).await?;
-            Ok(FileContent {
-                mime,
-                total_size: total,
-                data,
-                start,
-            })
-        } else {
-            let data = self.deps.objects.get(&object_key).await?;
-            Ok(FileContent {
-                mime,
-                total_size,
-                data,
-                start: 0,
-            })
-        }
+        let range = match start {
+            Some(start) => {
+                let range = ByteRange { start, end };
+                // Answer an impossible range from the record, without asking the store.
+                if range.resolve(total_size).is_none() {
+                    return Err(DomainError::RangeNotSatisfiable { total: total_size }.into());
+                }
+                Some(range)
+            }
+            None => None,
+        };
+        let body = self.deps.objects.open(&object_key, range).await?;
+        Ok(FileContent { mime, body })
     }
+}
+
+/// Hashing and image decoding are CPU-bound: keep them off the async workers that serve requests.
+async fn sha256_checksum(bytes: Bytes) -> String {
+    tokio::task::spawn_blocking(move || format!("sha256:{:x}", Sha256::digest(&bytes)))
+        .await
+        .expect("hashing does not panic")
+}
+
+async fn jpeg_thumbnail(deps: &Deps, bytes: Bytes, mime: &str) -> Option<Vec<u8>> {
+    let thumbnailer = deps.thumbnailer.clone();
+    let mime = mime.to_string();
+    tokio::task::spawn_blocking(move || thumbnailer.jpeg_thumbnail(&bytes, &mime))
+        .await
+        .ok()
+        .flatten()
 }
 
 fn in_silo(file: &FileRecord, silo: Option<LibrarySilo>) -> bool {

@@ -837,3 +837,74 @@ async fn device_refresh_tokens_and_admin_only_releases() {
         .unwrap();
     assert_eq!(publish.status(), 403);
 }
+
+#[tokio::test]
+async fn content_streams_ranges_and_reports_unsatisfiable_ones() {
+    let (base, client) = spawn_app().await;
+    let setup: Value = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"admin","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = setup["token"].as_str().unwrap();
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(b"0123456789abcdef".to_vec())
+            .file_name("ranges.bin")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let uploaded: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let url = format!("{base}{}", uploaded["content_url"].as_str().unwrap());
+
+    let fetch = |range: Option<&'static str>| {
+        let client = client.clone();
+        let url = url.clone();
+        async move {
+            let mut req = client.get(url).bearer_auth(token);
+            if let Some(range) = range {
+                req = req.header("Range", range);
+            }
+            req.send().await.unwrap()
+        }
+    };
+
+    let whole = fetch(None).await;
+    assert_eq!(whole.status(), 200);
+    assert_eq!(whole.headers()["content-length"], "16");
+    assert_eq!(whole.headers()["accept-ranges"], "bytes");
+    assert_eq!(whole.bytes().await.unwrap().as_ref(), b"0123456789abcdef");
+
+    for (range, content_range, body) in [
+        ("bytes=4-7", "bytes 4-7/16", &b"4567"[..]),
+        ("bytes=10-", "bytes 10-15/16", b"abcdef"),
+        ("bytes=4-999", "bytes 4-15/16", b"456789abcdef"),
+        ("bytes=0-0", "bytes 0-0/16", b"0"),
+    ] {
+        let part = fetch(Some(range)).await;
+        assert_eq!(part.status(), 206, "{range}");
+        assert_eq!(part.headers()["content-range"], content_range, "{range}");
+        assert_eq!(part.headers()["content-length"], body.len().to_string().as_str(), "{range}");
+        assert_eq!(part.bytes().await.unwrap().as_ref(), body, "{range}");
+    }
+
+    // A client resuming a download that is already complete asks for the byte after the last.
+    for range in ["bytes=16-", "bytes=100-"] {
+        let beyond = fetch(Some(range)).await;
+        assert_eq!(beyond.status(), 416, "{range}");
+        assert_eq!(beyond.headers()["content-range"], "bytes */16", "{range}");
+    }
+}
