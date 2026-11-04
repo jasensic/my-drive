@@ -131,6 +131,9 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 - JWT en `localStorage` (`LocalTokenStore`) + `authInterceptor`. Medios autenticados se cargan como `Blob` (`LOAD_MEDIA_BLOB`) porque `<img>/<video>` no envían el header.
 - Claves de Google/Spotify y licencia PrimeNG se inyectan en build con `scripts/ng-env.mjs` desde el `.env` de la raíz (el Dockerfile lo copia si existe).
 - PrimeNG solo en `presentation/`. Componentes inyectan casos de uso por token, nunca `HttpClient` ni clases de `data/`.
+- **Diseño** (mismos tokens que Android; tabla en la sección de diseño de Android si ya está fusionada): los valores viven en `presentation/theme.preset.ts` (PrimeNG: acento `#007AFF`/`#0A84FF`, superficies neutras, campos rellenos sin borde, radio 10–14) y en las variables `--md-*` de `src/styles.scss` (`--md-canvas`, `--md-surface`, `--md-fill`, `--md-accent`, `--md-glass`…). Barra lateral y superior translúcidas (`backdrop-filter`), títulos grandes sin icono, tarjetas sin borde, rojo solo para acciones destructivas (`severity="danger"`).
+- **Movimiento**: CSS puro, con `--md-ease` y `--md-spring`; la página entra con `page-in` (320 ms), las rejillas con una onda corta, el reproductor flota con `float-in`, los botones se encogen al pulsarlos. `prefers-reduced-motion` lo desactiva todo.
+- **Tests e2e**: los page objects dependen de roles y nombres accesibles (enlaces del menú, botones `Logout`, `Dark mode`/`Light mode`, `Search`, `p-card` por `hasText`). Al restilar, cambia CSS, no roles ni textos; en móvil las etiquetas de la barra superior se ocultan visualmente (`.btn-label`) pero siguen en el DOM.
 
 ## Configuración
 

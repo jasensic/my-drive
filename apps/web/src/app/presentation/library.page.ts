@@ -297,7 +297,7 @@ const SILO_COPY: Record<
                 </p-button>
               }
               @if (canManage(file)) {
-                <p-button label="Move to trash" [text]="true" (onClick)="trash(file)">
+                <p-button label="Move to trash" severity="danger" [text]="true" (onClick)="trash(file)">
                   <ng-template #icon><svg lucideIcon="trash-2" aria-hidden="true" /></ng-template>
                 </p-button>
               }
