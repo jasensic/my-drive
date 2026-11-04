@@ -1,11 +1,13 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use domain::model::{Album, FileRecord};
 use domain::{
-    AlbumId, ByteRange, DomainError, FileId, LibrarySilo, MediaKind, ObjectBody, ShareResourceType, UserId,
+    AlbumId, ByteRange, ByteStream, DomainError, FileId, LibrarySilo, MediaKind, ObjectBody,
+    ShareResourceType, UserId,
 };
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 
 use crate::access::{
@@ -20,8 +22,16 @@ pub struct UploadCommand {
     pub album_id: Option<AlbumId>,
     pub name: String,
     pub mime: String,
-    pub bytes: Bytes,
+    /// The file's bytes as they arrive. Nothing here holds them all at once.
+    pub content: ByteStream,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl UploadCommand {
+    /// A file that is already in memory, such as a download from another service.
+    pub fn content_from_bytes(bytes: Bytes) -> ByteStream {
+        ObjectBody::from_bytes(bytes).stream
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,9 +138,6 @@ impl UploadFile for UploadFileService {
         if cmd.name.trim().is_empty() {
             return Err(AppError::validation("file name is required"));
         }
-        if cmd.bytes.is_empty() {
-            return Err(AppError::validation("file is empty"));
-        }
         let now = self.deps.clock.now();
         let id = FileId::new();
         let mime = if cmd.mime.is_empty() {
@@ -142,19 +149,43 @@ impl UploadFile for UploadFileService {
         if let Some(album_id) = cmd.album_id {
             ensure_album_accepts(&self.deps, cmd.owner_id, album_id, media_kind).await?;
         }
-        let checksum = sha256_checksum(cmd.bytes.clone()).await;
         let object_key = domain::media::object_key(media_kind, id, &cmd.name);
-        self.deps
-            .objects
-            .put(&object_key, cmd.bytes.clone(), &mime)
-            .await?;
 
-        let thumbnail_key = jpeg_thumbnail(&self.deps, cmd.bytes.clone(), &mime)
+        // Hash and measure the bytes as they pass on their way to the store.
+        let tally = Arc::new(Mutex::new(UploadTally::new(matches!(
+            media_kind,
+            MediaKind::Photo | MediaKind::Audio
+        ))));
+        let counted = cmd.content.inspect({
+            let tally = tally.clone();
+            move |chunk| {
+                if let Ok(bytes) = chunk {
+                    tally.lock().unwrap().add(bytes);
+                }
+            }
+        });
+        if let Err(err) = self
+            .deps
+            .objects
+            .put_stream(&object_key, &mime, Box::pin(counted))
             .await
-            .map(|thumb| {
-                let key = domain::media::thumbnail_object_key(id);
-                (key, thumb)
-            });
+        {
+            let _ = self.deps.objects.delete(&object_key).await;
+            return Err(err.into());
+        }
+        let (size, checksum, head) = tally.lock().unwrap().finish();
+        if size == 0 {
+            let _ = self.deps.objects.delete(&object_key).await;
+            return Err(AppError::validation("file is empty"));
+        }
+
+        // Bigger files get their thumbnail the first time it is asked for.
+        let thumbnail_key = match head {
+            Some(head) => jpeg_thumbnail(&self.deps, Bytes::from(head), &mime)
+                .await
+                .map(|thumb| (domain::media::thumbnail_object_key(id), thumb)),
+            None => None,
+        };
         if let Some((key, thumb)) = &thumbnail_key {
             self.deps
                 .objects
@@ -167,7 +198,7 @@ impl UploadFile for UploadFileService {
             owner_id: cmd.owner_id,
             album_id: cmd.album_id,
             name: cmd.name,
-            size: cmd.bytes.len() as u64,
+            size,
             mime,
             checksum,
             object_key,
@@ -183,6 +214,42 @@ impl UploadFile for UploadFileService {
         };
         self.deps.files.insert(&record).await?;
         Ok(ensure_mobile_audio_best_effort(&self.deps, record).await)
+    }
+}
+
+/// Largest photo or audio file whose bytes are kept while uploading to make a thumbnail.
+const THUMBNAIL_SOURCE_LIMIT: u64 = 32 * 1024 * 1024;
+
+/// Running checksum and size of an upload, plus its leading bytes while they are small enough
+/// to decode a thumbnail from.
+struct UploadTally {
+    hasher: Sha256,
+    size: u64,
+    head: Option<Vec<u8>>,
+}
+
+impl UploadTally {
+    fn new(keep_head: bool) -> Self {
+        Self {
+            hasher: Sha256::new(),
+            size: 0,
+            head: keep_head.then(Vec::new),
+        }
+    }
+
+    fn add(&mut self, chunk: &Bytes) {
+        self.hasher.update(chunk);
+        self.size += chunk.len() as u64;
+        if self.size > THUMBNAIL_SOURCE_LIMIT {
+            self.head = None;
+        } else if let Some(head) = &mut self.head {
+            head.extend_from_slice(chunk);
+        }
+    }
+
+    fn finish(&mut self) -> (u64, String, Option<Vec<u8>>) {
+        let checksum = format!("sha256:{:x}", self.hasher.clone().finalize());
+        (self.size, checksum, self.head.take())
     }
 }
 
@@ -292,9 +359,11 @@ impl GetFileContentService {
         Self { deps }
     }
 
-    async fn cover_from_audio(&self, file: &FileRecord) -> Result<Bytes, AppError> {
-        let audio = self.deps.objects.get(&file.object_key).await?;
-        let Some(thumb) = jpeg_thumbnail(&self.deps, audio, &file.mime).await else {
+    /// Makes the thumbnail of a photo or an audio cover the first time it is asked for. Files too big
+    /// to decode while uploading end up here.
+    async fn thumbnail_from_original(&self, file: &FileRecord) -> Result<Bytes, AppError> {
+        let original = self.deps.objects.get(&file.object_key).await?;
+        let Some(thumb) = jpeg_thumbnail(&self.deps, original, &file.mime).await else {
             return Err(AppError::not_found("thumbnail not available"));
         };
         let key = domain::media::thumbnail_object_key(file.id);
@@ -322,8 +391,8 @@ impl GetFileContent for GetFileContentService {
         if thumbnail {
             let data = if let Some(key) = file.thumbnail_key.clone() {
                 self.deps.objects.get(&key).await?
-            } else if file.media_kind == MediaKind::Audio {
-                self.cover_from_audio(&file).await?
+            } else if matches!(file.media_kind, MediaKind::Audio | MediaKind::Photo) {
+                self.thumbnail_from_original(&file).await?
             } else {
                 return Err(AppError::not_found("thumbnail not available"));
             };
@@ -362,13 +431,7 @@ impl GetFileContent for GetFileContentService {
     }
 }
 
-/// Hashing and image decoding are CPU-bound: keep them off the async workers that serve requests.
-async fn sha256_checksum(bytes: Bytes) -> String {
-    tokio::task::spawn_blocking(move || format!("sha256:{:x}", Sha256::digest(&bytes)))
-        .await
-        .expect("hashing does not panic")
-}
-
+/// Image decoding is CPU-bound: keep it off the async workers that serve requests.
 async fn jpeg_thumbnail(deps: &Deps, bytes: Bytes, mime: &str) -> Option<Vec<u8>> {
     let thumbnailer = deps.thumbnailer.clone();
     let mime = mime.to_string();

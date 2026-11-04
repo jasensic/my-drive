@@ -51,6 +51,7 @@ dependencies = [
  "bytes",
  "chrono",
  "domain",
+ "futures-util",
  "serde",
  "sha2 0.10.9",
  "thiserror",

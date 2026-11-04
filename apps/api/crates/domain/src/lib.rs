@@ -13,7 +13,7 @@ pub use error::DomainError;
 pub use ids::{AlbumId, AppReleaseId, DeviceId, FileId, ShareId, SyncProfileId, UserId};
 pub use library::{LibrarySilo, TRASH_RETENTION_DAYS};
 pub use media::MediaKind;
-pub use storage::{ByteRange, ByteStream, ObjectBody};
+pub use storage::{collect_stream, ByteRange, ByteStream, ObjectBody};
 pub use model::{
     Album, AppRelease, AuthSession, Device, FileRecord, ManifestEntry, Share, SharePermission,
     ShareResourceType, SyncManifest, SyncProfile, SyncRule, TranscodedAudio, User, UserSummary,

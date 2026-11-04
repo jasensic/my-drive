@@ -232,7 +232,7 @@ impl ImportMusic for ImportMusicService {
                 album_id: None,
                 name: audio.name,
                 mime: audio.mime,
-                bytes: audio.bytes,
+                content: UploadCommand::content_from_bytes(audio.bytes),
                 created_at: None,
             })
             .await
@@ -320,17 +320,16 @@ mod tests {
     }
 
     struct RecordingUpload {
-        last: Mutex<Option<UploadCommand>>,
+        last: Mutex<Option<(UserId, Bytes)>>,
     }
 
     #[async_trait]
     impl UploadFile for RecordingUpload {
         async fn execute(&self, cmd: UploadCommand) -> Result<FileRecord, crate::AppError> {
-            let size = cmd.bytes.len() as u64;
-            let name = cmd.name.clone();
-            let mime = cmd.mime.clone();
-            let owner_id = cmd.owner_id;
-            *self.last.lock().unwrap() = Some(cmd);
+            let UploadCommand { owner_id, name, mime, content, .. } = cmd;
+            let bytes = domain::collect_stream(content).await?;
+            let size = bytes.len() as u64;
+            *self.last.lock().unwrap() = Some((owner_id, bytes));
             let now = Utc::now();
             Ok(FileRecord {
                 id: FileId::new(),
@@ -450,7 +449,7 @@ mod tests {
         assert_eq!(file.size, 3);
         assert_eq!(file.mime, "audio/mpeg");
         let stored = upload.last.lock().unwrap().take().unwrap();
-        assert_eq!(stored.owner_id, owner);
-        assert_eq!(&stored.bytes[..], b"ID3");
+        assert_eq!(stored.0, owner);
+        assert_eq!(&stored.1[..], b"ID3");
     }
 }

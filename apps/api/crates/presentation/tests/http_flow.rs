@@ -908,3 +908,149 @@ async fn content_streams_ranges_and_reports_unsatisfiable_ones() {
         assert_eq!(beyond.headers()["content-range"], "bytes */16", "{range}");
     }
 }
+
+#[tokio::test]
+async fn upload_streams_the_file_and_needs_its_other_fields_first() {
+    let (base, client) = spawn_app().await;
+    let setup: Value = client
+        .post(format!("{base}/v1/setup"))
+        .json(&serde_json::json!({"username":"admin","password":"password123"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = setup["token"].as_str().unwrap();
+    let album: Value = client
+        .post(format!("{base}/v1/albums"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"name":"Files","silo":"files"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let album_id = album["id"].as_str().unwrap().to_string();
+
+    // album_id before the file: stored in the album, size and checksum come from the stream.
+    let form = multipart::Form::new().text("album_id", album_id.clone()).part(
+        "file",
+        multipart::Part::bytes(b"0123456789abcdef".to_vec())
+            .file_name("a.bin")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let uploaded: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(uploaded["album_id"], album_id.as_str());
+    assert_eq!(uploaded["size"], 16);
+    assert_eq!(
+        uploaded["checksum"],
+        "sha256:9f9f5111f7b27a781f1f1ddde5ebc2dd2b796bfc7365c9c28b548e564176929f"
+    );
+
+    // A body spread over many chunks arrives whole.
+    let big: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::stream(big.clone())
+            .file_name("big.bin")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let uploaded: Value = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(uploaded["size"], big.len());
+    let back = client
+        .get(format!("{base}{}", uploaded["content_url"].as_str().unwrap()))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    assert_eq!(back.as_ref(), big.as_slice());
+
+    // album_id after the file is too late to be honoured: refuse, and keep nothing.
+    let before: Vec<Value> = client
+        .get(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let late = multipart::Form::new()
+        .part(
+            "file",
+            multipart::Part::bytes(b"late".to_vec())
+                .file_name("late.bin")
+                .mime_str("application/octet-stream")
+                .unwrap(),
+        )
+        .text("album_id", album_id);
+    let refused = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(late)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 400);
+    let after: Vec<Value> = client
+        .get(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(before.len(), after.len());
+
+    // An empty file and a missing file are both rejected.
+    let empty = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(Vec::new())
+            .file_name("empty.bin")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let status = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(empty)
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert_eq!(status, 400);
+    let none = client
+        .post(format!("{base}/v1/files"))
+        .bearer_auth(token)
+        .multipart(multipart::Form::new().text("album_id", ""))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(none.status(), 400);
+}

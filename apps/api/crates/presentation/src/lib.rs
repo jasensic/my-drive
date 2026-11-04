@@ -21,6 +21,11 @@ use crate::handlers::{albums, app, auth, devices, files, health, music, shares, 
 use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
+/// Most requests are small JSON bodies or an APK, which is read whole; `POST /v1/files` streams its body
+/// to storage and so may be far bigger. Keep `client_max_body_size` in deploy/nginx/nginx.conf in step.
+const DEFAULT_BODY_LIMIT: usize = 512 * 1024 * 1024;
+const MAX_UPLOAD_BYTES: usize = 16usize.saturating_mul(1 << 30);
+
 pub fn router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -48,7 +53,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/albums/{id}",
             patch(albums::rename).delete(albums::delete),
         )
-        .route("/v1/files", get(files::list).post(files::upload))
+        .route(
+            "/v1/files",
+            get(files::list).merge(post(files::upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES))),
+        )
         .route("/v1/music/search", post(music::search))
         .route("/v1/music/search/{id}", get(music::search_status))
         .route("/v1/music/search/{id}/cancel", post(music::cancel_search))
@@ -91,7 +99,7 @@ pub fn router(state: AppState) -> Router {
             patch(app::update).delete(app::delete),
         )
         .route("/v1/app/releases/{id}/apk", get(app::apk))
-        .layer(DefaultBodyLimit::max(1024 * 1024 * 512))
+        .layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
