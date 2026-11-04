@@ -17,9 +17,11 @@ data class SyncProgress(
     val phase: SyncPhase = SyncPhase.IDLE,
     val completedFiles: Int = 0,
     val totalFiles: Int = 0,
+    /** The file most recently started; several download at once. */
     val currentFileName: String? = null,
-    val currentBytes: Long = 0L,
-    val currentTotalBytes: Long = 0L,
+    /** Bytes received / expected across every file of this sync, not just one. */
+    val bytesDone: Long = 0L,
+    val bytesTotal: Long = 0L,
     val message: String? = null,
     val errorMessage: String? = null,
 ) {
@@ -29,29 +31,25 @@ data class SyncProgress(
             phase == SyncPhase.DOWNLOADING
 
     val fraction: Float
-        get() = syncProgressFraction(completedFiles, totalFiles, currentBytes, currentTotalBytes)
+        get() = syncProgressFraction(completedFiles, totalFiles, bytesDone, bytesTotal)
 
     val percent: Int
         get() = (fraction * 100f).toInt().coerceIn(0, 100)
 }
 
 /**
- * Overall 0..1 progress from completed files, refined by the current file's byte ratio.
+ * Overall 0..1 progress: by bytes when the sizes are known (so one huge video outweighs a
+ * hundred thumbnails), otherwise by the number of finished files.
  */
 fun syncProgressFraction(
     completedFiles: Int,
     totalFiles: Int,
-    currentBytes: Long = 0L,
-    currentTotalBytes: Long = 0L,
+    bytesDone: Long = 0L,
+    bytesTotal: Long = 0L,
 ): Float {
     if (totalFiles <= 0) return 0f
-    val finished = completedFiles.coerceIn(0, totalFiles).toFloat() / totalFiles
-    val withinFile = if (currentTotalBytes > 0L && completedFiles < totalFiles) {
-        (currentBytes.toFloat() / currentTotalBytes.toFloat()).coerceIn(0f, 1f) / totalFiles
-    } else {
-        0f
-    }
-    return (finished + withinFile).coerceIn(0f, 1f)
+    if (bytesTotal > 0L) return (bytesDone.toFloat() / bytesTotal.toFloat()).coerceIn(0f, 1f)
+    return (completedFiles.coerceIn(0, totalFiles).toFloat() / totalFiles).coerceIn(0f, 1f)
 }
 
 fun syncProgressLabel(progress: SyncProgress): String =

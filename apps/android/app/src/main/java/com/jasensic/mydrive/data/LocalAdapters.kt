@@ -60,7 +60,13 @@ data class LocalFileEntity(
     val modifiedAtMillis: Long = 0L,
     val artworkPath: String? = null,
     val metadataReady: Boolean = false,
+    /** Checksum the stored bytes were verified against; empty for rows from before it was recorded. */
+    val checksum: String = "",
+    /** Neither the file nor the server has a cover for it. */
+    val artworkMissing: Boolean = false,
 )
+
+data class ChecksumRow(val id: String, val checksum: String)
 
 @Entity(tableName = "local_albums")
 data class LocalAlbumEntity(
@@ -79,6 +85,15 @@ interface LocalFileDao {
 
     @Query("SELECT * FROM local_files WHERE id = :id")
     suspend fun byId(id: String): LocalFileEntity?
+
+    @Query("SELECT id, checksum FROM local_files WHERE checksum != ''")
+    suspend fun checksums(): List<ChecksumRow>
+
+    @Query("SELECT id FROM local_files WHERE artworkMissing = 1")
+    suspend fun artworkMissingIds(): List<String>
+
+    @Query("UPDATE local_files SET artworkMissing = 1 WHERE id = :id")
+    suspend fun markArtworkMissing(id: String)
 
     @Query("SELECT * FROM local_files WHERE metadataReady = 0")
     suspend fun pendingMetadata(): List<LocalFileEntity>
@@ -136,7 +151,7 @@ interface LocalAlbumDao {
     suspend fun delete(id: String)
 }
 
-@Database(entities = [LocalFileEntity::class, LocalAlbumEntity::class], version = 4, exportSchema = false)
+@Database(entities = [LocalFileEntity::class, LocalAlbumEntity::class], version = 5, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun files(): LocalFileDao
     abstract fun albums(): LocalAlbumDao
@@ -188,7 +203,7 @@ class RoomLocalMediaStore @Inject constructor(
 
     private fun openDb(key: String): AppDb =
         Room.databaseBuilder(context, AppDb::class.java, dbName(key))
-            .addMigrations(MIGRATION_3_4)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -239,6 +254,9 @@ class RoomLocalMediaStore @Inject constructor(
                     ?: disk.takeIf { it.isFile }?.lastModified() ?: 0L,
                 artworkPath = existing?.artworkPath?.takeIf { File(it).isFile },
                 metadataReady = existing?.metadataReady == true,
+                checksum = file.checksum,
+                // New bytes may carry a cover the old ones lacked.
+                artworkMissing = existing?.artworkMissing == true && existing.checksum == file.checksum,
             ),
         )
     }
@@ -246,6 +264,22 @@ class RoomLocalMediaStore @Inject constructor(
     override suspend fun knownIds(): Set<String> {
         val dao = currentDb()?.files() ?: return emptySet()
         return dao.all().mapNotNull { row -> row.id.takeIf { File(row.path).isFile } }.toSet()
+    }
+
+    override suspend fun verifiedChecksums(): Map<String, String> =
+        currentDb()?.files()?.checksums()?.associate { it.id to it.checksum }.orEmpty()
+
+    override fun freeBytes(): Long {
+        // The media folder may not exist yet; ask the closest parent that does.
+        val volume = generateSequence(mediaDir) { it.parentFile }.firstOrNull { it.exists() } ?: return Long.MAX_VALUE
+        return volume.usableSpace
+    }
+
+    override suspend fun artworkMissingIds(): Set<String> =
+        currentDb()?.files()?.artworkMissingIds()?.toSet().orEmpty()
+
+    override suspend fun markArtworkMissing(fileId: String) {
+        files().markArtworkMissing(fileId)
     }
 
     override suspend fun library(): LocalLibrary {
@@ -434,6 +468,7 @@ class RoomLocalMediaStore @Inject constructor(
         val list = ids.toList()
         files().all().filter { it.id in ids }.forEach { row ->
             File(row.path).delete()
+            File(row.path + PART_SUFFIX).delete()
             File(mediaDir, "${row.id}.art.jpg").delete()
             row.artworkPath?.let { File(it).takeIf { file -> file.absolutePath != row.path }?.delete() }
         }
@@ -619,6 +654,9 @@ class DataStoreThemePreferences @Inject constructor(
     }
 }
 
+/** Partial downloads live next to their destination until they are complete. */
+private const val PART_SUFFIX = ".part"
+
 private val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(database: SupportSQLiteDatabase) {
         database.execSQL("ALTER TABLE local_files ADD COLUMN artist TEXT")
@@ -629,5 +667,12 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
         database.execSQL("ALTER TABLE local_files ADD COLUMN modifiedAtMillis INTEGER NOT NULL DEFAULT 0")
         database.execSQL("ALTER TABLE local_files ADD COLUMN artworkPath TEXT")
         database.execSQL("ALTER TABLE local_files ADD COLUMN metadataReady INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+private val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE local_files ADD COLUMN checksum TEXT NOT NULL DEFAULT ''")
+        database.execSQL("ALTER TABLE local_files ADD COLUMN artworkMissing INTEGER NOT NULL DEFAULT 0")
     }
 }

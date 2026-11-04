@@ -41,10 +41,14 @@ data class SyncManifest(
     val removed: List<String> = emptyList(),
 )
 
+/** A file that could not be fetched. The rest of the sync carries on and the next sync tries again. */
+data class SyncFailure(val fileName: String, val reason: String)
+
 data class SyncResult(
     val server: DiscoveredServer,
     val manifest: SyncManifest,
     val downloaded: Int,
+    val failures: List<SyncFailure> = emptyList(),
 )
 
 data class SyncRule(

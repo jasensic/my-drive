@@ -19,14 +19,14 @@ class SyncProgressTest {
     }
 
     @Test
-    fun fractionRefinesWithCurrentFileBytes() {
-        // 1 of 2 files done + half of the current file => 0.5 + 0.25 = 0.75
-        assertEquals(0.75f, syncProgressFraction(1, 2, currentBytes = 50, currentTotalBytes = 100))
+    fun fractionFollowsBytesWhenSizesAreKnown() {
+        // One of two files done, but it was the small one: bytes say 10%, not 50%.
+        assertEquals(0.1f, syncProgressFraction(1, 2, bytesDone = 10, bytesTotal = 100))
     }
 
     @Test
-    fun fractionIgnoresBytesWhenAllFilesCompleted() {
-        assertEquals(1f, syncProgressFraction(2, 2, currentBytes = 50, currentTotalBytes = 100))
+    fun fractionNeverExceedsOne() {
+        assertEquals(1f, syncProgressFraction(2, 2, bytesDone = 150, bytesTotal = 100))
     }
 
     @Test

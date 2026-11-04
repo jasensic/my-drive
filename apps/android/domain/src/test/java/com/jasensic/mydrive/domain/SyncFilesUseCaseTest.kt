@@ -29,6 +29,12 @@ class FakeRemote : RemoteFileSource {
     var failAuth = false
     var failThumbnails = false
     var failExclusions = false
+    var downloadDelayMs = 0L
+    var activeDownloads = 0
+    var maxActiveDownloads = 0
+    /** Content URLs that fail, mapped to how many times they fail before working. */
+    val failingContent = mutableMapOf<String, Int>()
+    var failContentWith = "download failed: 500"
     var setupRequired = false
     var manifestFiles: List<ManifestFile>? = null
     var manifestRemoved: List<String> = emptyList()
@@ -101,6 +107,20 @@ class FakeRemote : RemoteFileSource {
         downloadedUrls += url
         if (failThumbnails && url.contains("/thumbnail")) {
             error("download failed: 404")
+        }
+        failingContent.keys.firstOrNull { url.contains(it) }?.let { key ->
+            val left = failingContent.getValue(key)
+            if (left > 0) {
+                failingContent[key] = left - 1
+                error(failContentWith)
+            }
+        }
+        activeDownloads += 1
+        maxActiveDownloads = maxOf(maxActiveDownloads, activeDownloads)
+        try {
+            if (downloadDelayMs > 0) kotlinx.coroutines.delay(downloadDelayMs)
+        } finally {
+            activeDownloads -= 1
         }
         downloaded += 1
         java.io.File(destinationPath).apply {
@@ -184,6 +204,9 @@ class FakeStore : LocalMediaStore {
     val artwork = mutableMapOf<String, String>()
     var boundUserId: String? = UNBOUND
     var embeddedArtwork: (String) -> String? = { null }
+    var free = Long.MAX_VALUE
+    val noArtwork = mutableSetOf<String>()
+    val verified = mutableMapOf<String, String>()
     private val committed = mutableMapOf<String, ManifestFile>()
     private val root = Files.createTempDirectory("mydrive-test").toFile()
 
@@ -194,6 +217,7 @@ class FakeStore : LocalMediaStore {
             albums.clear()
             artwork.clear()
             committed.clear()
+            verified.clear()
         }
     }
 
@@ -204,9 +228,20 @@ class FakeStore : LocalMediaStore {
     override suspend fun commit(file: ManifestFile, path: String) {
         saved += file.id
         committed[file.id] = file
+        if (file.checksum.isNotBlank()) verified[file.id] = file.checksum
     }
 
     override suspend fun knownIds(): Set<String> = saved.toSet()
+
+    override suspend fun verifiedChecksums(): Map<String, String> = verified.toMap()
+
+    override fun freeBytes(): Long = free
+
+    override suspend fun artworkMissingIds(): Set<String> = noArtwork.toSet()
+
+    override suspend fun markArtworkMissing(fileId: String) {
+        noArtwork += fileId
+    }
 
     override suspend fun library() = LocalLibrary(
         albums.toList(),
@@ -781,6 +816,189 @@ class SyncFilesUseCaseTest {
         assertEquals(0, result.downloaded)
         assertTrue(store.saved.isEmpty())
         assertTrue(remote.downloadedUrls.none { it.contains("/v1/files/1/content") })
+    }
+}
+
+private fun sha256Of(bytes: ByteArray) =
+    "sha256:" + java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+/** What [FakeRemote] writes for every download. */
+private val FAKE_BYTES = byteArrayOf(1, 2, 3)
+
+private fun photo(id: String, checksum: String = "", size: Long = 3) =
+    ManifestFile(id, "$id.jpg", size, "image/jpeg", checksum, "/v1/files/$id/content", MediaKind.PHOTO, null)
+
+private fun song(id: String) =
+    ManifestFile(id, "$id.mp3", 3, "audio/mpeg", "", "/v1/files/$id/content", MediaKind.AUDIO, null)
+
+private fun signedIn() = FakeState().apply { stored = AuthSession("t", "admin", "dev-1", "user-1") }
+
+private fun writeLocal(store: FakeStore, id: String, bytes: ByteArray) {
+    java.io.File(store.pathFor(id)).apply {
+        parentFile?.mkdirs()
+        writeBytes(bytes)
+    }
+}
+
+class RobustSyncTest {
+    @Test
+    fun downloadsSeveralFilesAtOnce() = runTest {
+        val remote = FakeRemote().apply {
+            downloadDelayMs = 100
+            manifestFiles = (1..10).map { photo("f$it") }
+        }
+        val result = useCase(remote, FakeStore(), signedIn()).execute()
+        assertEquals(10, result.downloaded)
+        assertEquals(PARALLEL_DOWNLOADS, remote.maxActiveDownloads)
+    }
+
+    @Test
+    fun aFailingFileDoesNotAbortTheRest() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(photo("f1"), photo("f2"), photo("f3"))
+            failingContent["/v1/files/f2/"] = Int.MAX_VALUE
+        }
+        val store = FakeStore()
+        val state = signedIn()
+        val progress = InMemorySyncProgressStore()
+        val result = SyncFilesUseCase(
+            FakeConnectivity(),
+            DiscoverServerUseCase(FakeConnectivity(), FakeDiscovery(DiscoveredServer("192.168.1.10", 8080, "my-drive")), state),
+            remote,
+            store,
+            state,
+            "Phone A",
+            progress,
+        ).execute()
+        assertEquals(2, result.downloaded)
+        assertEquals(listOf("f2.jpg"), result.failures.map { it.fileName })
+        assertEquals(setOf("f1", "f3"), store.saved.toSet())
+        assertEquals("2026-09-15T12:00:00Z", state.last)
+        assertEquals(SyncPhase.COMPLETED, progress.current().phase)
+        assertTrue(progress.current().message.orEmpty().contains("1 failed"))
+    }
+
+    @Test
+    fun triesAFileAgainBeforeGivingUp() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(photo("f1"))
+            failingContent["/v1/files/f1/"] = 1
+        }
+        val result = useCase(remote, FakeStore(), signedIn()).execute()
+        assertEquals(1, result.downloaded)
+        assertTrue(result.failures.isEmpty())
+    }
+
+    @Test
+    fun aRejectedSessionStopsTheWholeSync() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(photo("f1"), photo("f2"))
+            failContentWith = "login required"
+            failingContent["/v1/files/f1/"] = Int.MAX_VALUE
+        }
+        val state = signedIn()
+        val err = assertFailsWith<IllegalStateException> { useCase(remote, FakeStore(), state).execute() }
+        assertEquals("login required", err.message)
+        assertNull(state.stored)
+    }
+
+    @Test
+    fun trustsTheRecordedChecksumInsteadOfHashingAgain() = runTest {
+        val checksum = sha256Of(FAKE_BYTES)
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("1", checksum)) }
+        val store = FakeStore().apply { verified["1"] = checksum }
+        // These bytes would fail a hash; only the recorded checksum says they are good.
+        writeLocal(store, "1", byteArrayOf(9, 9, 9))
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(0, result.downloaded)
+        assertEquals(0, remote.downloaded)
+        assertEquals(listOf("1"), store.saved)
+    }
+
+    @Test
+    fun hashesCopiesThatPredateRecordedChecksums() = runTest {
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("1", sha256Of(FAKE_BYTES))) }
+        val store = FakeStore()
+        writeLocal(store, "1", byteArrayOf(9, 9, 9))
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(1, result.downloaded)
+        assertEquals(sha256Of(FAKE_BYTES), store.verified["1"])
+    }
+
+    @Test
+    fun keepsACopyWhoseHashMatchesAndRecordsIt() = runTest {
+        val checksum = sha256Of(FAKE_BYTES)
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("1", checksum)) }
+        val store = FakeStore()
+        writeLocal(store, "1", FAKE_BYTES)
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(0, result.downloaded)
+        assertEquals(0, remote.downloaded)
+        assertEquals(checksum, store.verified["1"])
+    }
+
+    @Test
+    fun downloadsAgainWhenTheRecordedChecksumIsForOlderContent() = runTest {
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("1", sha256Of(FAKE_BYTES))) }
+        val store = FakeStore().apply { verified["1"] = "sha256:" + "0".repeat(64) }
+        writeLocal(store, "1", byteArrayOf(9, 9, 9))
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(1, result.downloaded)
+    }
+
+    @Test
+    fun rejectsADownloadWhoseChecksumDoesNotMatch() = runTest {
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("1", "sha256:" + "0".repeat(64))) }
+        val store = FakeStore()
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(0, result.downloaded)
+        assertTrue(result.failures.single().reason.contains("checksum mismatch"))
+        assertTrue(!java.io.File(store.pathFor("1")).exists())
+        assertTrue(store.saved.isEmpty())
+    }
+
+    @Test
+    fun skipsFilesThatDoNotFitAndKeepsTheRest() = runTest {
+        val remote = FakeRemote().apply { manifestFiles = listOf(photo("big", size = 1_000), photo("small")) }
+        val store = FakeStore().apply { free = FREE_SPACE_RESERVE_BYTES + 100 }
+        val result = useCase(remote, store, signedIn()).execute()
+        assertEquals(1, result.downloaded)
+        assertEquals(listOf("small"), store.saved)
+        val failure = result.failures.single()
+        assertEquals("big.jpg", failure.fileName)
+        assertTrue(failure.reason.contains("free space"))
+    }
+
+    @Test
+    fun remembersAudioWithoutACoverSoLaterSyncsDoNotAskAgain() = runTest {
+        val remote = FakeRemote().apply {
+            failThumbnails = true
+            manifestFiles = listOf(song("a1"))
+        }
+        val store = FakeStore()
+        val state = signedIn()
+        useCase(remote, store, state).execute()
+        assertEquals(setOf("a1"), store.noArtwork)
+        assertEquals(1, remote.downloadedUrls.count { it.contains("/thumbnail") })
+        remote.downloadedUrls.clear()
+        useCase(remote, store, state).execute()
+        assertTrue(remote.downloadedUrls.none { it.contains("/thumbnail") })
+    }
+
+    @Test
+    fun asksForTheCoverAgainAfterAPassingFailure() = runTest {
+        val remote = FakeRemote().apply {
+            manifestFiles = listOf(song("a1"))
+            // Both tries of the first sync fail, the next sync works.
+            failingContent["/thumbnail"] = 2
+        }
+        val store = FakeStore()
+        val state = signedIn()
+        useCase(remote, store, state).execute()
+        assertTrue(store.noArtwork.isEmpty())
+        assertNull(store.artwork["a1"])
+        useCase(remote, store, state).execute()
+        assertEquals(store.artworkPathFor("a1"), store.artwork["a1"])
     }
 }
 

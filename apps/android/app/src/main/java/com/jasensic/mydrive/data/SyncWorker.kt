@@ -130,11 +130,11 @@ class SyncWorker @AssistedInject constructor(
                 val max = 1_000
                 val value = (progress.fraction * max).toInt().coerceIn(0, max)
                 builder.setProgress(max, value, false)
-                if (progress.currentTotalBytes > 0L) {
+                if (progress.bytesTotal > 0L) {
                     builder.setSubText(
                         "${progress.completedFiles}/${progress.totalFiles} · " +
-                            formatBytes(progress.currentBytes) + " / " +
-                            formatBytes(progress.currentTotalBytes),
+                            formatBytes(progress.bytesDone) + " / " +
+                            formatBytes(progress.bytesTotal),
                     )
                 } else {
                     builder.setSubText("${progress.completedFiles}/${progress.totalFiles}")
@@ -161,7 +161,8 @@ class SyncWorker @AssistedInject constructor(
         val kb = bytes / 1024.0
         if (kb < 1024) return String.format("%.1f KB", kb)
         val mb = kb / 1024.0
-        return String.format("%.1f MB", mb)
+        if (mb < 1024) return String.format("%.1f MB", mb)
+        return String.format("%.2f GB", mb / 1024.0)
     }
 
     companion object {

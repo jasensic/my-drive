@@ -23,7 +23,9 @@ import com.jasensic.mydrive.domain.wireValue
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -42,6 +44,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -303,6 +306,10 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         )
     }
 
+    /**
+     * Download to `<destination>.part` and rename when complete. An interrupted download keeps
+     * its bytes, and the next call asks the server for the rest with a Range request.
+     */
     override suspend fun downloadTo(
         url: String,
         token: String,
@@ -310,32 +317,62 @@ class RetrofitRemoteFileSource @Inject constructor() : RemoteFileSource {
         onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)?,
     ) {
         withContext(Dispatchers.IO) {
-            val req = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $token")
-                .build()
-            http.newCall(req).execute().use { resp ->
-                if (resp.code == 401) error("login required")
-                if (!resp.isSuccessful) error("download failed: ${resp.code}")
-                val body = resp.body ?: error("empty body")
-                val contentLength = body.contentLength()
-                val dest = File(destinationPath)
-                dest.parentFile?.mkdirs()
-                dest.outputStream().use { out ->
-                    body.byteStream().use { input ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var totalRead = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            out.write(buffer, 0, read)
-                            totalRead += read
-                            onProgress?.invoke(totalRead, contentLength)
-                        }
+            val dest = File(destinationPath)
+            dest.parentFile?.mkdirs()
+            val part = File("$destinationPath.part")
+            if (!fetchPart(url, token, part, resume = true, onProgress)) {
+                // The leftover bytes were not a prefix of the file any more: start over.
+                part.delete()
+                check(fetchPart(url, token, part, resume = false, onProgress)) { "download failed: 416" }
+            }
+            dest.delete()
+            check(part.renameTo(dest)) { "could not store ${dest.name}" }
+        }
+    }
+
+    /** False when the server rejected the resume point and the caller should retry from zero. */
+    private fun CoroutineScope.fetchPart(
+        url: String,
+        token: String,
+        part: File,
+        resume: Boolean,
+        onProgress: ((bytesRead: Long, contentLength: Long) -> Unit)?,
+    ): Boolean {
+        val offset = if (resume && part.isFile) part.length() else 0L
+        val req = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $token")
+            .apply { if (offset > 0L) header("Range", "bytes=$offset-") }
+            .build()
+        http.newCall(req).execute().use { resp ->
+            if (resp.code == 401) error("login required")
+            if (resp.code == 416) {
+                // Nothing left to send means the part was already complete; anything else is stale.
+                val total = resp.header("Content-Range")?.substringAfter("*/", "")?.toLongOrNull()
+                return offset > 0L && total == offset
+            }
+            if (!resp.isSuccessful) error("download failed: ${resp.code}")
+            val body = resp.body ?: error("empty body")
+            // 206 continues the part; 200 means the server ignored Range and sent everything.
+            val append = resp.code == 206 && offset > 0L
+            val start = if (append) offset else 0L
+            val contentLength = body.contentLength().takeIf { it >= 0L }?.let { it + start } ?: -1L
+            FileOutputStream(part, append).use { out ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var totalRead = start
+                    while (true) {
+                        ensureActive()
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                        totalRead += read
+                        onProgress?.invoke(totalRead, contentLength)
                     }
                 }
             }
         }
+        return true
     }
 
     override suspend fun latestAppRelease(baseUrl: String, token: String): AppRelease? =
