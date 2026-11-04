@@ -38,6 +38,19 @@ jobs:
     needs: changes
     if: fromJSON(needs.changes.outputs.api) || fromJSON(needs.changes.outputs.workflow)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: mydrive
+          POSTGRES_PASSWORD: mydrive
+          POSTGRES_DB: mydrive_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mydrive"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -46,6 +59,8 @@ jobs:
           workspaces: apps/api
       - name: Test API
         working-directory: apps/api
+        env:
+          TEST_DATABASE_URL: postgres://mydrive:mydrive@localhost:5432/mydrive_test
         run: cargo test --workspace
 
   web:

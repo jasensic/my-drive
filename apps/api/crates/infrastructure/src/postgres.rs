@@ -6,11 +6,11 @@ use domain::model::{
 };
 use domain::ports::{
     AlbumRepository, AppReleaseRepository, DeviceExclusionRepository, DeviceRepository,
-    FileRepository, ShareRepository, SyncProfileRepository, UserRepository,
+    FileRepository, JobQueue, ShareRepository, SyncProfileRepository, UserRepository,
 };
 use domain::{
-    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, LibrarySilo, MediaKind, ShareId, SyncProfileId,
-    UserId,
+    AlbumId, AppReleaseId, DeviceId, DomainError, FileId, Job, JobKind, JobState, LibrarySilo, MediaKind,
+    ShareId, SyncProfileId, UserId, JOB_LEASE,
 };
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -235,6 +235,18 @@ impl FileRepository for PgRepos {
         rows.into_iter().map(row_to_file).collect()
     }
 
+    async fn list_trashed_before(&self, cutoff: DateTime<Utc>) -> Result<Vec<FileRecord>, DomainError> {
+        let rows = sqlx::query(
+            "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
+             FROM files WHERE deleted_at IS NOT NULL AND deleted_at < $1 ORDER BY deleted_at",
+        )
+        .bind(cutoff)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        rows.into_iter().map(row_to_file).collect()
+    }
+
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError> {
         let row = sqlx::query(
             "SELECT id, owner_id, album_id, name, size, mime, checksum, object_key, thumbnail_key, media_kind, created_at, uploaded_at, deleted_at, mobile_object_key, mobile_checksum, mobile_size, mobile_mime
@@ -363,6 +375,115 @@ fn row_to_album(r: sqlx::postgres::PgRow) -> Album {
         name: r.get("name"),
         silo: LibrarySilo::parse(&silo).unwrap_or(LibrarySilo::Photos),
         created_at: r.get("created_at"),
+    }
+}
+
+#[async_trait]
+impl JobQueue for PgRepos {
+    async fn enqueue(
+        &self,
+        kind: JobKind,
+        subject: Option<Uuid>,
+        run_at: DateTime<Utc>,
+    ) -> Result<bool, DomainError> {
+        // A new attempt wipes the memory of an earlier give-up.
+        sqlx::query("DELETE FROM jobs WHERE kind = $1 AND subject IS NOT DISTINCT FROM $2 AND state = 'failed'")
+            .bind(kind.as_str())
+            .bind(subject)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        let done = sqlx::query(
+            "INSERT INTO jobs (id, kind, subject, state, attempts, run_at, created_at)
+             VALUES ($1, $2, $3, 'queued', 0, $4, $4)
+             ON CONFLICT (kind, (COALESCE(subject, '00000000-0000-0000-0000-000000000000'::uuid)))
+             WHERE state IN ('queued', 'running') DO NOTHING",
+        )
+        .bind(Uuid::new_v4())
+        .bind(kind.as_str())
+        .bind(subject)
+        .bind(run_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    async fn claim(&self, now: DateTime<Utc>) -> Result<Option<Job>, DomainError> {
+        // SKIP LOCKED: a second worker passes over a row another one is claiming instead of waiting.
+        let row = sqlx::query(
+            "UPDATE jobs SET state = 'running', locked_at = $1, attempts = attempts + 1
+             WHERE id = (
+                 SELECT id FROM jobs
+                 WHERE (state = 'queued' AND run_at <= $1)
+                    OR (state = 'running' AND locked_at < $1 - make_interval(secs => $2))
+                 ORDER BY run_at
+                 FOR UPDATE SKIP LOCKED
+                 LIMIT 1
+             )
+             RETURNING id, kind, subject, attempts",
+        )
+        .bind(now)
+        .bind(JOB_LEASE.num_seconds() as f64)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        let Some(row) = row else { return Ok(None) };
+        let kind: String = row.get("kind");
+        Ok(Some(Job {
+            id: row.get("id"),
+            kind: JobKind::parse(&kind)
+                .ok_or_else(|| DomainError::infra(format!("unknown job kind {kind}")))?,
+            subject: row.get("subject"),
+            attempts: row.get("attempts"),
+        }))
+    }
+
+    async fn complete(&self, id: Uuid) -> Result<(), DomainError> {
+        sqlx::query("DELETE FROM jobs WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn fail(
+        &self,
+        id: Uuid,
+        error: &str,
+        retry_at: Option<DateTime<Utc>>,
+    ) -> Result<(), DomainError> {
+        sqlx::query(
+            "UPDATE jobs SET last_error = $2, locked_at = NULL,
+                 state = CASE WHEN $3::timestamptz IS NULL THEN 'failed' ELSE 'queued' END,
+                 run_at = COALESCE($3, run_at)
+             WHERE id = $1",
+        )
+        .bind(id)
+        .bind(error)
+        .bind(retry_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(())
+    }
+
+    async fn state(
+        &self,
+        kind: JobKind,
+        subject: Option<Uuid>,
+    ) -> Result<Option<JobState>, DomainError> {
+        let row = sqlx::query(
+            "SELECT state FROM jobs WHERE kind = $1 AND subject IS NOT DISTINCT FROM $2
+             ORDER BY (state = 'failed') LIMIT 1",
+        )
+        .bind(kind.as_str())
+        .bind(subject)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| DomainError::infra(e.to_string()))?;
+        Ok(row.and_then(|row| JobState::parse(&row.get::<String, _>("state"))))
     }
 }
 

@@ -14,7 +14,7 @@ use crate::access::{
     accessible_file, list_accessible_files, require_album_write, require_file_owner, require_file_read,
     AccessibleFile,
 };
-use crate::mobile::ensure_mobile_audio_best_effort;
+use crate::mobile::request_mobile_audio;
 use crate::{AppError, Deps};
 
 pub struct UploadCommand {
@@ -213,7 +213,9 @@ impl UploadFile for UploadFileService {
             mobile_mime: None,
         };
         self.deps.files.insert(&record).await?;
-        Ok(ensure_mobile_audio_best_effort(&self.deps, record).await)
+        // The AAC copy for phones is made in the background; a failure to queue it is not the upload's.
+        let _ = request_mobile_audio(&self.deps, &record).await;
+        Ok(record)
     }
 }
 
@@ -387,7 +389,7 @@ impl GetFileContent for GetFileContentService {
         thumbnail: bool,
         variant: FileContentVariant,
     ) -> Result<FileContent, AppError> {
-        let mut file = require_file_read(&self.deps, owner_id, id).await?;
+        let file = require_file_read(&self.deps, owner_id, id).await?;
         if thumbnail {
             let data = if let Some(key) = file.thumbnail_key.clone() {
                 self.deps.objects.get(&key).await?
@@ -402,7 +404,8 @@ impl GetFileContent for GetFileContentService {
             });
         }
         if variant == FileContentVariant::Mobile {
-            file = ensure_mobile_audio_best_effort(&self.deps, file).await;
+            // Serve the original until the background job has made the AAC copy.
+            let _ = request_mobile_audio(&self.deps, &file).await;
         }
         let (object_key, mime, total_size) = if variant == FileContentVariant::Mobile
             && file.has_mobile_audio()
@@ -445,7 +448,7 @@ fn in_silo(file: &FileRecord, silo: Option<LibrarySilo>) -> bool {
     silo.is_none_or(|silo| silo.contains(file.media_kind))
 }
 
-async fn remove_stored_file(deps: &Deps, file: &FileRecord) -> Result<(), AppError> {
+pub(crate) async fn remove_stored_file(deps: &Deps, file: &FileRecord) -> Result<(), AppError> {
     deps.objects.delete(&file.object_key).await?;
     if let Some(thumb) = &file.thumbnail_key {
         let _ = deps.objects.delete(thumb).await;
@@ -477,12 +480,10 @@ impl ListTrash for ListTrashService {
         owner_id: UserId,
         silo: Option<LibrarySilo>,
     ) -> Result<Vec<FileRecord>, AppError> {
+        // Expired files are not shown; the background job deletes them.
         let now = self.deps.clock.now();
         let trashed = self.deps.files.list_trashed_by_owner(owner_id).await?;
-        let (keep, expired) = domain::library::partition_expired_trash(trashed, now, silo);
-        for file in expired {
-            remove_stored_file(&self.deps, &file).await?;
-        }
+        let (keep, _expired) = domain::library::partition_expired_trash(trashed, now, silo);
         Ok(keep)
     }
 }

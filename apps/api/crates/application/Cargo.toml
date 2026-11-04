@@ -12,6 +12,7 @@ futures-util.workspace = true
 serde.workspace = true
 sha2 = "0.10"
 thiserror.workspace = true
+tracing = "0.1"
 tokio = { workspace = true, features = ["sync"] }
 uuid.workspace = true
 

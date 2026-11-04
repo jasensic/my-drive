@@ -9,7 +9,7 @@ use domain::{DeviceId, FileId, UserId};
 
 use super::devices::owned_device;
 use crate::access::list_accessible_files;
-use crate::mobile::ensure_mobile_audio_best_effort;
+use crate::mobile::{request_mobile_audio, MobileAudio};
 use crate::{AppError, Deps};
 
 pub struct ManifestQuery {
@@ -48,7 +48,17 @@ impl BuildSyncManifest for BuildSyncManifestService {
         let accessible = list_accessible_files(&self.deps, query.user_id).await?;
         let mut files = Vec::new();
         for item in accessible {
-            files.push(ensure_mobile_audio_best_effort(&self.deps, item.file).await);
+            // The manifest never transcodes. A lossless file whose AAC copy is still being made waits
+            // for the next sync, so no phone downloads the original just to replace it later.
+            // One the phone already has is kept in the list so it is not mistaken for a deletion.
+            let pending = matches!(
+                request_mobile_audio(&self.deps, &item.file).await,
+                Ok(MobileAudio::Pending)
+            );
+            if pending && !query.have_file_ids.contains(&item.file.id) {
+                continue;
+            }
+            files.push(item.file);
         }
         let excluded: HashSet<FileId> = self
             .deps
