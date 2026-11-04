@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use domain::model::{
     Album, AppRelease, Device, FileRecord, Share, ShareResourceType, SyncProfile, User, UserSummary,
 };
-use domain::{ByteRange, ObjectBody};
+use domain::{ByteRange, ByteStream, ObjectBody};
 use domain::ports::{
     AlbumRepository, AppReleaseRepository, DeviceExclusionRepository, DeviceRepository,
     FileRepository, ObjectStore, ShareRepository, SyncProfileRepository, UserRepository,
@@ -467,6 +467,16 @@ impl ObjectStore for MemoryStore {
             .objects
             .insert(key.to_string(), bytes.to_vec());
         Ok(())
+    }
+
+    async fn put_stream(
+        &self,
+        key: &str,
+        content_type: &str,
+        stream: ByteStream,
+    ) -> Result<(), DomainError> {
+        let bytes = domain::collect_stream(stream).await?;
+        self.put(key, bytes, content_type).await
     }
 
     async fn get(&self, key: &str) -> Result<Bytes, DomainError> {

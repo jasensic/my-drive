@@ -1,11 +1,12 @@
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::types::CreateBucketConfiguration;
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, CreateBucketConfiguration};
 use aws_sdk_s3::Client;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
 use domain::ports::ObjectStore;
-use domain::{ByteRange, ObjectBody};
+use domain::{ByteRange, ByteStream as Chunks, ObjectBody};
 use domain::DomainError;
 
 use crate::config::Settings;
@@ -72,6 +73,90 @@ impl S3Store {
     }
 }
 
+/// Objects up to one part go in a single request; larger ones are sent as a multipart upload.
+/// S3 needs every part but the last to be at least 5 MiB.
+const PART_SIZE: usize = 8 * 1024 * 1024;
+
+impl S3Store {
+    async fn upload_parts(
+        &self,
+        key: &str,
+        content_type: &str,
+        stream: &mut Chunks,
+        upload_id: &mut Option<String>,
+    ) -> Result<(), DomainError> {
+        let mut buf = BytesMut::with_capacity(PART_SIZE);
+        let mut parts: Vec<CompletedPart> = Vec::new();
+        let mut finished = false;
+        while !finished {
+            while buf.len() < PART_SIZE {
+                match stream.next().await {
+                    Some(chunk) => buf.extend_from_slice(&chunk?),
+                    None => {
+                        finished = true;
+                        break;
+                    }
+                }
+            }
+            if finished && upload_id.is_none() {
+                return self.put(key, buf.freeze(), content_type).await;
+            }
+            if buf.is_empty() {
+                break;
+            }
+            let id = match upload_id {
+                Some(id) => id.clone(),
+                None => {
+                    let created = self
+                        .client
+                        .create_multipart_upload()
+                        .bucket(&self.bucket)
+                        .key(key)
+                        .content_type(content_type)
+                        .send()
+                        .await
+                        .map_err(|e| DomainError::infra(format!("start multipart upload: {e}")))?;
+                    let id = created
+                        .upload_id()
+                        .ok_or_else(|| DomainError::infra("multipart upload has no id"))?
+                        .to_string();
+                    *upload_id = Some(id.clone());
+                    id
+                }
+            };
+            let number = parts.len() as i32 + 1;
+            let uploaded = self
+                .client
+                .upload_part()
+                .bucket(&self.bucket)
+                .key(key)
+                .upload_id(&id)
+                .part_number(number)
+                .body(ByteStream::from(buf.split().freeze()))
+                .send()
+                .await
+                .map_err(|e| DomainError::infra(format!("upload part {number}: {e}")))?;
+            parts.push(
+                CompletedPart::builder()
+                    .set_e_tag(uploaded.e_tag().map(str::to_string))
+                    .part_number(number)
+                    .build(),
+            );
+        }
+        let id = upload_id.as_deref().expect("a multipart upload has started");
+        self.client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(key)
+            .upload_id(id)
+            .multipart_upload(CompletedMultipartUpload::builder().set_parts(Some(parts)).build())
+            .send()
+            .await
+            .map_err(|e| DomainError::infra(format!("complete multipart upload: {e}")))?;
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl ObjectStore for S3Store {
     async fn put(&self, key: &str, bytes: Bytes, content_type: &str) -> Result<(), DomainError> {
@@ -85,6 +170,30 @@ impl ObjectStore for S3Store {
             .await
             .map_err(|e| DomainError::infra(format!("put object: {e}")))?;
         Ok(())
+    }
+
+    async fn put_stream(
+        &self,
+        key: &str,
+        content_type: &str,
+        mut stream: Chunks,
+    ) -> Result<(), DomainError> {
+        let mut upload_id = None;
+        let result = self.upload_parts(key, content_type, &mut stream, &mut upload_id).await;
+        if result.is_err() {
+            // Parts of an unfinished upload keep costing space until it is aborted.
+            if let Some(id) = upload_id {
+                let _ = self
+                    .client
+                    .abort_multipart_upload()
+                    .bucket(&self.bucket)
+                    .key(key)
+                    .upload_id(id)
+                    .send()
+                    .await;
+            }
+        }
+        result
     }
 
     async fn get(&self, key: &str) -> Result<Bytes, DomainError> {

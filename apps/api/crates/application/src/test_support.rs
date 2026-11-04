@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use domain::{ByteRange, ObjectBody};
+use domain::{ByteRange, ByteStream, ObjectBody};
 use domain::model::{
     Album, AppRelease, AuthSession, Device, FileRecord, Share, ShareResourceType, SyncProfile,
     TranscodedAudio, User, UserSummary,
@@ -593,6 +593,16 @@ impl ObjectStore for TestMem {
             .insert(key.to_string(), bytes.to_vec());
         Ok(())
     }
+    async fn put_stream(
+        &self,
+        key: &str,
+        content_type: &str,
+        stream: ByteStream,
+    ) -> Result<(), DomainError> {
+        let bytes = domain::collect_stream(stream).await?;
+        self.put(key, bytes, content_type).await
+    }
+
     async fn get(&self, key: &str) -> Result<Bytes, DomainError> {
         self.inner
             .lock()

@@ -66,14 +66,18 @@ impl ObjectBody {
 
     /// Reads everything. For small objects and tests; large ones should be streamed.
     pub async fn collect(self) -> Result<Bytes, DomainError> {
-        use futures_util::StreamExt;
-        let mut stream = self.stream;
-        let mut out = Vec::with_capacity(self.len as usize);
-        while let Some(chunk) = stream.next().await {
-            out.extend_from_slice(&chunk?);
-        }
-        Ok(Bytes::from(out))
+        collect_stream(self.stream).await
     }
+}
+
+/// Gathers a stream into one buffer, failing with the first error it yields.
+pub async fn collect_stream(mut stream: ByteStream) -> Result<Bytes, DomainError> {
+    use futures_util::StreamExt;
+    let mut out = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        out.extend_from_slice(&chunk?);
+    }
+    Ok(Bytes::from(out))
 }
 
 #[cfg(test)]

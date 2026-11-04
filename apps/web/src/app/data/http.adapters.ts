@@ -130,10 +130,11 @@ export class HttpFileRepository implements FileRepository {
   }
   upload(file: File, albumId?: string): Promise<MediaFile> {
     const body = new FormData();
-    body.append('file', file, file.name);
+    // The server streams the file to storage, so every other field must come before it.
     if (albumId) {
       body.append('album_id', albumId);
     }
+    body.append('file', file, file.name);
     return firstValueFrom(this.http.post<MediaFile>('/v1/files', body));
   }
   assignAlbum(id: string, albumId: string | null): Promise<MediaFile> {

@@ -5,7 +5,8 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::Json;
 use bytes::Bytes;
-use domain::{AlbumId, FileId, LibrarySilo};
+use domain::{AlbumId, DomainError, FileId, LibrarySilo};
+use futures_util::StreamExt;
 use uuid::Uuid;
 
 use crate::dto::{ContentQuery, EmptyTrashResponse, FileDto, FileListQuery, UpdateFileRequest};
@@ -74,74 +75,106 @@ pub async fn empty_trash(
     Ok(Json(EmptyTrashResponse { deleted }))
 }
 
-#[utoipa::path(post, path = "/v1/files", responses((status = 200, body = FileDto)), security(("bearer" = [])))]
+#[utoipa::path(
+    post,
+    path = "/v1/files",
+    request_body(content_type = "multipart/form-data", description = "Optional `album_id` and `created_at` fields, then the `file` field last"),
+    responses((status = 200, body = FileDto)),
+    security(("bearer" = []))
+)]
 pub async fn upload(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     mut multipart: Multipart,
 ) -> Result<Json<FileDto>, ApiError> {
-    let mut name = String::new();
-    let mut mime = String::new();
     let mut album_id = None;
     let mut created_at = None;
-    let mut data: Option<Bytes> = None;
+    let mut stored: Option<domain::model::FileRecord> = None;
+    let mut sent_late = false;
 
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| ApiError(application::AppError::validation(e.to_string())))?
-    {
+    while let Some(mut field) = multipart.next_field().await.map_err(bad_multipart)? {
         match field.name().unwrap_or_default() {
             "album_id" => {
                 let text = field.text().await.unwrap_or_default();
-                if !text.is_empty() {
-                    album_id = Some(
-                        Uuid::parse_str(&text)
-                            .map_err(|_| ApiError(application::AppError::validation("invalid album_id")))?,
-                    );
+                if text.is_empty() {
+                    continue;
                 }
+                sent_late |= stored.is_some();
+                album_id = Some(
+                    Uuid::parse_str(&text)
+                        .map_err(|_| ApiError(application::AppError::validation("invalid album_id")))?,
+                );
             }
             "created_at" => {
                 let text = field.text().await.unwrap_or_default();
-                if !text.is_empty() {
-                    created_at = Some(
-                        chrono::DateTime::parse_from_rfc3339(&text)
-                            .map_err(|_| ApiError(application::AppError::validation("invalid created_at")))?
-                            .with_timezone(&chrono::Utc),
-                    );
+                if text.is_empty() {
+                    continue;
                 }
+                sent_late |= stored.is_some();
+                created_at = Some(
+                    chrono::DateTime::parse_from_rfc3339(&text)
+                        .map_err(|_| ApiError(application::AppError::validation("invalid created_at")))?
+                        .with_timezone(&chrono::Utc),
+                );
             }
-            "file" => {
-                name = field.file_name().unwrap_or("upload.bin").to_string();
-                mime = field
+            "file" if stored.is_none() => {
+                let name = field.file_name().unwrap_or("upload.bin").to_string();
+                let mime = field
                     .content_type()
                     .unwrap_or("application/octet-stream")
                     .to_string();
-                data = Some(
-                    field
-                        .bytes()
-                        .await
-                        .map_err(|e| ApiError(application::AppError::validation(e.to_string())))?,
-                );
+                // The use case reads from a channel while this loop feeds it from the request body,
+                // so the file never has to fit in memory.
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Bytes, DomainError>>(8);
+                let content = futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx)).boxed();
+                let upload = state.services.upload_file.execute(UploadCommand {
+                    owner_id: user.user_id,
+                    album_id: album_id.map(AlbumId::from_uuid),
+                    name,
+                    mime,
+                    content,
+                    created_at,
+                });
+                let pump = async move {
+                    loop {
+                        match field.chunk().await {
+                            Ok(Some(chunk)) => {
+                                // The receiver is gone once the use case has given up.
+                                if tx.send(Ok(chunk)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(err) => {
+                                let _ = tx.send(Err(DomainError::validation(err.to_string()))).await;
+                                break;
+                            }
+                        }
+                    }
+                };
+                let (record, ()) = tokio::join!(upload, pump);
+                stored = Some(record?);
             }
             _ => {}
         }
     }
 
-    let bytes = data.ok_or_else(|| ApiError(application::AppError::validation("file is required")))?;
-    let record = state
-        .services
-        .upload_file
-        .execute(UploadCommand {
-            owner_id: user.user_id,
-            album_id: album_id.map(AlbumId::from_uuid),
-            name,
-            mime,
-            bytes,
-            created_at,
-        })
-        .await?;
+    let record = stored.ok_or_else(|| ApiError(application::AppError::validation("file is required")))?;
+    if sent_late {
+        // Too late to use them: the file was already stored without them. Undo it rather than
+        // leave it in the wrong album or with the wrong date.
+        // Purging needs the file in the trash first.
+        let _ = state.services.trash_file.execute(user.user_id, record.id).await;
+        let _ = state.services.purge_file.execute(user.user_id, record.id).await;
+        return Err(ApiError(application::AppError::validation(
+            "send album_id and created_at before the file field",
+        )));
+    }
     Ok(Json(FileDto::from_record(record)))
+}
+
+fn bad_multipart(err: axum::extract::multipart::MultipartError) -> ApiError {
+    ApiError(application::AppError::validation(err.to_string()))
 }
 
 #[utoipa::path(get, path = "/v1/files/{id}", params(("id" = Uuid, Path)), responses((status = 200, body = FileDto)), security(("bearer" = [])))]
