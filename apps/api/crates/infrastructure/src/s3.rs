@@ -5,6 +5,7 @@ use aws_sdk_s3::types::CreateBucketConfiguration;
 use aws_sdk_s3::Client;
 use bytes::Bytes;
 use domain::ports::ObjectStore;
+use domain::{ByteRange, ObjectBody};
 use domain::DomainError;
 
 use crate::config::Settings;
@@ -103,34 +104,43 @@ impl ObjectStore for S3Store {
         Ok(Bytes::from(data.into_bytes().to_vec()))
     }
 
-    async fn get_range(
-        &self,
-        key: &str,
-        start: u64,
-        end: Option<u64>,
-    ) -> Result<(Bytes, u64), DomainError> {
-        let range = match end {
-            Some(end) => format!("bytes={start}-{end}"),
-            None => format!("bytes={start}-"),
+    async fn open(&self, key: &str, range: Option<ByteRange>) -> Result<ObjectBody, DomainError> {
+        let mut req = self.client.get_object().bucket(&self.bucket).key(key);
+        if let Some(range) = range {
+            req = req.range(match range.end {
+                Some(end) => format!("bytes={}-{}", range.start, end),
+                None => format!("bytes={}-", range.start),
+            });
+        }
+        let out = req.send().await.map_err(|err| match err.as_service_error() {
+            Some(service) if service.is_no_such_key() => DomainError::not_found("object not found"),
+            _ => DomainError::infra(format!("get object: {err}")),
+        })?;
+        let len = out.content_length().unwrap_or(0).max(0) as u64;
+        let total = match range {
+            // "bytes START-END/TOTAL"
+            Some(_) => out
+                .content_range()
+                .and_then(|value| value.rsplit('/').next()?.parse::<u64>().ok())
+                .unwrap_or(len),
+            None => len,
         };
-        let out = self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .range(range)
-            .send()
-            .await
-            .map_err(|e| DomainError::not_found(format!("object: {e}")))?;
-        let total = out.content_range().and_then(|cr| {
-            cr.rsplit('/').next()?.parse::<u64>().ok()
-        }).unwrap_or_else(|| out.content_length().unwrap_or(0) as u64);
-        let data = out
-            .body
-            .collect()
-            .await
-            .map_err(|e| DomainError::infra(e.to_string()))?;
-        Ok((Bytes::from(data.into_bytes().to_vec()), total))
+        let start = range.map_or(0, |range| range.start);
+        // A failed read ends the stream after reporting the error; the client sees a short body.
+        let stream = futures_util::stream::unfold(Some(out.body), |body| async move {
+            let mut body = body?;
+            match body.try_next().await {
+                Ok(Some(chunk)) => Some((Ok(chunk), Some(body))),
+                Ok(None) => None,
+                Err(err) => Some((Err(DomainError::infra(format!("read object: {err}"))), None)),
+            }
+        });
+        Ok(ObjectBody {
+            total,
+            start,
+            len,
+            stream: Box::pin(stream),
+        })
     }
 
     async fn delete(&self, key: &str) -> Result<(), DomainError> {

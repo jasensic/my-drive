@@ -87,7 +87,7 @@ CI (`.github/workflows/ci.yml`): `cargo test --workspace`, tests + build del por
 
 **Auth.** `POST /v1/setup` crea el primer usuario, que es admin (solo si `users` está vacía). No hay auto-registro: el admin crea usuarios con `POST /v1/users`. JWT HS256 de 7 días (`infrastructure/src/jwt.rs`); argon2 para contraseñas. Cada dispositivo recibe al registrarse (`POST /v1/devices`) un **refresh token** (`device_token`, 64 hex; el servidor guarda solo su SHA-256 en `devices.token_hash`), que cambia por un JWT nuevo en `POST /v1/auth/refresh`. `POST /v1/devices/{id}/token` lo rota, y `DELETE /v1/devices/{id}` revoca el dispositivo. `JWT_SECRET` es obligatorio (≥ 32 caracteres y distinto del de la plantilla) salvo con `MEMORY_BACKEND`.
 
-**Media.** Al subir: SHA-256 (`checksum = "sha256:<hex>"`), objeto a MinIO, miniatura JPEG 320px (crate `image`, solo JPEG/PNG; portadas embebidas FLAC/ID3/MP4 para audio). Audio sin pérdida (FLAC/WAV/AIFF/ALAC) obtiene un derivado AAC 256 kbps vía `ffmpeg` (`mobile.rs::ensure_mobile_audio`, serializado por archivo con `FileTranscodeLocks`). `GET /v1/files/{id}/content` admite `Range` (206) y `?variant=mobile`.
+**Media.** Al subir: SHA-256 (`checksum = "sha256:<hex>"`), objeto a MinIO, miniatura JPEG 320px (crate `image`, solo JPEG/PNG; portadas embebidas FLAC/ID3/MP4 para audio). Audio sin pérdida (FLAC/WAV/AIFF/ALAC) obtiene un derivado AAC 256 kbps vía `ffmpeg` (`mobile.rs::ensure_mobile_audio`, serializado por archivo con `FileTranscodeLocks`). `GET /v1/files/{id}/content` admite `Range` (206; `416` con `Content-Range: bytes */<tamaño>` si empieza más allá del final, que es lo que usa un cliente para reanudar una descarga ya completa) y `?variant=mobile`. Va en stream: `ObjectStore::open(key, Option<ByteRange>)` devuelve un `ObjectBody { total, start, len, stream }` que el handler pasa a `Body::from_stream`, así que servir un vídeo no lo carga en RAM. El hash SHA-256 y las miniaturas de la subida se calculan en `spawn_blocking`.
 
 **mDNS** (`infrastructure/src/mdns.rs`): anuncia `_mydrive._tcp.local.` con TXT `path=/v1`, `api=/v1` y `url=` (= `API_PUBLIC_URL` si no es loopback, o `http://<IP LAN>:<puerto>`).
 
@@ -143,9 +143,8 @@ Si cambias reglas de sync, sigue AGENTS.md → “Extender reglas de sync” y r
 
 ## Deuda conocida y trampas (revísalo antes de tocar sync, media o auth)
 
-- **Todo en memoria**: `ObjectStore::put/get/get_range` usan `Bytes` completos; subida, descarga sin `Range`, `Range` abierto (`bytes=N-`), transcodificación y miniaturas cargan el archivo entero en RAM (y `s3.rs` lo copia otra vez con `to_vec`). Vídeos grandes → picos de memoria; > 512 MB no se pueden subir.
+- **Subidas en memoria**: la descarga ya va en stream, pero `UploadFile` recibe el multipart completo como `Bytes` y `ObjectStore::put/get` (y `s3.rs`, que lo copia otra vez con `to_vec`) lo mantienen entero, igual que la transcodificación AAC y la miniatura de una portada de audio (`cover_from_audio` lee el audio entero). Vídeos grandes → picos de memoria al subir; > 512 MB no se pueden subir.
 - **Manifiesto caro**: `BuildSyncManifest` llama a `ensure_mobile_audio` para cada audio de forma secuencial dentro de la petición; el primer sync con muchos FLAC transcodifica toda la biblioteca en ese request. También es O(biblioteca) en cada sync (sin delta ni cursor).
-- **CPU en el runtime async**: miniaturas (`image`) se generan dentro de handlers async sin `spawn_blocking`.
 - **Auth**: el portal no tiene refresh token (se vuelve a iniciar sesión cada 7 días); CORS `Any`; no hay forma de quitar ni degradar usuarios ni de cambiar contraseñas.
 - **Android sync**: un 401 en mitad de un sync lo aborta entero (correcto), pero un servidor lento sin errores no se distingue de uno caído hasta el timeout de lectura de 5 min; los `.part` de archivos que nunca llegaron a `commit` (p. ej. excluidos a medias) no se limpian hasta reinstalar.
 - **NAS**: no hay copias de seguridad de `pgdata`/`miniodata`; HTTP plano en la LAN.
@@ -175,7 +174,7 @@ La app Android sigue una estética tipo iOS: superficies neutras, un único acen
 
 Orden sugerido; cada punto es un PR propio. Al terminar uno, muévelo fuera de esta lista y actualiza las secciones de arriba.
 
-1. **Streaming en el servidor**: `ObjectStore` con `put_stream`/`get_stream`, hash calculado mientras se escribe, subidas troceadas y reanudables (> 512 MB), y miniaturas con `spawn_blocking`. Valorar un adaptador de sistema de archivos como alternativa a MinIO.
+1. **Subidas en stream**: `ObjectStore::put_stream`, hash calculado mientras se escribe (sin `Bytes` completos), subidas troceadas y reanudables (> 512 MB), y la portada de audio sin leer el archivo entero. Valorar un adaptador de sistema de archivos como alternativa a MinIO.
 2. **Trabajo en segundo plano**: tabla `jobs` (`FOR UPDATE SKIP LOCKED`) para AAC, miniaturas (incl. HEIC/WebP y fotograma de vídeo), EXIF y purga de papelera. El manifiesto nunca transcodifica.
 3. **Sync por cambios**: tabla `changes` con número de secuencia y `GET /v1/sync/changes?cursor=N` paginado en lugar del manifiesto completo.
 4. **URLs firmadas de corta duración** para `<img>/<video>`, ExoPlayer y Coil, así el portal reproduce en streaming sin descargar Blobs.

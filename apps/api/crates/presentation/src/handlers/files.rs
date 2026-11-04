@@ -287,23 +287,19 @@ async fn stream_file(
         .get_file_content
         .execute(user.user_id, FileId::from_uuid(id), start, end, thumbnail, variant)
         .await?;
-    let len = content.data.len() as u64;
-    let end_inclusive = content.start.saturating_add(len.saturating_sub(1));
-    let mut builder = Response::builder().header(header::CONTENT_TYPE, content.mime.clone());
+    let body = content.body;
+    let mut builder = Response::builder().header(header::CONTENT_TYPE, content.mime);
+    builder = builder.header(header::ACCEPT_RANGES, "bytes");
     if start.is_some() {
-        builder = builder
-            .status(StatusCode::PARTIAL_CONTENT)
-            .header(
-                header::CONTENT_RANGE,
-                format!("bytes {}-{}/{}", content.start, end_inclusive, content.total_size),
-            )
-            .header(header::ACCEPT_RANGES, "bytes");
-    } else {
-        builder = builder.header(header::ACCEPT_RANGES, "bytes");
+        let end_inclusive = body.start + body.len.saturating_sub(1);
+        builder = builder.status(StatusCode::PARTIAL_CONTENT).header(
+            header::CONTENT_RANGE,
+            format!("bytes {}-{}/{}", body.start, end_inclusive, body.total),
+        );
     }
-    builder = builder.header(header::CONTENT_LENGTH, len);
     Ok(builder
-        .body(Body::from(content.data))
+        .header(header::CONTENT_LENGTH, body.len)
+        .body(Body::from_stream(body.stream))
         .unwrap_or_else(|_| Response::new(Body::empty())))
 }
 

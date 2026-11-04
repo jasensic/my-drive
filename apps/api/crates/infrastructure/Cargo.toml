@@ -12,6 +12,7 @@ aws-sdk-s3 = "1"
 bytes.workspace = true
 chrono.workspace = true
 domain = { path = "../domain" }
+futures-util.workspace = true
 hex = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 jsonwebtoken = "9"

@@ -14,6 +14,9 @@ pub enum DomainError {
     Forbidden(String),
     #[error("{0}")]
     Infrastructure(String),
+    /// The requested byte range starts past the end of an object of `total` bytes.
+    #[error("range not satisfiable")]
+    RangeNotSatisfiable { total: u64 },
 }
 
 impl DomainError {

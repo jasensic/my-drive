@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use domain::{ByteRange, ObjectBody};
 use domain::model::{
     Album, AppRelease, AuthSession, Device, FileRecord, Share, ShareResourceType, SyncProfile,
     TranscodedAudio, User, UserSummary,
@@ -602,17 +603,9 @@ impl ObjectStore for TestMem {
             .map(Bytes::from)
             .ok_or_else(|| DomainError::not_found("object not found"))
     }
-    async fn get_range(
-        &self,
-        key: &str,
-        start: u64,
-        end: Option<u64>,
-    ) -> Result<(Bytes, u64), DomainError> {
+    async fn open(&self, key: &str, range: Option<ByteRange>) -> Result<ObjectBody, DomainError> {
         let data = self.get(key).await?;
-        let total = data.len() as u64;
-        let end = end.unwrap_or(total.saturating_sub(1)).min(total.saturating_sub(1));
-        let start = start.min(end);
-        Ok((data.slice(start as usize..=end as usize), total))
+        ObjectBody::from_slice(data, range)
     }
     async fn delete(&self, key: &str) -> Result<(), DomainError> {
         self.inner.lock().unwrap().objects.remove(key);
