@@ -1,6 +1,7 @@
 pub mod apk;
 pub mod error;
 pub mod ids;
+pub mod jobs;
 pub mod library;
 pub mod media;
 pub mod model;
@@ -11,6 +12,7 @@ pub mod sync;
 
 pub use error::DomainError;
 pub use ids::{AlbumId, AppReleaseId, DeviceId, FileId, ShareId, SyncProfileId, UserId};
+pub use jobs::{InMemoryJobQueue, Job, JobKind, JobState, JOB_LEASE};
 pub use library::{LibrarySilo, TRASH_RETENTION_DAYS};
 pub use media::MediaKind;
 pub use storage::{collect_stream, ByteRange, ByteStream, ObjectBody};

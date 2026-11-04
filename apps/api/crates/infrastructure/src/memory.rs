@@ -192,6 +192,18 @@ impl FileRepository for MemoryStore {
             .collect())
     }
 
+    async fn list_trashed_before(&self, cutoff: DateTime<Utc>) -> Result<Vec<FileRecord>, DomainError> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .files
+            .iter()
+            .filter(|f| f.deleted_at.is_some_and(|at| at < cutoff))
+            .cloned()
+            .collect())
+    }
+
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError> {
         Ok(self
             .inner

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::apk::ApkIdentity;
+use crate::jobs::{Job, JobKind, JobState};
 use crate::ids::{AlbumId, AppReleaseId, DeviceId, FileId, ShareId, UserId};
 use crate::model::{
     Album, AppRelease, Device, FileRecord, Share, ShareResourceType, SyncProfile, TranscodedAudio,
@@ -50,6 +51,8 @@ pub trait FileRepository: Send + Sync {
     async fn insert(&self, file: &FileRecord) -> Result<(), DomainError>;
     async fn list_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
     async fn list_trashed_by_owner(&self, owner_id: UserId) -> Result<Vec<FileRecord>, DomainError>;
+    /// Files of every owner that went to the trash before `cutoff`.
+    async fn list_trashed_before(&self, cutoff: DateTime<Utc>) -> Result<Vec<FileRecord>, DomainError>;
     async fn list_by_ids(&self, ids: &[FileId]) -> Result<Vec<FileRecord>, DomainError>;
     async fn list_by_album_ids(&self, ids: &[AlbumId]) -> Result<Vec<FileRecord>, DomainError>;
     async fn find_by_id(&self, id: FileId) -> Result<Option<FileRecord>, DomainError>;
@@ -125,6 +128,37 @@ pub trait AppReleaseRepository: Send + Sync {
     async fn find_by_version_code(&self, version_code: i32) -> Result<Option<AppRelease>, DomainError>;
     async fn update(&self, release: &AppRelease) -> Result<(), DomainError>;
     async fn delete(&self, id: AppReleaseId) -> Result<(), DomainError>;
+}
+
+/// Work that happens outside a request: slow things the user should not wait for, and chores.
+/// At most one job per (kind, subject) is active at a time.
+#[async_trait::async_trait]
+pub trait JobQueue: Send + Sync {
+    /// Queues a job to run at `run_at`. False when one is already queued or running.
+    async fn enqueue(
+        &self,
+        kind: JobKind,
+        subject: Option<uuid::Uuid>,
+        run_at: DateTime<Utc>,
+    ) -> Result<bool, DomainError>;
+    /// Takes the oldest due job, or one whose worker stopped answering (see `JOB_LEASE`). Two
+    /// workers never get the same job.
+    async fn claim(&self, now: DateTime<Utc>) -> Result<Option<Job>, DomainError>;
+    async fn complete(&self, id: uuid::Uuid) -> Result<(), DomainError>;
+    /// Records an error. With `retry_at` the job goes back in the queue for then; without it the
+    /// job is given up on and reads as `JobState::Failed`.
+    async fn fail(
+        &self,
+        id: uuid::Uuid,
+        error: &str,
+        retry_at: Option<DateTime<Utc>>,
+    ) -> Result<(), DomainError>;
+    /// Active state of the job if there is one, else `Failed` if it gave up, else none.
+    async fn state(
+        &self,
+        kind: JobKind,
+        subject: Option<uuid::Uuid>,
+    ) -> Result<Option<JobState>, DomainError>;
 }
 
 pub trait ApkInspector: Send + Sync {

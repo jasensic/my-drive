@@ -20,6 +20,7 @@ use crate::ffmpeg::{FakeAudioTranscoder, FfmpegAudioTranscoder};
 use crate::hasher::Argon2Hasher;
 use crate::jwt::JwtTokenService;
 use crate::memory::MemoryStore;
+use domain::InMemoryJobQueue;
 use crate::postgres::PgRepos;
 use crate::s3::S3Store;
 use crate::thumbnail::ImageThumbnailer;
@@ -46,6 +47,7 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
             shares: store.clone(),
             profiles: store.clone(),
             app_releases: store.clone(),
+            jobs: Arc::new(InMemoryJobQueue::new()),
             objects: store,
             hasher,
             tokens,
@@ -69,7 +71,8 @@ pub async fn build_deps(settings: &Settings) -> Result<Arc<Deps>, domain::Domain
         exclusions: Arc::new(repos.clone()),
         shares: Arc::new(repos.clone()),
         profiles: Arc::new(repos.clone()),
-        app_releases: Arc::new(repos),
+        app_releases: Arc::new(repos.clone()),
+        jobs: Arc::new(repos),
         objects: Arc::new(objects),
         hasher,
         tokens,

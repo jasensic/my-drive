@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use application::Services;
+use application::{JobWorker, Services};
 use infrastructure::config::Settings;
 use tracing_subscriber::EnvFilter;
 
@@ -14,6 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let settings = Settings::from_env()?;
     let deps = infrastructure::build_deps(&settings).await?;
+    tokio::spawn(JobWorker::new(deps.clone()).run());
     let services = Arc::new(Services::new(deps));
     let app = mydrive_api::router(mydrive_api::state_from_services(
         settings.api_public_url.clone(),
